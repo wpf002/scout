@@ -8,11 +8,9 @@ Scout is a **launcher, not an aggregator**. There is deliberately no box that
 takes a name and returns an assembled dossier. It plans, it gates, it records —
 and it makes you take each person-facing action on purpose.
 
-**Status:** Phases 0–5, 7 and the hardening half of 8 shipped. Phase 6
-(correlation) is deliberately deferred — its own criterion says not to build it
-until real cases produce multi-source overlap. Deployment is not built; the
-hardening it depends on is. See [ROADMAP.md](./ROADMAP.md) for the locked build
-order.
+**Status:** Phases 0–7 shipped, plus the hardening half of 8. Deployment is not
+built; the hardening it depends on is. See [ROADMAP.md](./ROADMAP.md) for the
+locked build order.
 
 ---
 
@@ -93,6 +91,7 @@ apps/api            Fastify API — routes, adapters
 apps/web            Next.js dashboard — the investigator surface
 packages/sources    Tiered registry: 19 sources, 6 tiers, typed + inert-aware
 packages/scope      The gate. Pure, dependency-free, heavily tested
+packages/graph      Entity extraction, resolution, summaries. Pure
 packages/db         Prisma schema, client, audit helpers
 ```
 
@@ -375,6 +374,64 @@ A purge reports back what it retained, so nobody assumes it erased the trail. A
 tool that could erase its own audit log on request would not be worth the
 accountability claims made elsewhere in this codebase.
 
+## The entity graph
+
+Findings from different sources resolve into entities, and entities into
+relationships. `www.example.com` reported by crt.sh, SecurityTrails, Shodan and
+Censys is **one** node crediting all four — that corroboration is the thing the
+graph exists to show.
+
+```
+GET  /cases/:id/graph                  entities, links, suggestions, summary
+POST /cases/:id/graph/merge            confirm two entities are one
+POST /cases/:id/graph/dismiss          stop offering a suggestion
+```
+
+**The graph is never stored.** It is recomputed from findings on every read, so
+it cannot drift from the evidence. Only *decisions* persist — confirmed merges
+and dismissed suggestions — because those are judgements that cannot be
+re-derived.
+
+### Automatic vs suggested
+
+This phase was built with its own defer criterion unmet: there is no real
+multi-source case volume to tune against. The hard part of entity resolution is
+deciding which *near* matches are the same thing, and that judgement needs real
+data. So the line is drawn hard:
+
+| | |
+|---|---|
+| **Automatic** | Exact identity after normalization only. `WWW.Example.com` and `www.example.com` are the same host, and no tuning is needed to know that. |
+| **Suggested** | Everything else. Near-matching names surface as a queue of questions, and nothing merges without an operator confirming it with a written reason. |
+
+Suggestions cover two cases: names identical once casing, punctuation and
+company suffixes are ignored (`Acme Ltd.` / `ACME LIMITED`), and one name's
+tokens being a strict subset of another's. **No edit distance, no phonetics, no
+nicknames** — those are precisely the heuristics that need calibration, and an
+uncalibrated one produces confident nonsense about real people. A graph that
+silently merged two similarly-named people would be worse than no graph,
+because it would look like a finding.
+
+Merging is audited: it asserts two records describe one person.
+
+### Everything traces
+
+Every entity names the findings that evidence it; every edge names the findings
+and sources behind it. Selecting a node answers "how do you know that". A test
+asserts no edge can cite a finding that does not exist on the case.
+
+### Summaries are drafts
+
+The default summarizer **counts** — no model, so it cannot invent anything. A
+`Summarizer` seam exists for Flint but is left inert rather than implemented
+against an API I cannot see; guessing an integration would break the same rule
+that makes a keyless source report `inert`.
+
+Whatever produces it, a summary is marked `draft`, stored apart from findings,
+and validated by `assertNoInventedProvenance()` — which throws if it cites a
+finding that does not exist. "Never invent provenance" is otherwise just an
+instruction in a prompt, and instructions in prompts are not enforcement.
+
 ## Reporting
 
 `GET /cases/:id/report` turns a case into a deliverable — findings grouped by
@@ -422,7 +479,7 @@ the tool, and when.
 ## Tests
 
 ```bash
-pnpm test        # 270 tests
+pnpm test        # 314 tests
 ```
 
 - `packages/scope` (35) — the gate, including lookalike domains, `@`-smuggling,
@@ -431,7 +488,9 @@ pnpm test        # 270 tests
   observation dedupe/attribution.
 - `packages/db` (8) — audit immutability against a live Postgres, key redaction,
   BigInt JSON safety.
-- `apps/api` (196) — the Phase 1, 3 and 4 exit gates end to end, upstream
+- `packages/graph` (29) — extraction, exact-identity resolution, the
+  suggested/automatic boundary, and summary provenance validation.
+- `apps/api` (211) — the Phase 1, 3 and 4 exit gates end to end, upstream
   normalizers against fixture payloads, cache and rate-limiter behaviour, plus
   a red-team block: scope-shaped fields smuggled into request bodies, lookalike
   domains, nonexistent cases, empty scope, sweeping a scoped source, and

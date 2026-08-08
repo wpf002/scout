@@ -290,7 +290,7 @@ worse than no scoped tier. It held.
 
 ---
 
-## Phase 6 — Correlation + entity graph ⏸ DEFERRED (criterion not met)
+## Phase 6 — Correlation + entity graph ✅ SHIPPED (criterion overridden)
 
 Scout stops being a launcher and becomes an investigation tool: findings across
 sources get resolved into entities and linked.
@@ -306,24 +306,55 @@ sources get resolved into entities and linked.
   summary. Prompt caching on. Summaries are drafts, never findings, and never
   invent provenance.
 
-**Entry gate:** Phases 3–5 producing normalized, provenance-carrying findings.
-**Exit gate:** a case with hits from 3+ sources renders a deduped entity graph
-with traceable edges.
+**Entry gate:** Phases 3–5 producing normalized, provenance-carrying findings. ✅
+**Exit gate:** ✅ verified on a case with 9 findings from 8 sources: 11 entities,
+11 links, 5 corroborated. `www.example.com` folded from two spellings across
+four sources into one node; the `resolves-to` edge to `203.0.113.10` carries two
+findings. Every edge cites findings that exist on the case, asserted by test.
+Three company near-matches surfaced as suggestions and stayed unmerged until
+confirmed.
 
 **Defer criterion:** do NOT build correlation until you have real cases where
 multiple sources overlap on the same entities. Building the graph against
 single-source cases is premature — it needs real multi-source data to be worth
 anything. Gate this phase on actual case volume, not calendar.
 
-**Status: not met, so not built.** There is no real case volume — only demo and
-test cases. Building entity resolution now would mean tuning it against
-fixtures, which is exactly what the criterion forbids: the hard part of
-correlation is knowing which near-matches are the same entity, and fixtures
-cannot teach that. Phase 7 shipped instead, under its own entry gate
-("Phase 6 exit **or** Phase 5 exit if correlation deferred").
+**Status: still not met. Built anyway, on an explicit instruction to proceed.**
 
-Revisit when several real cases show the same entity arriving from more than
-one source.
+There is no real multi-source case volume; only demo and test cases. The
+criterion was overridden deliberately, so the constraint it protects against
+did not disappear — it shaped the design instead:
+
+- **Automatic merging is exact-identity only**, after normalization. Two
+  sources reporting the same normalized hostname are reporting the same host,
+  and no calibration is needed to be sure of it.
+- **Everything requiring judgement is a suggestion**, surfaced as a queue of
+  questions and merged only when an operator confirms with a written reason.
+  Suggestions cover identical-after-normalization names and strict token
+  subsets. No edit distance, no phonetics, no nicknames — those are exactly the
+  heuristics the missing data would have calibrated, and an uncalibrated one
+  produces confident nonsense about real people.
+- **The graph is never stored**, only recomputed from findings. Decisions
+  persist; the derived graph does not, so it cannot drift from its evidence.
+
+If the criterion is met later, the place to revisit is `suggestMerges()` — it
+is deliberately timid and real overlapping cases would justify loosening it.
+
+**Built:**
+- `@scout/graph` — a pure package: extraction from every tier's normalized
+  observations, exact-identity resolution with unioned attribution, the
+  suggestion engine, and summarization.
+- Entities and links persisted as *decisions* only (`EntityMerge`,
+  `MergeDismissal`). Merges are audited: asserting two records describe one
+  person is a judgement about a person.
+- Case graph view in the dashboard — deterministic column layout rather than a
+  force simulation, because the same case must draw the same picture every
+  time. Selecting a node answers "how do you know that".
+- Summarization: a deterministic counter that ships today and cannot invent
+  anything, plus a `Summarizer` seam for Flint left **inert** rather than
+  implemented against a guessed API. Summaries are drafts, stored apart from
+  findings, and `assertNoInventedProvenance()` throws if one cites a finding
+  that does not exist — because an instruction in a prompt is not enforcement.
 
 ---
 
@@ -416,7 +447,7 @@ purge, secrets review passing as tests.
 3  Infra adapters            ✅ shipped
 4  Dataset adapters          ✅ shipped
 5  Exposure + people         ✅ shipped
-6  Correlation + graph       ⏸ deferred — criterion not met (no real case volume)
+6  Correlation + graph       ✅ shipped (defer criterion overridden on request)
 7  Reporting + export        ✅ shipped
 8  Hardening                 ✅ shipped
    Deploy                    not built (hardening-only scope)

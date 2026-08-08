@@ -104,11 +104,13 @@ model Case {
   updatedAt DateTime @updatedAt
   createdBy String   @default("local")
 
-  scopeEntries   ScopeEntry[]
-  subjects       Subject[]
-  findings       Finding[]
-  queryLogs      QueryLog[]
-  sourceSettings CaseSource[]
+  scopeEntries    ScopeEntry[]
+  subjects        Subject[]
+  findings        Finding[]
+  queryLogs       QueryLog[]
+  sourceSettings  CaseSource[]
+  entityMerges    EntityMerge[]
+  mergeDismissals MergeDismissal[]
 
   @@index([status, createdAt])
   @@index([archivedAt])
@@ -267,4 +269,43 @@ model AuditEvent {
   createdAt DateTime @default(now())
 
   @@index([caseId, createdAt])
+}
+
+/// An operator-confirmed entity merge.
+///
+/// The graph itself is NOT stored — it is recomputed from findings on every
+/// read, so it can never drift from the evidence. What is stored is the
+/// judgement: which near-matching entities a human decided were the same
+/// thing. That decision must survive a rebuild; the graph need not.
+model EntityMerge {
+  id     String @id @default(cuid())
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  /// The entity key that was merged away, and the one it merged into.
+  losingKey  String
+  winningKey String
+
+  /// Why. A merge is an assertion that two records describe one thing, and a
+  /// year later the only way to know why is if someone wrote it down.
+  reason      String
+  confirmedBy String   @default("local")
+  createdAt   DateTime @default(now())
+
+  @@unique([caseId, losingKey])
+  @@index([caseId])
+}
+
+/// A merge suggestion an operator rejected, so it stops being offered.
+model MergeDismissal {
+  id           String @id @default(cuid())
+  caseId       String
+  case         Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  suggestionId String
+
+  dismissedBy String   @default("local")
+  createdAt   DateTime @default(now())
+
+  @@unique([caseId, suggestionId])
+  @@index([caseId])
 }

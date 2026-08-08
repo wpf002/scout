@@ -337,3 +337,69 @@ export interface AuditView {
   queryLogs: QueryLogRow[];
   events: AuditEventRow[];
 }
+
+/* ── entity graph ────────────────────────────────────────────────────── */
+
+export type EntityKind =
+  | "domain"
+  | "ip"
+  | "email"
+  | "username"
+  | "person"
+  | "company"
+  | "cert"
+  | "breach";
+
+export interface ResolvedEntity {
+  key: string;
+  kind: EntityKind;
+  value: string;
+  label: string | null;
+  /** Every source that reported this. More than one means corroborated. */
+  sourceIds: string[];
+  findingIds: string[];
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface ResolvedLink {
+  from: string;
+  to: string;
+  relation: string;
+  /** Findings evidencing this edge. Never empty. */
+  findingIds: string[];
+  sourceIds: string[];
+}
+
+export interface MergeSuggestion {
+  id: string;
+  kind: EntityKind;
+  left: string;
+  right: string;
+  reason: string;
+  confidence: number;
+}
+
+export interface CaseSummary {
+  draft: true;
+  producedBy: string;
+  generatedAt: string;
+  headline: string;
+  paragraphs: string[];
+  citedFindingIds: string[];
+}
+
+export interface CaseGraph {
+  caseId: string;
+  entities: ResolvedEntity[];
+  links: ResolvedLink[];
+  totals: {
+    entities: number;
+    links: number;
+    corroborated: number;
+    sources: number;
+    findings: number;
+  };
+  suggestions: MergeSuggestion[];
+  summary: CaseSummary;
+}

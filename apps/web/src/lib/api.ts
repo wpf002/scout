@@ -1,5 +1,6 @@
 import type {
   AuditView,
+  CaseGraph,
   CaseRecord,
   DatasetAdapterInfo,
   DatasetRunResult,
@@ -251,4 +252,32 @@ export const api = {
     }),
 
   audit: (caseId: string) => request<AuditView>(`/cases/${caseId}/audit`),
+
+  /** The entity graph, recomputed from findings on every read. */
+  graph: (caseId: string) => request<CaseGraph>(`/cases/${caseId}/graph`),
+
+  /**
+   * Confirms two entities are the same thing. Never inferred from a score —
+   * the operator asserts it, and the assertion is audited.
+   */
+  mergeEntities: (
+    caseId: string,
+    body: { winningKey: string; losingKey: string; reason: string },
+  ) =>
+    request<unknown>(`/cases/${caseId}/graph/merge`, {
+      method: "POST",
+      body: { ...body, confirm: true },
+    }),
+
+  undoMerge: (caseId: string, losingKey: string) =>
+    request<void>(
+      `/cases/${caseId}/graph/merge/${encodeURIComponent(losingKey)}`,
+      { method: "DELETE" },
+    ),
+
+  dismissSuggestion: (caseId: string, suggestionId: string) =>
+    request<unknown>(`/cases/${caseId}/graph/dismiss`, {
+      method: "POST",
+      body: { suggestionId },
+    }),
 };

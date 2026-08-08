@@ -32,6 +32,9 @@ importers:
       '@scout/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@scout/graph':
+        specifier: workspace:*
+        version: link:../../packages/graph
       '@scout/scope':
         specifier: workspace:*
         version: link:../../packages/scope
@@ -104,6 +107,19 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.23.11
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.9.5)
+
+  packages/graph:
+    dependencies:
+      '@scout/sources':
+        specifier: workspace:*
+        version: link:../sources
+    devDependencies:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -2009,14 +2025,6 @@ snapshots:
     optionalDependencies:
       vite: 5.4.21(@types/node@22.20.1)
 
-  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.9.5))':
-    dependencies:
-      '@vitest/spy': 2.1.9
-      estree-walker: 3.0.3
-      magic-string: 0.30.21
-    optionalDependencies:
-      vite: 5.4.21(@types/node@25.9.5)
-
   '@vitest/pretty-format@2.1.9':
     dependencies:
       tinyrainbow: 1.2.0
@@ -2716,7 +2724,7 @@ snapshots:
   vitest@2.1.9(@types/node@25.9.5):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@25.9.5))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@22.20.1))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9

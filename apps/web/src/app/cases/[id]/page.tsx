@@ -9,6 +9,7 @@ import { Planner } from "@/components/Planner";
 import { InfraBoard } from "@/components/InfraBoard";
 import { DatasetBoard } from "@/components/DatasetBoard";
 import { FindingsBoard } from "@/components/FindingsBoard";
+import { GraphBoard } from "@/components/GraphBoard";
 import { AuditPanel } from "@/components/AuditPanel";
 import { ExportPanel } from "@/components/ExportPanel";
 import { SUBJECT_KINDS } from "@/lib/types";
@@ -205,6 +206,8 @@ export default function CaseWorkspace() {
       <InfraBoard record={record} onFindingSaved={() => void refreshFindings()} />
 
       <FindingsBoard findings={findings} />
+
+      <GraphBoard record={record} />
 
       <AuditPanel audit={audit} />
 
