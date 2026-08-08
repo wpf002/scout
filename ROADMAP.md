@@ -18,11 +18,14 @@ features, not just infra.
    input outside the configured authorization scope. Scope is set at config /
    case creation time — never widenable by a request parameter. Empty scope
    means scoped tiers are OFF, not open.
-   *Enforced in Phase 3:* any non-scoped `api` source that accepts a
-   person-identifying subject kind (`email`, `username`, `person`) must appear
-   on a pinned reviewed list, so a new one cannot slip in ungated. The list
-   currently holds `intelligence-x` and `opensanctions` — see
-   `apps/api/src/invariants.test.ts` for the reasoning on each.
+   *Refined in Phase 4:* the gate is decided **per subject kind**, not per
+   source, because a source can be person-facing for some of its inputs and
+   not others. `requiresScopeFor(source, kind)` is the single answer every
+   layer reads. Any `api` source accepting a person-identifying kind (`email`,
+   `username`, `person`) must be gated for it — wholesale via `requiresScope`
+   or per kind via `scopedKinds` — or sit on a pinned reviewed list, which
+   currently holds only `opensanctions`. See `apps/api/src/invariants.test.ts`
+   for the reasoning.
 2. **No blind fan-out.** `/query` plans; it does not auto-execute a subject
    across every source. Non-scoped infra/dataset sources may be batch-executed
    on explicit action. Person-facing (scoped) sources are always one confirmed
@@ -175,33 +178,53 @@ link is the honest integration until someone has one.
 
 ---
 
-## Phase 4 — Dataset adapters ← next
+## Phase 4 — Dataset adapters ✅ SHIPPED
 
-Deepen the datasets tier beyond deeplinks where a real API exists.
+Deepened the datasets tier beyond deeplinks where a real API exists.
 
-**Build:**
-- Intelligence X — `api`, key-gated, normalized into a `DatasetHit` shape.
-- OpenSanctions — `api`, sanctions/PEP/watchlist matching with source
-  provenance carried into `Finding`.
-- Keep Aleph / ICIJ / OpenCorporates / Wikidata as deeplinks (no stable free
-  API worth the coupling; the deeplink is the right integration).
-- Entity extraction stub: pull candidate entities (names, orgs, domains) out of
-  dataset hits into `Subject` suggestions for the case. No auto-linking yet.
+**Built:**
+- Intelligence X — `api`, key-gated, normalized into `DatasetHit`.
+- OpenSanctions — `api`, sanctions/PEP/watchlist matching with the designating
+  datasets carried through as the finding, not as metadata about it.
+- Aleph / ICIJ / OpenCorporates / Wikidata stay deeplinks, as planned.
+- Entity extraction: candidate entities become `Subject` **suggestions**, never
+  auto-links. Structured provider fields are high confidence, free-text pattern
+  matches medium. It is a pattern matcher rather than entity recognition —
+  guessing that a capitalized phrase is a person's name is the fabrication
+  locked invariant 6 rules out.
+- Datasets board in the dashboard, with a designated entity rendered
+  unmissably and a PEP listing deliberately not.
 
-**Decision this phase must make:** Intelligence X accepts an email address as a
-selector, which is a person-facing lookup sitting in a non-scoped tier. It is
-on the reviewed-exception list today only because its adapter does not exist.
-Building it forces the choice: gate the whole source, or introduce
-per-subject-kind scoping so it runs free for domains and gated for email.
+**Decision this phase made — per-subject-kind scoping.** Intelligence X accepts
+an email selector, which is a person-facing lookup sitting in a non-scoped
+tier. Gating the whole source would have blocked legitimate domain research;
+gating none of it would have left a person lookup ungated. So the gate is now
+decided per subject kind via `requiresScopeFor(source, kind)`: IntelX runs free
+for a domain and gated for an email. Every layer reads that one function —
+planner, dispatcher, adapter, and the audit row's `requiresScope` column, which
+now records the gate that actually applied rather than the source's blanket
+flag.
 
-**Entry gate:** Phase 3 exit.
-**Exit gate:** a person/company subject returns normalized dataset hits from
-IntelX + OpenSanctions with provenance; sanctioned-entity match is unmissable
-in the UI.
+Consequence: **there is no dataset sweep.** Dataset sources are not uniformly
+non-scoped, so a batch path would have to reason about per-kind gating inside a
+fan-out. Sources run one at a time through `executeSource()`, which picks the
+runner from the effective gate so no route can choose wrong.
+
+**Sanctioned is not the same claim as listed.** A sanction means a government
+has designated someone; a PEP listing means they hold public office. Only
+actual designation topics set `sanctioned`, and the UI treats the two
+differently. Absence of a match is never rendered as "clear".
+
+**Entry gate:** Phase 3 exit. ✅
+**Exit gate:** ✅ a person subject returns normalized hits from IntelX +
+OpenSanctions with dataset provenance; the sanctioned match raises an alert
+that cannot be scrolled past while a PEP in the same result set does not.
+Verified in a browser (19 checks), including that the gate flips on subject
+kind for one source and that suggestions are not auto-linked.
 
 ---
 
-## Phase 5 — Exposure + people (scoped tier)
+## Phase 5 — Exposure + people (scoped tier) ← next
 
 The scope-gated adapters. This phase is where the audit log, per-case scope, and
 `enforceScope()` template earn their existence. Gate hard; every adapter calls
@@ -313,8 +336,8 @@ secrets clean, rollback documented.
 1  Persistence + cases       ✅ shipped
 2  Web dashboard             ✅ shipped
 3  Infra adapters            ✅ shipped
-4  Dataset adapters          ← next
-5  Exposure + people         (scoped; hard gate + audit)
+4  Dataset adapters          ✅ shipped
+5  Exposure + people         ← next (scoped; hard gate + audit)
 6  Correlation + graph       (defer until real multi-source case volume)
 7  Reporting + export
 8  Hardening + deploy        (defer infra cost until earned)

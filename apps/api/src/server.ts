@@ -6,6 +6,7 @@ import { registerQueryRoutes } from "./routes/query.js";
 import { registerCaseRoutes } from "./routes/cases.js";
 import { registerExposureRoutes } from "./routes/exposure.js";
 import { registerInfraRoutes } from "./routes/infra.js";
+import { registerDatasetRoutes } from "./routes/datasets.js";
 import { config } from "./config.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -49,6 +50,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerCaseRoutes(app);
   await registerExposureRoutes(app);
   await registerInfraRoutes(app);
+  await registerDatasetRoutes(app);
 
   return app;
 }

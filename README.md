@@ -8,9 +8,9 @@ Scout is a **launcher, not an aggregator**. There is deliberately no box that
 takes a name and returns an assembled dossier. It plans, it gates, it records —
 and it makes you take each person-facing action on purpose.
 
-**Status:** Phases 0–3 shipped — foundation, persistence + cases, web
-dashboard, and the infrastructure tier. See [ROADMAP.md](./ROADMAP.md) for the
-locked build order.
+**Status:** Phases 0–4 shipped — foundation, persistence + cases, web
+dashboard, the infrastructure tier, and the datasets tier. See
+[ROADMAP.md](./ROADMAP.md) for the locked build order.
 
 ---
 
@@ -160,6 +160,8 @@ rather than erase.
 | `POST` | `/infra/:sourceId` | One infrastructure source. Non-scoped. |
 | `POST` | `/infra/sweep` | Several at once, merged. Non-scoped only, `confirm: true`. |
 | `GET` | `/infra/adapters` | Which infra adapters are built. |
+| `POST` | `/datasets/:sourceId` | One dataset source. `confirm: true` when the kind is gated. |
+| `GET` | `/datasets/adapters` | Which dataset adapters are built, and their `scopedKinds`. |
 
 Subject terms travel in POST bodies, never URL params, and request bodies are
 stripped from logs.
@@ -225,22 +227,72 @@ earned when a case regularly hits real rate limits, not before.
 ViewDNS stays a deeplink — its API needs a paid key, and the link is the honest
 integration until someone has one.
 
+## The datasets tier
+
+Leaks and pastes (**Intelligence X**), sanctions and PEP screening
+(**OpenSanctions**). Aleph, ICIJ, OpenCorporates and Wikidata stay deeplinks —
+none has a stable free API worth the coupling.
+
+**Sources run one at a time here — there is no dataset sweep.** Unlike the
+infra tier, these are not uniformly non-scoped, so a batch path would have to
+reason about per-subject-kind gating inside a fan-out. That is the cheapest
+place to get it wrong.
+
+### Per-subject-kind scoping
+
+Some sources are only person-facing for some of their inputs. Intelligence X
+searching a domain is dataset research; Intelligence X searching an email
+address is a lookup about a person. Gating the whole source would block
+legitimate infrastructure work; gating none of it would leave a person-facing
+lookup ungated.
+
+So the gate is decided per subject kind, via `requiresScopeFor(source, kind)`:
+
+```
+intelligence-x + domain  → runs freely
+intelligence-x + email   → scope gate, confirmation, audit row
+```
+
+Every layer reads the same function — planner, dispatcher, adapter, and the
+`requiresScope` column on the audit row, which records the gate that actually
+applied rather than the source's blanket flag. Routes call `executeSource()`,
+which picks the runner from the effective gate so no route can choose wrong.
+
+### Sanctioned is not the same claim as listed
+
+A sanction means a government has designated someone. A PEP listing means they
+hold public office. Rendering both as "SANCTIONED" would be a false accusation
+against every politician in the dataset, so `SanctionMatch.sanctioned` is true
+only for actual designation topics, and the UI treats the two differently — red
+and unmissable versus amber and merely present.
+
+Absence of a match is likewise never rendered as "clear".
+
+### Entity extraction
+
+Dataset hits yield candidate entities as **suggestions**, never auto-links.
+Structured provider fields are high confidence; patterns found in free text are
+medium. Extraction is a pattern matcher, not entity recognition — guessing that
+a capitalized phrase is someone's name is exactly the fabrication invariant 6
+rules out.
+
 ## Tests
 
 ```bash
-pnpm test        # 113 tests
+pnpm test        # 151 tests
 ```
 
 - `packages/scope` (22) — the gate, including lookalike domains, `@`-smuggling,
   IDN normalization, and fail-closed on unparseable input.
-- `packages/sources` (23) — registry invariants (pins the scoped set) and
+- `packages/sources` (25) — registry invariants (pins the scoped set) and
   observation dedupe/attribution.
 - `packages/db` (8) — audit immutability against a live Postgres, key redaction,
   BigInt JSON safety.
-- `apps/api` (60) — the Phase 1 and Phase 3 exit gates end to end, upstream
+- `apps/api` (96) — the Phase 1, 3 and 4 exit gates end to end, upstream
   normalizers against fixture payloads, cache and rate-limiter behaviour, plus
   a red-team block: scope-shaped fields smuggled into request bodies, lookalike
-  domains, nonexistent cases, empty scope, and sweeping a scoped source.
+  domains, nonexistent cases, empty scope, sweeping a scoped source, and
+  reaching a per-kind gated source through the ungated path.
 
 `apps/api/src/invariants.test.ts` encodes the locked invariants as structural
 tests — no database, no network, no keys. These fail a test run rather than a
@@ -250,13 +302,18 @@ erodes:
 - No `mode: "deeplink"` source may have an execution route (invariant 4).
 - No infra adapter may be `requiresScope` — what makes `/infra/sweep` safe.
 - `executeUnscopedSource()` throws if handed a scoped source.
-- Any non-scoped `api` source accepting `email`/`username`/`person` must be on
-  a pinned reviewed list, so a new one cannot slip in ungated.
+- Any `api` source accepting `email`/`username`/`person` must be gated for
+  those kinds — wholesale or per kind — or sit on a pinned reviewed list.
+  (`opensanctions` is the one entry, with the reasoning written down.)
+- No batch-executable source may be gated for any kind it accepts, so a source
+  free for domains and gated for email can never be swept with an email.
+- `scopedKinds` must be a subset of `accepts` — gating a kind a source never
+  receives is dead configuration that reads like protection.
 - The scoped set, the keyless-api set, and the dual link+fetch set are all
   pinned.
 
-The browser loops are checked with Playwright (`23` checks for Phase 2, `14`
-for Phase 3) against a real Chromium.
+The browser loops are checked with Playwright against a real Chromium — 23
+checks for Phase 2, 14 for Phase 3, 19 for Phase 4.
 
 The DB-backed suites skip without `DATABASE_URL`. They don't clean up — audit
 rows can't be deleted — so point them at a disposable database.

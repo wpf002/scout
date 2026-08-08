@@ -66,6 +66,19 @@ export interface Source {
    * adapter, not just the route (locked invariant 1).
    */
   requiresScope: boolean;
+  /**
+   * Subject kinds that require scope even though the source itself is not
+   * person-facing.
+   *
+   * Some sources are only person-facing for some of their inputs. Intelligence
+   * X searching a domain is dataset research; Intelligence X searching an
+   * email address is a lookup about a person. Gating the whole source would
+   * block legitimate infrastructure work, and gating none of it would leave a
+   * person-facing lookup ungated — so the gate is decided per subject kind.
+   *
+   * Use `requiresScopeFor(source, kind)` rather than reading this directly.
+   */
+  scopedKinds?: readonly SubjectKind[];
   /** Subject kinds this source can meaningfully be run against. */
   accepts: readonly SubjectKind[];
   description: string;

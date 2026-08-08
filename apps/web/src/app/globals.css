@@ -448,6 +448,52 @@ tr:last-child td {
   font-size: 12px;
 }
 
+/* ── sanction alert ───────────────────────────────────────────────────── */
+/* A designated entity must be impossible to scroll past. A PEP listing gets
+   the softer treatment below — it is a different claim about a person, and
+   dressing it up as a sanction would be a false accusation. */
+.alert-sanction {
+  border: 2px solid var(--deny);
+  background: color-mix(in srgb, var(--deny) 12%, transparent);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.alert-sanction .headline {
+  color: var(--deny);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.entry.sanctioned {
+  border-left: 3px solid var(--deny);
+  background: color-mix(in srgb, var(--deny) 7%, var(--bg-raised));
+}
+
+.entry.pep {
+  border-left: 3px solid var(--warn);
+}
+
+.dataset-chip {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+  margin: 2px 4px 2px 0;
+}
+
+.dataset-chip.designating {
+  border-color: var(--deny);
+  color: var(--deny);
+}
+
 /* ── modal ────────────────────────────────────────────────────────────── */
 .backdrop {
   position: fixed;

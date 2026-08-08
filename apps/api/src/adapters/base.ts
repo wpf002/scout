@@ -1,5 +1,5 @@
 import type { Source, SourceResult, Subject } from "@scout/sources";
-import { hasKey, makeProvenance } from "@scout/sources";
+import { hasKey, makeProvenance, requiresScopeFor } from "@scout/sources";
 import type { ScopeEntry } from "@scout/scope";
 import { ScopeError, enforceScope } from "@scout/scope";
 import { loadCaseWithScope, recordQuery } from "@scout/db";
@@ -163,10 +163,13 @@ export async function executeUnscopedSource<T>(
   ctx: ScopedRunContext,
   run: (subject: Subject) => Promise<T>,
 ): Promise<SourceResult<T>> {
-  if (source.requiresScope) {
+  // Checked against the effective gate for this subject kind, not the
+  // source's blanket flag — otherwise a per-kind gated source (Intelligence X
+  // with an email selector) would slip through on the unscoped path.
+  if (requiresScopeFor(source, ctx.subject.kind)) {
     throw new Error(
-      `${source.id} requires scope and must run through executeScopedSource(). ` +
-        "Refusing to execute it on the unscoped path.",
+      `${source.id} requires scope for a ${ctx.subject.kind} subject and must run ` +
+        "through executeScopedSource(). Refusing to execute it on the unscoped path.",
     );
   }
 
@@ -281,4 +284,27 @@ export async function executeUnscopedSource<T>(
       provenance: provenanceFor(log.id),
     };
   }
+}
+
+/**
+ * Picks the right runner for a (source, subject) pair.
+ *
+ * Routes should call this rather than choosing a runner themselves: the choice
+ * depends on the effective per-subject-kind gate, and getting it wrong in one
+ * route is precisely how a person-facing lookup ends up ungated. Intelligence
+ * X routes here to the unscoped runner for a domain and the scoped one for an
+ * email selector, with no branch in the route at all.
+ *
+ * Note the scoped path deliberately has no response cache. Holding
+ * person-facing results in process memory is a data-minimization question, not
+ * a performance one, and the conservative default is not to.
+ */
+export function executeSource<T>(
+  source: Source,
+  ctx: ScopedRunContext,
+  run: (subject: Subject) => Promise<T>,
+): Promise<SourceResult<T>> {
+  return requiresScopeFor(source, ctx.subject.kind)
+    ? executeScopedSource(source, ctx, run)
+    : executeUnscopedSource(source, ctx, run);
 }

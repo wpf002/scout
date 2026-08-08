@@ -1,6 +1,8 @@
 import type {
   AuditView,
   CaseRecord,
+  DatasetAdapterInfo,
+  DatasetRunResult,
   FindingRecord,
   InfraSweepResult,
   QueryPlan,
@@ -173,6 +175,28 @@ export const api = {
     request<InfraSweepResult>("/infra/sweep", {
       method: "POST",
       body: { ...body, confirm: true },
+    }),
+
+  datasetAdapters: () =>
+    request<{ count: number; adapters: DatasetAdapterInfo[] }>(
+      "/datasets/adapters",
+    ),
+
+  /**
+   * Runs one dataset source. There is no sweep here on purpose: dataset
+   * sources are not uniformly non-scoped — Intelligence X is gated for email
+   * selectors — so they run one at a time.
+   *
+   * `confirm` is required only when the gate applies to this subject kind; the
+   * API rejects the call without it and says so.
+   */
+  runDataset: (
+    sourceId: string,
+    body: { caseId: string; subject: Subject; confirm?: true },
+  ) =>
+    request<DatasetRunResult>(`/datasets/${sourceId}`, {
+      method: "POST",
+      body,
     }),
 
   listFindings: (caseId: string) =>

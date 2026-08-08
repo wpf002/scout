@@ -1,7 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { InfraObservation, SourceResult } from "@scout/sources";
-import { mergeObservations, subjectSchema } from "@scout/sources";
+import {
+  mergeObservations,
+  requiresScopeFor,
+  subjectSchema,
+} from "@scout/sources";
 import { jsonSafe } from "@scout/db";
 import {
   getInfraAdapter,
@@ -100,7 +104,11 @@ export async function registerInfraRoutes(
 
     // Belt and braces. INFRA_ADAPTERS is asserted non-scoped by its own test;
     // this makes a regression fail the request rather than leak a lookup.
-    const scoped = adapters.filter((a) => a.source.requiresScope);
+    // Checked against the effective per-subject-kind gate, so a source that is
+    // free for domains but gated for email can never be swept with an email.
+    const scoped = adapters.filter((a) =>
+      requiresScopeFor(a.source, body.subject.kind),
+    );
     if (scoped.length > 0) {
       throw badRequest(
         `Refusing to sweep scoped sources: ${scoped.map((a) => a.source.id).join(", ")}. ` +

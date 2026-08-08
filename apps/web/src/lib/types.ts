@@ -155,6 +155,68 @@ export interface SourceResult {
   message?: string;
 }
 
+/* ── datasets tier ───────────────────────────────────────────────────── */
+
+export interface ExtractedEntity {
+  kind: SubjectKind;
+  value: string;
+  confidence: "high" | "medium";
+  fromSourceId: string;
+}
+
+export interface DatasetHit {
+  kind: "dataset-hit";
+  datasetId: string;
+  title: string;
+  entityType: string | null;
+  matchedTerm: string;
+  url: string | null;
+  date: string | null;
+  excerpt: string | null;
+  entities: ExtractedEntity[];
+}
+
+export interface SanctionMatch {
+  kind: "sanction-match";
+  entityId: string;
+  caption: string;
+  schema: string;
+  datasets: string[];
+  score: number | null;
+  countries: string[];
+  topics: string[];
+  /** Actually designated, as opposed to merely present in a reference list. */
+  sanctioned: boolean;
+  entities: ExtractedEntity[];
+}
+
+export type DatasetObservation = DatasetHit | SanctionMatch;
+
+export interface DatasetRunResult {
+  status: "ok" | "inert" | "blocked" | "error";
+  provenance: Provenance;
+  reason?: string;
+  message?: string;
+  /** Whether the gate applied to this subject kind for this source. */
+  scopeGated: boolean;
+  observations: DatasetObservation[];
+  totals: {
+    observations: number;
+    sanctioned: number;
+    suggestedSubjects: number;
+  };
+  suggestedSubjects: ExtractedEntity[];
+}
+
+export interface DatasetAdapterInfo {
+  sourceId: string;
+  name: string;
+  accepts: SubjectKind[];
+  keyEnv: string | null;
+  requiresScope: boolean;
+  scopedKinds: SubjectKind[];
+}
+
 /* ── infrastructure tier ─────────────────────────────────────────────── */
 
 export interface HostObservation {

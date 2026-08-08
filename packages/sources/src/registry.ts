@@ -1,4 +1,9 @@
-import type { Source, SerializableSource, Tier } from "./types.js";
+import type {
+  SerializableSource,
+  Source,
+  SubjectKind,
+  Tier,
+} from "./types.js";
 import { TIERS } from "./types.js";
 
 const q = encodeURIComponent;
@@ -73,7 +78,12 @@ export const SOURCES: readonly Source[] = Object.freeze([
     name: "Intelligence X",
     tier: "datasets",
     mode: "api",
+    // Not person-facing wholesale — searching a domain or a CIDR here is
+    // ordinary dataset research.
     requiresScope: false,
+    // But an email selector is a lookup about a person, and it goes through
+    // the same gate as the exposure tier.
+    scopedKinds: ["email"],
     accepts: ["domain", "email", "keyword", "ip", "hash"],
     description:
       "Archive of leaks, pastes, darknet and historical web data. Selector-based search.",
@@ -298,6 +308,29 @@ export function groupedByTier(): { tier: Tier; sources: readonly Source[] }[] {
 /** The person-facing sources. Every one of these must call `enforceScope()`. */
 export function scopedSources(): readonly Source[] {
   return SOURCES.filter((s) => s.requiresScope);
+}
+
+/**
+ * Whether asking `source` about a `kind` subject needs the scope gate.
+ *
+ * This — not `source.requiresScope` — is the question every caller actually
+ * has. A source can be person-facing wholesale (`requiresScope`) or only for
+ * certain inputs (`scopedKinds`), and the planner, the adapters and the audit
+ * log must all agree on which applies to the query in hand.
+ */
+export function requiresScopeFor(
+  source: Source,
+  kind: SubjectKind,
+): boolean {
+  if (source.requiresScope) return true;
+  return source.scopedKinds?.includes(kind) ?? false;
+}
+
+/** Sources gated for at least one subject kind, wholesale or per-kind. */
+export function gatedSources(): readonly Source[] {
+  return SOURCES.filter(
+    (s) => s.requiresScope || (s.scopedKinds?.length ?? 0) > 0,
+  );
 }
 
 /**

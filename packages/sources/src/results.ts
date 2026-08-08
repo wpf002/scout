@@ -79,6 +79,135 @@ export interface ExposureData {
   breaches: BreachRecord[];
 }
 
+/* ── datasets tier ───────────────────────────────────────────────────────
+ *
+ * Two shapes, because the tier does two different jobs: Intelligence X
+ * answers "where does this selector appear", OpenSanctions answers "is this
+ * entity designated". Flattening them into one shape would lose the thing
+ * that makes a sanctions hit different from a paste hit.
+ */
+
+/** A candidate entity pulled out of a dataset hit, for Subject suggestions. */
+export interface ExtractedEntity {
+  kind: SubjectKind;
+  value: string;
+  /** `high` for structured fields, `medium` for pattern matches in free text. */
+  confidence: "high" | "medium";
+  /** Which source the entity was pulled out of. */
+  fromSourceId: string;
+}
+
+export interface DatasetHit {
+  kind: "dataset-hit";
+  /** Which collection within the provider — the provenance that matters. */
+  datasetId: string;
+  title: string;
+  /** Provider's classification: leak, paste, darknet page, and so on. */
+  entityType: string | null;
+  /** The selector that matched. */
+  matchedTerm: string;
+  url: string | null;
+  date: string | null;
+  excerpt: string | null;
+  entities: ExtractedEntity[];
+}
+
+export interface SanctionMatch {
+  kind: "sanction-match";
+  entityId: string;
+  caption: string;
+  /** OpenSanctions schema: Person, Company, Organization, Vessel… */
+  schema: string;
+  /** Which lists carry this entity. This IS the finding, not metadata. */
+  datasets: string[];
+  /** Provider match confidence, 0–1. Null when the provider gives none. */
+  score: number | null;
+  countries: string[];
+  /** `sanction`, `role.pep`, `crime`, … */
+  topics: string[];
+  /**
+   * True when this entity is actually designated, as opposed to merely
+   * present in a reference dataset. Drives the unmissable UI treatment — a
+   * PEP listing and an active sanction are not the same claim about someone.
+   */
+  sanctioned: boolean;
+  entities: ExtractedEntity[];
+}
+
+export type DatasetObservation = DatasetHit | SanctionMatch;
+
+const EMAIL_PATTERN = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+// Requires a plausible TLD and no leading dot, so `v1.2` is not a domain.
+const DOMAIN_PATTERN =
+  /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b/gi;
+
+/**
+ * Pulls candidate entities out of free text.
+ *
+ * Deliberately a pattern matcher, not entity recognition: it finds the things
+ * that have unambiguous shapes (emails, hostnames) and leaves names and
+ * organizations to structured fields, where the provider has already made the
+ * judgement. Guessing that a capitalized phrase is a person's name is exactly
+ * the kind of fabrication locked invariant 6 rules out.
+ *
+ * Results are suggestions for the investigator to accept, never auto-linked.
+ */
+export function extractEntities(
+  text: string | null | undefined,
+  fromSourceId: string,
+): ExtractedEntity[] {
+  if (typeof text !== "string" || text.length === 0) return [];
+
+  const found = new Map<string, ExtractedEntity>();
+
+  for (const match of text.matchAll(EMAIL_PATTERN)) {
+    const value = match[0].toLowerCase();
+    found.set(`email:${value}`, {
+      kind: "email",
+      value,
+      confidence: "medium",
+      fromSourceId,
+    });
+  }
+
+  // Anything inside an email is already captured as an email; emitting its
+  // domain half again as a separate suggestion is noise.
+  const emailDomains = new Set(
+    [...found.values()].map((e) => e.value.slice(e.value.indexOf("@") + 1)),
+  );
+
+  for (const match of text.matchAll(DOMAIN_PATTERN)) {
+    const value = match[0].toLowerCase().replace(/\.$/, "");
+    if (emailDomains.has(value)) continue;
+    if (found.has(`email:${value}`)) continue;
+    found.set(`domain:${value}`, {
+      kind: "domain",
+      value,
+      confidence: "medium",
+      fromSourceId,
+    });
+  }
+
+  return [...found.values()];
+}
+
+/** Merges entity lists, keeping the highest confidence seen for each value. */
+export function dedupeEntities(
+  entities: readonly ExtractedEntity[],
+): ExtractedEntity[] {
+  const best = new Map<string, ExtractedEntity>();
+  for (const entity of entities) {
+    const key = `${entity.kind}:${entity.value}`;
+    const existing = best.get(key);
+    if (existing === undefined) {
+      best.set(key, entity);
+    } else if (existing.confidence === "medium" && entity.confidence === "high") {
+      best.set(key, entity);
+    }
+  }
+  return [...best.values()];
+}
+
 /* ── infrastructure tier ─────────────────────────────────────────────────
  *
  * Every infra source normalizes into one of these three shapes, so Shodan,

@@ -1,5 +1,5 @@
 import type { Source, Subject } from "@scout/sources";
-import { SOURCES } from "@scout/sources";
+import { SOURCES, requiresScopeFor } from "@scout/sources";
 import type { ScopeEntry } from "@scout/scope";
 import type {
   Case,
@@ -110,7 +110,10 @@ export async function recordQuery(
       caseId: input.caseId,
       sourceId: input.source.id,
       tier: toPrismaTier(input.source.tier),
-      requiresScope: input.source.requiresScope,
+      // The effective gate for THIS query, not the source's blanket flag: a
+      // source can be gated for an email selector and free for a domain, and
+      // the audit row has to say which applied.
+      requiresScope: requiresScopeFor(input.source, input.subject.kind),
       phase: input.phase,
       outcome: input.outcome,
       reason: input.reason ?? null,

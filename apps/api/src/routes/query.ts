@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   SOURCES,
   hasKey,
+  requiresScopeFor,
   serializeSource,
   subjectSchema,
   tierSchema,
@@ -12,6 +13,7 @@ import {
 import { checkScope, envScope, type ScopeEntry } from "@scout/scope";
 import { loadCaseWithScope, prisma, recordQuery } from "@scout/db";
 import { INFRA_ADAPTERS } from "../adapters/infra/index.js";
+import { DATASET_ADAPTERS } from "../adapters/datasets/index.js";
 import { notFound } from "../errors.js";
 import { config } from "../config.js";
 
@@ -29,6 +31,12 @@ export const EXECUTION_ROUTES: Record<string, string> = {
     INFRA_ADAPTERS.map((adapter) => [
       adapter.source.id,
       `/infra/${adapter.source.id}`,
+    ]),
+  ),
+  ...Object.fromEntries(
+    DATASET_ADAPTERS.map((adapter) => [
+      adapter.source.id,
+      `/datasets/${adapter.source.id}`,
     ]),
   ),
 };
@@ -235,8 +243,10 @@ export async function registerQueryRoutes(app: FastifyInstance): Promise<void> {
       return true;
     });
 
+    // Gated per subject kind, not per source: Intelligence X is dataset
+    // research for a domain and a person lookup for an email selector.
     const plan = candidates.map((source) =>
-      source.requiresScope
+      requiresScopeFor(source, subject.kind)
         ? planScoped(source, subject, scope, body.caseId)
         : planNonScoped(source, subject),
     );

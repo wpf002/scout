@@ -12,7 +12,12 @@
  * things) lives in packages/db/src/audit.test.ts.
  */
 import { describe, expect, it } from "vitest";
-import { SOURCES, scopedSources, type SubjectKind } from "@scout/sources";
+import {
+  SOURCES,
+  requiresScopeFor,
+  scopedSources,
+  type SubjectKind,
+} from "@scout/sources";
 import { INFRA_ADAPTERS } from "./adapters/infra/index.js";
 import { executeUnscopedSource } from "./adapters/base.js";
 import { EXECUTION_ROUTES } from "./routes/query.js";
@@ -35,13 +40,9 @@ const PERSON_IDENTIFYING: readonly SubjectKind[] = [
  * with no scope gate in front of it. The list is pinned so adding one is a
  * deliberate, reviewable act rather than a side effect of editing `accepts`.
  *
- * `intelligence-x` — searches leaks and pastes by selector, and one of those
- * selectors is an email address. That is a person-facing lookup in everything
- * but tier placement. The roadmap locks it into the datasets tier as
- * non-scoped, and its adapter is not built yet (Phase 4), so nothing currently
- * executes a person-facing IntelX lookup. Whether it stays unscoped is a
- * Phase 4 decision, and the likely resolution is per-subject-kind scoping:
- * free for domains, gated for email selectors.
+ * A source whose person-identifying kinds are covered by `scopedKinds` is not
+ * on this list — it is gated, just per kind rather than wholesale. That is how
+ * `intelligence-x` was resolved in Phase 4: free for domains, gated for email.
  *
  * `opensanctions` — sanctions, PEP and watchlist screening, which is a
  * compliance function performed against names you have no prior relationship
@@ -51,7 +52,7 @@ const PERSON_IDENTIFYING: readonly SubjectKind[] = [
  * separates it from the exposure and people tiers. This one is expected to
  * stay unscoped.
  */
-const REVIEWED_UNSCOPED_PERSON_SOURCES = ["intelligence-x", "opensanctions"];
+const REVIEWED_UNSCOPED_PERSON_SOURCES = ["opensanctions"];
 
 describe("invariant 1 — the scope gate is absolute", () => {
   it("pins the set of person-facing sources", () => {
@@ -85,18 +86,55 @@ describe("invariant 1 — the scope gate is absolute", () => {
     ).rejects.toThrow(/requires scope/i);
   });
 
-  it("keeps every non-scoped api source that accepts a person identifier on the reviewed list", () => {
-    const unreviewed = SOURCES.filter(
-      (source) =>
-        source.mode === "api" &&
-        !source.requiresScope &&
-        source.accepts.some((kind) => PERSON_IDENTIFYING.includes(kind)) &&
-        !REVIEWED_UNSCOPED_PERSON_SOURCES.includes(source.id),
-    ).map((s) => s.id);
+  it("leaves no ungated api source accepting a person identifier", () => {
+    const ungated = SOURCES.filter((source) => {
+      if (source.mode !== "api") return false;
+      if (REVIEWED_UNSCOPED_PERSON_SOURCES.includes(source.id)) return false;
+      // Any person-identifying kind this source accepts must be gated —
+      // wholesale via requiresScope, or per kind via scopedKinds.
+      return source.accepts.some(
+        (kind) =>
+          PERSON_IDENTIFYING.includes(kind) &&
+          !requiresScopeFor(source, kind),
+      );
+    }).map((s) => s.id);
 
-    // A new api source that accepts email/username/person and is not scoped
-    // fails here until someone decides, on purpose, that it should not be.
-    expect(unreviewed).toEqual([]);
+    // A new api source that accepts email/username/person without a gate
+    // fails here until someone decides, on purpose, that it should not have
+    // one — and writes down why.
+    expect(ungated).toEqual([]);
+  });
+
+  it("gates Intelligence X for email selectors but not for domains", () => {
+    const intelx = SOURCES.find((s) => s.id === "intelligence-x");
+    if (intelx === undefined) throw new Error("intelligence-x missing");
+
+    // The same source, two different answers. Searching a domain here is
+    // dataset research; searching an email is a lookup about a person.
+    expect(requiresScopeFor(intelx, "email")).toBe(true);
+    expect(requiresScopeFor(intelx, "domain")).toBe(false);
+    expect(requiresScopeFor(intelx, "ip")).toBe(false);
+  });
+
+  it("keeps scopedKinds a subset of what the source accepts", () => {
+    // Gating a kind a source never receives is dead configuration that reads
+    // like protection.
+    for (const source of SOURCES) {
+      for (const kind of source.scopedKinds ?? []) {
+        expect(
+          source.accepts,
+          `${source.id} gates ${kind} but does not accept it`,
+        ).toContain(kind);
+      }
+    }
+  });
+
+  it("treats a wholesale-scoped source as gated for every kind it accepts", () => {
+    for (const source of scopedSources()) {
+      for (const kind of source.accepts) {
+        expect(requiresScopeFor(source, kind)).toBe(true);
+      }
+    }
   });
 
   it("confirms crt.sh cannot be asked about a person at all", () => {
@@ -126,6 +164,20 @@ describe("invariant 2 — no blind fan-out", () => {
   it("only batch-executes infrastructure-tier sources", () => {
     for (const adapter of INFRA_ADAPTERS) {
       expect(adapter.source.tier).toBe("infra");
+    }
+  });
+
+  it("keeps every batch-executable source ungated for every kind it accepts", () => {
+    // Per-kind gating means "not requiresScope" is no longer enough to be
+    // safely sweepable — a source free for domains and gated for email must
+    // not be swept with an email.
+    for (const adapter of INFRA_ADAPTERS) {
+      for (const kind of adapter.source.accepts) {
+        expect(
+          requiresScopeFor(adapter.source, kind),
+          `${adapter.source.id} is gated for ${kind} and must not be sweepable with it`,
+        ).toBe(false);
+      }
     }
   });
 });
