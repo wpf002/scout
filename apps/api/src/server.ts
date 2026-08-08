@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import cors from "@fastify/cors";
 import { registerErrorHandler } from "./errors.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerQueryRoutes } from "./routes/query.js";
@@ -29,6 +30,15 @@ export async function buildServer(): Promise<FastifyInstance> {
     },
     // Subject terms must not end up in URLs; bodies stay modest.
     bodyLimit: 1_048_576,
+  });
+
+  const origins = config.SCOUT_WEB_ORIGINS.split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
+  await app.register(cors, {
+    origin: origins,
+    methods: ["GET", "POST", "PATCH", "DELETE"],
   });
 
   registerErrorHandler(app);

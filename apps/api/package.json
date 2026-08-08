@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fastify/cors": "^11.3.0",
     "@scout/db": "workspace:*",
     "@scout/scope": "workspace:*",
     "@scout/sources": "workspace:*",

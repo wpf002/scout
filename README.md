@@ -8,8 +8,8 @@ Scout is a **launcher, not an aggregator**. There is deliberately no box that
 takes a name and returns an assembled dossier. It plans, it gates, it records —
 and it makes you take each person-facing action on purpose.
 
-**Status:** Phase 0 (foundation) and Phase 1 (persistence + cases) shipped.
-See [ROADMAP.md](./ROADMAP.md) for the locked build order.
+**Status:** Phases 0 (foundation), 1 (persistence + cases) and 2 (web
+dashboard) shipped. See [ROADMAP.md](./ROADMAP.md) for the locked build order.
 
 ---
 
@@ -38,7 +38,8 @@ Requires Node ≥ 20.11, pnpm 10, and Postgres.
 
 ```bash
 ./scripts/bootstrap.sh          # deps, .env, database, migrations, seed, build
-pnpm --filter @scout/api dev    # http://localhost:3001
+pnpm --filter @scout/api dev    # API  → http://localhost:3001
+pnpm --filter @scout/web dev    # web  → http://localhost:3000
 ```
 
 `bootstrap.sh` starts a throwaway local Postgres via `scripts/dev-db.sh` if
@@ -86,6 +87,7 @@ writes an audit row**. That denial record is the point.
 
 ```
 apps/api            Fastify API — routes, adapters
+apps/web            Next.js dashboard — the investigator surface
 packages/sources    Tiered registry: 19 sources, 6 tiers, typed + inert-aware
 packages/scope      The gate. Pure, dependency-free, heavily tested
 packages/db         Prisma schema, client, audit helpers
@@ -166,6 +168,25 @@ requires a real case: an execution has to land in the audit log against an
 authorization reference, and env vars carry neither.
 
 ---
+
+## The dashboard
+
+`apps/web` is where "launcher, not aggregator" becomes visible. It enforces
+nothing itself — the API owns the gate and the audit log, so there is no second
+enforcement point to keep in sync. What the UI does is make the posture legible:
+
+- Tiers render in reach-for order, numbered, so you work top-down.
+- Scoped sources carry a **SCOPED** badge everywhere they appear.
+- A blocked source shows its deny reason inline and **has no Run button** —
+  the control is absent, not disabled.
+- Running a scoped source opens a confirmation naming the subject, the source,
+  the matched scope entry, and the authorization reference.
+- Deeplinks are ordinary anchors with `target="_blank"`. Your browser opens
+  them; Scout never fetches them.
+- There is no batch-run control, and there must never be one for a scoped
+  source.
+- Adding scope requires ticking an explicit authorization claim, which is
+  written to the audit log.
 
 ## Tests
 

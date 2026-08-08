@@ -12,6 +12,13 @@ const configSchema = z.object({
    * backfilled later.
    */
   SCOUT_OPERATOR: z.string().min(1).default("local"),
+  /**
+   * Origins allowed to call the API from a browser, comma-separated.
+   * Defaults to the local dashboard. Deliberately an allowlist and never `*`:
+   * this API executes scope-gated lookups, so any origin being able to drive
+   * it from a victim's browser is not an acceptable default.
+   */
+  SCOUT_WEB_ORIGINS: z.string().default("http://localhost:3000"),
 });
 
 export type Config = z.infer<typeof configSchema>;

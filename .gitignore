@@ -3,6 +3,7 @@ dist/
 .next/
 .turbo/
 coverage/
+*.tsbuildinfo
 
 # secrets — never commit a populated env file
 .env

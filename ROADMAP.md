@@ -83,13 +83,13 @@ consequence: cases with audit rows currently cannot be hard-deleted.
 
 ---
 
-## Phase 2 — Web dashboard ← next
+## Phase 2 — Web dashboard ✅ SHIPPED
 
 The investigator-facing surface. Next.js app rendering the registry by tier and
 driving the query planner. This is where the "launcher, not aggregator" design
-becomes visible and enforced in the UX.
+became visible in the UX.
 
-**Build:**
+**Built:**
 - `apps/web` — Next.js, reads `/sources`, renders tiers in reach-for order
   (datasets → infra → exposure → people → onion → utils).
 - Case workspace: create/select a case, view its scope + auth ref, subject list.
@@ -101,16 +101,27 @@ becomes visible and enforced in the UX.
 - Scope editor: add/remove scope entries on a case (gated behind an explicit
   "I am authorized" confirmation that writes to the audit log).
 
-**Entry gate:** Phase 1 exit. ✅
-**Exit gate:** full loop in the browser — create case, set scope, plan a query,
-open deeplinks, save a finding, see it on the board with provenance. Scoped
-sources visibly blocked when subject is out of case scope.
+Also built, ahead of its Phase 5 slot because it is the only safe way to expose
+a Run button at all: the scoped-execution confirmation, naming the subject, the
+source, the matched scope entry and the authorization reference.
 
-**Defer:** no multi-user / collaboration yet. Single operator until Phase 8 auth.
+The UI enforces nothing on its own — the API owns the gate and the audit log,
+so there is no second enforcement point to drift. What the dashboard does is
+make the posture legible: blocked sources have no Run control rather than a
+disabled one, and there is no batch-run affordance anywhere.
+
+**Entry gate:** Phase 1 exit. ✅
+**Exit gate:** ✅ full loop verified in a real browser (Playwright, 23 checks):
+create case, set scope, plan a query, deeplinks resolve to real anchors, save a
+finding, see it on the board with provenance, scoped sources visibly blocked
+out of scope with no run control, denial recorded in the audit trail.
+
+**Deferred as planned:** no multi-user / collaboration. Single operator until
+Phase 8 auth.
 
 ---
 
-## Phase 3 — Infrastructure adapters (highest-value tier)
+## Phase 3 — Infrastructure adapters (highest-value tier) ← next
 
 Wire the infra tier — the part of OSINT that does the most work and needs no
 scope gate (it's infrastructure, not PII).
@@ -263,8 +274,8 @@ secrets clean, rollback documented.
 ```
 0  Foundation                ✅ shipped
 1  Persistence + cases       ✅ shipped
-2  Web dashboard             ← next
-3  Infra adapters            (highest value; do before scoped tier)
+2  Web dashboard             ✅ shipped
+3  Infra adapters            ← next (highest value; do before scoped tier)
 4  Dataset adapters
 5  Exposure + people         (scoped; hard gate + audit)
 6  Correlation + graph       (defer until real multi-source case volume)
