@@ -113,6 +113,44 @@ describe("mergeObservations", () => {
     expect(merged[0]?.sourceIds.sort()).toEqual(["censys", "shodan"]);
   });
 
+  it("canonicalizes a single-source observation exactly as a merged one", () => {
+    // Regression: canonicalization used to happen only when two sources
+    // collided, so a row seen by one source kept whatever shape its adapter
+    // produced. The board was uniform only by luck.
+    const messy = {
+      kind: "host" as const,
+      ip: "203.0.113.5",
+      hostnames: ["B.example.com", "a.example.com", "a.example.com"],
+      ports: [443, 22, 443],
+      org: null,
+      asn: null,
+      country: null,
+      lastSeen: null,
+    };
+
+    const alone = mergeObservations([{ sourceId: "shodan", observation: messy }]);
+    const collided = mergeObservations([
+      { sourceId: "shodan", observation: messy },
+      { sourceId: "censys", observation: messy },
+    ]);
+
+    expect(alone[0]?.observation).toEqual(collided[0]?.observation);
+
+    const host = alone[0]?.observation;
+    if (host?.kind !== "host") throw new Error("expected a host observation");
+    expect(host.ports).toEqual([22, 443]);
+    expect(host.hostnames).toEqual(["B.example.com", "a.example.com"]);
+  });
+
+  it("lowercases a single-source subdomain without needing a collision", () => {
+    const merged = mergeObservations([
+      { sourceId: "crtsh", observation: sub("WWW.Example.COM") },
+    ]);
+    const only = merged[0]?.observation;
+    if (only?.kind !== "subdomain") throw new Error("expected a subdomain");
+    expect(only.hostname).toBe("www.example.com");
+  });
+
   it("keeps ports as integers and sorted", () => {
     const merged = mergeObservations([
       {

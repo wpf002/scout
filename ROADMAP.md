@@ -18,6 +18,11 @@ features, not just infra.
    input outside the configured authorization scope. Scope is set at config /
    case creation time — never widenable by a request parameter. Empty scope
    means scoped tiers are OFF, not open.
+   *Enforced in Phase 3:* any non-scoped `api` source that accepts a
+   person-identifying subject kind (`email`, `username`, `person`) must appear
+   on a pinned reviewed list, so a new one cannot slip in ungated. The list
+   currently holds `intelligence-x` and `opensanctions` — see
+   `apps/api/src/invariants.test.ts` for the reasoning on each.
 2. **No blind fan-out.** `/query` plans; it does not auto-execute a subject
    across every source. Non-scoped infra/dataset sources may be batch-executed
    on explicit action. Person-facing (scoped) sources are always one confirmed
@@ -29,6 +34,12 @@ features, not just infra.
 4. **Deeplink sources never transmit subject data through Scout.** A deeplink is
    a URL the investigator opens; the subject term never touches a Scout-owned
    network call for those sources.
+   *Clarified in Phase 3:* `mode` is the authority on where a request
+   originates. A source whose only integration is a link is `deeplink` and
+   carries this guarantee; a source Scout can fetch is `api` and does not,
+   whatever links it also offers. Changing a source from `deeplink` to `api` is
+   therefore the visible act of giving up this guarantee for it, and a test
+   asserts no `deeplink` source has an execution route.
 5. **Provenance on every finding.** Each stored result carries its source, the
    query that produced it, the case, and a timestamp. No orphan findings.
 6. **Sources are inert without keys, never guessed.** A source with no key
@@ -176,6 +187,12 @@ Deepen the datasets tier beyond deeplinks where a real API exists.
   API worth the coupling; the deeplink is the right integration).
 - Entity extraction stub: pull candidate entities (names, orgs, domains) out of
   dataset hits into `Subject` suggestions for the case. No auto-linking yet.
+
+**Decision this phase must make:** Intelligence X accepts an email address as a
+selector, which is a person-facing lookup sitting in a non-scoped tier. It is
+on the reviewed-exception list today only because its adapter does not exist.
+Building it forces the choice: gate the whole source, or introduce
+per-subject-kind scoping so it runs free for domains and gated for email.
 
 **Entry gate:** Phase 3 exit.
 **Exit gate:** a person/company subject returns normalized dataset hits from

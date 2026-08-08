@@ -9,43 +9,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { prisma } from "@scout/db";
-import { INFRA_ADAPTERS } from "./adapters/infra/index.js";
 import { clearResponseCache } from "./adapters/base.js";
 import { infraRateLimiter } from "./lib/ratelimit.js";
-import { EXECUTION_ROUTES } from "./routes/query.js";
-import { SOURCES } from "@scout/sources";
 
-// ── registry-level guarantees (no database needed) ───────────────────────
-describe("infrastructure adapters are structurally non-scoped", () => {
-  it("has no requiresScope source in the adapter list", () => {
-    // This is what makes the batch sweep safe: it can only draw from here.
-    for (const adapter of INFRA_ADAPTERS) {
-      expect(adapter.source.requiresScope).toBe(false);
-    }
-  });
-
-  it("only registers infra-tier sources", () => {
-    for (const adapter of INFRA_ADAPTERS) {
-      expect(adapter.source.tier).toBe("infra");
-    }
-  });
-});
-
-describe("locked invariant 4, enforced mechanically", () => {
-  it("gives no deeplink-mode source an execution route", () => {
-    // A `deeplink` source must have no way for Scout to fetch it. If one ever
-    // gains an adapter, its mode has to change to `api` first — which is a
-    // visible, reviewable edit rather than a silent erosion.
-    for (const source of SOURCES) {
-      if (source.mode === "deeplink") {
-        expect(
-          EXECUTION_ROUTES[source.id],
-          `${source.id} is a deeplink source but has an execution route`,
-        ).toBeUndefined();
-      }
-    }
-  });
-});
+// The structural guarantees around this tier — no scoped source in the
+// adapter set, no deeplink source with an execution route — live in
+// invariants.test.ts, alongside the other locked invariants.
 
 // ── route-level, against a real database ─────────────────────────────────
 const DB = process.env["DATABASE_URL"];

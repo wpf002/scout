@@ -242,9 +242,18 @@ pnpm test        # 113 tests
   a red-team block: scope-shaped fields smuggled into request bodies, lookalike
   domains, nonexistent cases, empty scope, and sweeping a scoped source.
 
-Two invariants are enforced mechanically rather than by review: no
-`mode: "deeplink"` source may have an execution route, and no infra adapter may
-be `requiresScope`. Both fail the suite rather than a code review.
+`apps/api/src/invariants.test.ts` encodes the locked invariants as structural
+tests — no database, no network, no keys. These fail a test run rather than a
+code review, because "someone will notice in review" is how a safety property
+erodes:
+
+- No `mode: "deeplink"` source may have an execution route (invariant 4).
+- No infra adapter may be `requiresScope` — what makes `/infra/sweep` safe.
+- `executeUnscopedSource()` throws if handed a scoped source.
+- Any non-scoped `api` source accepting `email`/`username`/`person` must be on
+  a pinned reviewed list, so a new one cannot slip in ungated.
+- The scoped set, the keyless-api set, and the dual link+fetch set are all
+  pinned.
 
 The browser loops are checked with Playwright (`23` checks for Phase 2, `14`
 for Phase 3) against a real Chromium.
