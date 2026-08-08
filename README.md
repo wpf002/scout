@@ -8,8 +8,9 @@ Scout is a **launcher, not an aggregator**. There is deliberately no box that
 takes a name and returns an assembled dossier. It plans, it gates, it records —
 and it makes you take each person-facing action on purpose.
 
-**Status:** Phases 0 (foundation), 1 (persistence + cases) and 2 (web
-dashboard) shipped. See [ROADMAP.md](./ROADMAP.md) for the locked build order.
+**Status:** Phases 0–3 shipped — foundation, persistence + cases, web
+dashboard, and the infrastructure tier. See [ROADMAP.md](./ROADMAP.md) for the
+locked build order.
 
 ---
 
@@ -156,6 +157,9 @@ rather than erase.
 | `POST`/`GET` | `/cases/:id/findings` | Tier derived from the registry, not the request. |
 | `GET` | `/cases/:id/audit` | Query log + scope changes. |
 | `POST` | `/exposure/hibp` | Scoped. Requires `caseId` and `confirm: true`. |
+| `POST` | `/infra/:sourceId` | One infrastructure source. Non-scoped. |
+| `POST` | `/infra/sweep` | Several at once, merged. Non-scoped only, `confirm: true`. |
+| `GET` | `/infra/adapters` | Which infra adapters are built. |
 
 Subject terms travel in POST bodies, never URL params, and request bodies are
 stripped from logs.
@@ -188,20 +192,62 @@ enforcement point to keep in sync. What the UI does is make the posture legible:
 - Adding scope requires ticking an explicit authorization claim, which is
   written to the audit log.
 
+## The infrastructure tier
+
+The highest-value tier and the one that needs no scope gate: hosts,
+certificates and DNS are infrastructure, not people.
+
+Four adapters — **crt.sh** (free, keyless), **Shodan**, **SecurityTrails**,
+**Censys** — normalize into three shapes (`SubdomainObservation`,
+`HostObservation`, `CertObservation`) so they feed one board rather than four
+source-shaped silos. Adding a source means writing a normalizer, not a view.
+
+```bash
+POST /infra/crtsh      # one source
+POST /infra/sweep      # several at once, merged and deduped
+GET  /infra/adapters   # what is actually built
+```
+
+**Dedupe unions attribution, never picks a winner.** If crt.sh, Shodan and
+SecurityTrails all report `www.example.com`, the merged row credits all three.
+Dropping two would lose provenance, and provenance is not optional.
+
+**The sweep is the batch path invariant 2 permits** — and it is the only one.
+It draws exclusively from the infra adapter registry, every member of which is
+non-scoped; the route re-checks that before running anything, and
+`executeUnscopedSource()` throws outright if handed a `requiresScope` source.
+A person-facing source cannot reach this path.
+
+Rate limiting is a per-source token bucket and caching is a 300s in-memory TTL.
+Both are deliberately in-process: Redis and a job queue are a Phase 3 defer,
+earned when a case regularly hits real rate limits, not before.
+
+ViewDNS stays a deeplink — its API needs a paid key, and the link is the honest
+integration until someone has one.
+
 ## Tests
 
 ```bash
-pnpm test        # 65 tests
+pnpm test        # 113 tests
 ```
 
 - `packages/scope` (22) — the gate, including lookalike domains, `@`-smuggling,
   IDN normalization, and fail-closed on unparseable input.
-- `packages/sources` (13) — registry invariants; pins the scoped set.
+- `packages/sources` (23) — registry invariants (pins the scoped set) and
+  observation dedupe/attribution.
 - `packages/db` (8) — audit immutability against a live Postgres, key redaction,
   BigInt JSON safety.
-- `apps/api` (22) — the Phase 1 exit gate end to end, plus a red-team block:
-  scope-shaped fields smuggled into request bodies, lookalike domains,
-  nonexistent cases, empty scope.
+- `apps/api` (60) — the Phase 1 and Phase 3 exit gates end to end, upstream
+  normalizers against fixture payloads, cache and rate-limiter behaviour, plus
+  a red-team block: scope-shaped fields smuggled into request bodies, lookalike
+  domains, nonexistent cases, empty scope, and sweeping a scoped source.
+
+Two invariants are enforced mechanically rather than by review: no
+`mode: "deeplink"` source may have an execution route, and no infra adapter may
+be `requiresScope`. Both fail the suite rather than a code review.
+
+The browser loops are checked with Playwright (`23` checks for Phase 2, `14`
+for Phase 3) against a real Chromium.
 
 The DB-backed suites skip without `DATABASE_URL`. They don't clean up — audit
 rows can't be deleted — so point them at a disposable database.

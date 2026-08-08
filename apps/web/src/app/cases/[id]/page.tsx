@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import { ScopePanel } from "@/components/ScopePanel";
 import { Planner } from "@/components/Planner";
+import { InfraBoard } from "@/components/InfraBoard";
 import { FindingsBoard } from "@/components/FindingsBoard";
 import { AuditPanel } from "@/components/AuditPanel";
 import { SUBJECT_KINDS } from "@/lib/types";
@@ -190,6 +191,8 @@ export default function CaseWorkspace() {
       </div>
 
       <Planner record={record} onFindingSaved={() => void refreshFindings()} />
+
+      <InfraBoard record={record} onFindingSaved={() => void refreshFindings()} />
 
       <FindingsBoard findings={findings} />
 

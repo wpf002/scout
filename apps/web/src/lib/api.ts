@@ -2,6 +2,7 @@ import type {
   AuditView,
   CaseRecord,
   FindingRecord,
+  InfraSweepResult,
   QueryPlan,
   ScopeEntry,
   SourceResult,
@@ -157,6 +158,19 @@ export const api = {
    */
   execute: (path: string, body: { caseId: string; subject: Subject }) =>
     request<SourceResult>(path, {
+      method: "POST",
+      body: { ...body, confirm: true },
+    }),
+
+  /**
+   * Runs several infrastructure sources at once and merges their output.
+   *
+   * Batch execution is permitted here precisely because these sources are not
+   * person-facing — they look at hosts and certificates. The API draws only
+   * from its infra adapter registry, so a scoped source cannot be swept.
+   */
+  infraSweep: (body: { caseId: string; subject: Subject }) =>
+    request<InfraSweepResult>("/infra/sweep", {
       method: "POST",
       body: { ...body, confirm: true },
     }),

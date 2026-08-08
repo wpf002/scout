@@ -11,16 +11,26 @@ import {
 } from "@scout/sources";
 import { checkScope, envScope, type ScopeEntry } from "@scout/scope";
 import { loadCaseWithScope, prisma, recordQuery } from "@scout/db";
+import { INFRA_ADAPTERS } from "../adapters/infra/index.js";
 import { notFound } from "../errors.js";
 import { config } from "../config.js";
 
 /**
- * Where an executable source is actually run. Only sources with a built
- * adapter appear here; everything else plans as `ready` but has no execution
- * endpoint yet, which the UI shows as "adapter not built".
+ * Where an executable source is actually run. A source with no entry here
+ * plans as `no-adapter`, which the UI shows plainly rather than pretending
+ * the source is ready.
+ *
+ * Infra entries are derived from the adapter registry so the two cannot drift:
+ * building an adapter is what makes a source runnable, not editing a map.
  */
-const EXECUTION_ROUTES: Record<string, string> = {
+export const EXECUTION_ROUTES: Record<string, string> = {
   hibp: "/exposure/hibp",
+  ...Object.fromEntries(
+    INFRA_ADAPTERS.map((adapter) => [
+      adapter.source.id,
+      `/infra/${adapter.source.id}`,
+    ]),
+  ),
 };
 
 const planRequestSchema = z.object({
@@ -66,20 +76,27 @@ function planNonScoped(source: Source, subject: Subject): PlanEntry {
     requiresScope: false as const,
   };
 
+  // A source may offer a link even when Scout can also fetch it (crt.sh does),
+  // so the link is computed independently of the mode. Building it makes no
+  // network request — it only formats a string.
+  const link = source.deeplink?.(subject.value);
+  const withLink = link === undefined ? {} : { url: link };
+
   if (source.mode === "deeplink") {
     return {
       ...base,
       status: "deeplink",
-      // Built here and handed to the investigator. Scout does not fetch it —
-      // the subject term never touches a Scout-owned network call for these
-      // sources (locked invariant 4).
-      url: source.deeplink?.(subject.value) ?? source.homepage,
+      // Handed to the investigator to open. Scout does not fetch it — the
+      // subject term never touches a Scout-owned call for a deeplink source
+      // (locked invariant 4).
+      url: link ?? source.homepage,
     };
   }
 
   if (!hasKey(source)) {
     return {
       ...base,
+      ...withLink,
       status: "inert",
       reason: "missing-key",
       message: `No API key configured (${source.keyEnv}).`,
@@ -90,6 +107,7 @@ function planNonScoped(source: Source, subject: Subject): PlanEntry {
   if (path === undefined) {
     return {
       ...base,
+      ...withLink,
       status: "no-adapter",
       reason: "adapter-not-built",
       message: `${source.name} has a key but no adapter yet.`,
@@ -98,6 +116,7 @@ function planNonScoped(source: Source, subject: Subject): PlanEntry {
 
   return {
     ...base,
+    ...withLink,
     status: "ready",
     execution: { method: "POST", path, requiresConfirmation: true },
   };

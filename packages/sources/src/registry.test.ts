@@ -66,14 +66,21 @@ describe("scoped sources are exactly the person-facing four", () => {
 });
 
 describe("mode invariants", () => {
-  it("gives every deeplink source a builder and no api source one", () => {
+  it("gives every deeplink source a builder", () => {
     for (const source of SOURCES) {
       if (source.mode === "deeplink") {
         expect(typeof source.deeplink).toBe("function");
-      } else {
-        expect(source.deeplink).toBeUndefined();
       }
     }
+  });
+
+  it("keeps the set of api sources that also offer a deeplink pinned", () => {
+    // An api source may keep a convenience link, but `mode` is what says
+    // where the request originates. Adding to this set should be deliberate.
+    const dual = SOURCES.filter(
+      (s) => s.mode === "api" && typeof s.deeplink === "function",
+    ).map((s) => s.id);
+    expect(dual).toEqual(["crtsh"]);
   });
 
   it("URL-encodes the term so it cannot break out of the deeplink", () => {
@@ -82,9 +89,18 @@ describe("mode invariants", () => {
     expect(built).toBe("https://crt.sh/?q=evil.com%26x%3D1%20y");
   });
 
-  it("requires a key env for every api source", () => {
+  it("requires a key env for every api source except the pinned keyless ones", () => {
+    const keyless = SOURCES.filter(
+      (s) => s.mode === "api" && s.keyEnv === null,
+    ).map((s) => s.id);
+    // crt.sh is genuinely free and unauthenticated. Anything else claiming to
+    // be a keyless API source needs justifying.
+    expect(keyless).toEqual(["crtsh"]);
+
     for (const source of SOURCES) {
-      if (source.mode === "api") expect(source.keyEnv).toBeTruthy();
+      if (source.mode === "api" && !keyless.includes(source.id)) {
+        expect(source.keyEnv).toBeTruthy();
+      }
     }
   });
 });

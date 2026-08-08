@@ -121,30 +121,50 @@ Phase 8 auth.
 
 ---
 
-## Phase 3 — Infrastructure adapters (highest-value tier) ← next
+## Phase 3 — Infrastructure adapters (highest-value tier) ✅ SHIPPED
 
-Wire the infra tier — the part of OSINT that does the most work and needs no
-scope gate (it's infrastructure, not PII).
+The infra tier — the part of OSINT that does the most work and needs no scope
+gate (it's infrastructure, not PII).
 
-**Build (each as an adapter under `apps/api/src/adapters/`):**
+**Built (adapters under `apps/api/src/adapters/infra/`):**
 - Shodan, Censys, SecurityTrails — `api`, key-gated.
-- crt.sh, ViewDNS — already deeplink; add optional API/scrape normalization so
-  their output lands in the common result shape.
-- Common `HostResult` / `CertResult` / `SubdomainResult` normalized types in
-  `@scout/sources` so every infra source feeds one board.
-- Per-source rate limiting + short-TTL response cache (in-memory now; Redis
-  deferred). Adapters degrade to `inert`, never throw the request.
+- crt.sh — moved from `deeplink` to `api` (free and keyless) with its
+  convenience link retained. See the note below on why the mode had to change.
+- Normalized `SubdomainObservation` / `HostObservation` / `CertObservation`
+  types in `@scout/sources`, plus `mergeObservations()` — dedupe that unions
+  attribution rather than picking a winner, so a hostname seen by three sources
+  credits all three.
+- Per-source token-bucket rate limiting + a 300s in-memory TTL cache. Adapters
+  degrade to `inert` or a reported error, never throwing the request.
+- `POST /infra/sweep` — the batch path invariant 2 permits for non-scoped
+  sources, and the only one. It draws solely from the infra adapter registry,
+  and `executeUnscopedSource()` throws outright if handed a `requiresScope`
+  source, so the sweep cannot become a person-facing fan-out.
+- Infrastructure board in the dashboard: one merged view with per-source
+  attribution, kind filters, and save-to-findings.
 
-**Entry gate:** Phase 2 exit.
-**Exit gate:** a domain subject produces normalized subdomain/host/cert findings
-from at least Shodan + crt.sh + SecurityTrails, deduped, saved with provenance.
+**A note on crt.sh and locked invariant 4.** Giving crt.sh a Scout-side fetch is
+incompatible with calling it a deeplink source, so its `mode` changed to `api`
+rather than quietly eroding the invariant. Invariant 4 now holds exactly as
+written for every `mode: "deeplink"` source, and a test asserts no deeplink
+source has an execution route. crt.sh only accepts `domain` subjects, so no
+personal identifier is transmitted.
 
-**Defer:** Redis-backed cache + a job queue until a single case regularly issues
-enough infra calls to hit rate limits. In-memory is fine below that.
+**Entry gate:** Phase 2 exit. ✅
+**Exit gate:** ✅ a domain subject produces normalized subdomain/host/cert
+findings from crt.sh + Shodan + SecurityTrails (+ Censys), deduped with unioned
+attribution and saved with provenance. Verified in a browser: 15 raw
+observations merged to 10 across four sources, with a keyless source correctly
+reporting `inert` rather than guessing.
+
+**Deferred as planned:** Redis-backed cache and a job queue. In-memory is
+correct until a single case regularly issues enough infra calls to hit real
+rate limits. ViewDNS also stays a deeplink — its API needs a paid key, and the
+link is the honest integration until someone has one.
 
 ---
 
-## Phase 4 — Dataset adapters
+## Phase 4 — Dataset adapters ← next
 
 Deepen the datasets tier beyond deeplinks where a real API exists.
 
@@ -275,8 +295,8 @@ secrets clean, rollback documented.
 0  Foundation                ✅ shipped
 1  Persistence + cases       ✅ shipped
 2  Web dashboard             ✅ shipped
-3  Infra adapters            ← next (highest value; do before scoped tier)
-4  Dataset adapters
+3  Infra adapters            ✅ shipped
+4  Dataset adapters          ← next
 5  Exposure + people         (scoped; hard gate + audit)
 6  Correlation + graph       (defer until real multi-source case volume)
 7  Reporting + export

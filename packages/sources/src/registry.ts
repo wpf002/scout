@@ -131,11 +131,15 @@ export const SOURCES: readonly Source[] = Object.freeze([
     id: "crtsh",
     name: "crt.sh",
     tier: "infra",
-    mode: "deeplink",
+    // `api` because Scout can fetch and normalize its JSON output. It keeps a
+    // deeplink as a convenience, but the mode is what tells the truth about
+    // where the request originates. Subject kind is restricted to `domain`,
+    // so no personal identifier is ever sent.
+    mode: "api",
     requiresScope: false,
     accepts: ["domain"],
     description:
-      "Certificate Transparency log search — a free subdomain oracle.",
+      "Certificate Transparency log search — a free, keyless subdomain oracle.",
     homepage: "https://crt.sh",
     keyEnv: null,
     deeplink: (term) => `https://crt.sh/?q=${q(term)}`,

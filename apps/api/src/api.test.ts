@@ -124,14 +124,30 @@ run("Scout API — Phase 1", () => {
         caseId,
         subject: { kind: "domain", value: "example.com" },
       });
+      const viewdns = response
+        .json()
+        .plan.find((e: { sourceId: string }) => e.sourceId === "viewdns");
+      expect(viewdns.status).toBe("deeplink");
+      expect(viewdns.url).toBe("https://viewdns.info/reversewhois/?q=example.com");
+      // A deeplink entry never carries an execution descriptor — there is
+      // nothing for Scout to run, which is the whole guarantee.
+      expect(viewdns.execution).toBeUndefined();
+    });
+
+    it("offers both a link and a run action for a source that has each", async () => {
+      // crt.sh is an api source (Scout can fetch and normalize its JSON) that
+      // also keeps a convenience link. The mode is what says where a request
+      // originates; the link is just a shortcut for the investigator.
+      const response = await post("/query", {
+        caseId,
+        subject: { kind: "domain", value: "example.com" },
+      });
       const crtsh = response
         .json()
         .plan.find((e: { sourceId: string }) => e.sourceId === "crtsh");
-      expect(crtsh.status).toBe("deeplink");
+      expect(crtsh.status).toBe("ready");
       expect(crtsh.url).toBe("https://crt.sh/?q=example.com");
-      // A deeplink entry never carries an execution descriptor — there is
-      // nothing for Scout to run.
-      expect(crtsh.execution).toBeUndefined();
+      expect(crtsh.execution.path).toBe("/infra/crtsh");
     });
 
     it("writes a PLAN audit row for every scoped source it considered", async () => {

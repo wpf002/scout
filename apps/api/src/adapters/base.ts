@@ -5,6 +5,9 @@ import { ScopeError, enforceScope } from "@scout/scope";
 import { loadCaseWithScope, recordQuery } from "@scout/db";
 import { notFound } from "../errors.js";
 
+import { TtlCache, responseCacheKey } from "../lib/cache.js";
+import { infraRateLimiter } from "../lib/ratelimit.js";
+
 export interface ScopedRunContext {
   caseId: string;
   subject: Subject;
@@ -129,6 +132,153 @@ export async function executeScopedSource<T>(
       provenance: makeProvenance(source, ctx.subject.value, ctx.subject.kind, {
         queryLogId: log.id,
       }),
+    };
+  }
+}
+
+/** Shared short-TTL cache for non-scoped upstream responses. */
+const responseCache = new TtlCache<unknown>({ ttlMs: 300_000, maxEntries: 500 });
+
+/** Exposed so tests can start from a clean cache. */
+export function clearResponseCache(): void {
+  responseCache.clear();
+}
+
+/**
+ * The runner for sources that are NOT scope-gated — infrastructure and
+ * datasets. These look at hosts, certificates and public records rather than
+ * at a person, which is why they carry no scope gate.
+ *
+ * That makes this function a potential bypass, so it refuses outright to run
+ * anything marked `requiresScope`. Routing a scoped source through here must
+ * fail loudly at the first call rather than quietly skip `enforceScope()`.
+ *
+ * Executions are still audit-logged. Locked invariant 3 only requires it for
+ * scoped queries, but recording every outbound call costs one row and gives
+ * Phase 7 a complete investigation timeline. Plan-phase rows stay scoped-only,
+ * because a plan that merely lists a deeplink is not an event worth keeping.
+ */
+export async function executeUnscopedSource<T>(
+  source: Source,
+  ctx: ScopedRunContext,
+  run: (subject: Subject) => Promise<T>,
+): Promise<SourceResult<T>> {
+  if (source.requiresScope) {
+    throw new Error(
+      `${source.id} requires scope and must run through executeScopedSource(). ` +
+        "Refusing to execute it on the unscoped path.",
+    );
+  }
+
+  const loaded = await loadCaseWithScope(ctx.caseId);
+  if (loaded === null) {
+    throw notFound(`Case ${ctx.caseId} does not exist.`);
+  }
+  const { record } = loaded;
+
+  const provenanceFor = (queryLogId?: string) =>
+    makeProvenance(source, ctx.subject.value, ctx.subject.kind, {
+      ...(queryLogId === undefined ? {} : { queryLogId }),
+    });
+
+  if (!hasKey(source)) {
+    const log = await recordQuery({
+      caseId: record.id,
+      source,
+      subject: ctx.subject,
+      phase: "EXECUTE",
+      outcome: "INERT",
+      reason: "missing-key",
+      authorizationRef: record.authorizationRef,
+      operator: ctx.operator,
+    });
+    return {
+      status: "inert",
+      reason: "missing-key",
+      message: `${source.name} has no API key configured (${source.keyEnv}). No request was made.`,
+      provenance: provenanceFor(log.id),
+    };
+  }
+
+  const cacheKey = responseCacheKey(
+    source.id,
+    ctx.subject.kind,
+    ctx.subject.value,
+  );
+  const cached = responseCache.get(cacheKey);
+  if (cached !== undefined) {
+    const log = await recordQuery({
+      caseId: record.id,
+      source,
+      subject: ctx.subject,
+      phase: "EXECUTE",
+      outcome: "ALLOWED",
+      reason: "cache-hit",
+      authorizationRef: record.authorizationRef,
+      operator: ctx.operator,
+      durationMs: 0,
+    });
+    return {
+      status: "ok",
+      data: cached as T,
+      provenance: provenanceFor(log.id),
+    };
+  }
+
+  if (!(await infraRateLimiter.acquire(source.id))) {
+    const log = await recordQuery({
+      caseId: record.id,
+      source,
+      subject: ctx.subject,
+      phase: "EXECUTE",
+      outcome: "ERROR",
+      reason: "rate-limited",
+      authorizationRef: record.authorizationRef,
+      operator: ctx.operator,
+    });
+    return {
+      status: "error",
+      reason: "rate-limited",
+      message: `${source.name} is rate limited right now. Nothing was sent; try again shortly.`,
+      provenance: provenanceFor(log.id),
+    };
+  }
+
+  const startedAt = Date.now();
+  try {
+    const data = await run(ctx.subject);
+    responseCache.set(cacheKey, data);
+    const log = await recordQuery({
+      caseId: record.id,
+      source,
+      subject: ctx.subject,
+      phase: "EXECUTE",
+      outcome: "ALLOWED",
+      authorizationRef: record.authorizationRef,
+      operator: ctx.operator,
+      durationMs: Date.now() - startedAt,
+    });
+    return { status: "ok", data, provenance: provenanceFor(log.id) };
+  } catch (error) {
+    // Adapters degrade to a reported error; they never take the request down.
+    const message = error instanceof Error ? error.message : String(error);
+    const log = await recordQuery({
+      caseId: record.id,
+      source,
+      subject: ctx.subject,
+      phase: "EXECUTE",
+      outcome: "ERROR",
+      reason: "upstream-error",
+      authorizationRef: record.authorizationRef,
+      operator: ctx.operator,
+      errorMessage: message,
+      durationMs: Date.now() - startedAt,
+    });
+    return {
+      status: "error",
+      reason: "upstream-error",
+      message: `${source.name} could not be reached.`,
+      provenance: provenanceFor(log.id),
     };
   }
 }

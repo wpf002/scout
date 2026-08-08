@@ -155,6 +155,69 @@ export interface SourceResult {
   message?: string;
 }
 
+/* ── infrastructure tier ─────────────────────────────────────────────── */
+
+export interface HostObservation {
+  kind: "host";
+  ip: string;
+  hostnames: string[];
+  ports: number[];
+  org: string | null;
+  asn: string | null;
+  country: string | null;
+  lastSeen: string | null;
+}
+
+export interface SubdomainObservation {
+  kind: "subdomain";
+  hostname: string;
+  firstSeen: string | null;
+  lastSeen: string | null;
+}
+
+export interface CertObservation {
+  kind: "cert";
+  serial: string | null;
+  commonName: string;
+  names: string[];
+  issuer: string | null;
+  notBefore: string | null;
+  notAfter: string | null;
+}
+
+export type InfraObservation =
+  | HostObservation
+  | SubdomainObservation
+  | CertObservation;
+
+export interface AttributedObservation {
+  observation: InfraObservation;
+  /** Every source that reported this. Never a single winner. */
+  sourceIds: string[];
+}
+
+export interface InfraSweepResult {
+  subject: Subject;
+  caseId: string;
+  sources: {
+    sourceId: string;
+    name: string;
+    status: "ok" | "inert" | "error" | "blocked";
+    reason: string | null;
+    message: string | null;
+    observationCount: number;
+    queryLogId: string | null;
+  }[];
+  totals: {
+    rawObservations: number;
+    merged: number;
+    subdomain: number;
+    host: number;
+    cert: number;
+  };
+  observations: AttributedObservation[];
+}
+
 export interface QueryLogRow {
   id: string;
   sourceId: string;

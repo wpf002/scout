@@ -77,9 +77,15 @@ export interface Source {
    */
   keyEnv: string | null;
   /**
-   * Builds the URL for the investigator to open. Present iff `mode` is
-   * `deeplink`. Calling this does not make a network request — it only
-   * formats a string.
+   * Builds the URL for the investigator to open. Calling this does not make a
+   * network request — it only formats a string.
+   *
+   * Required when `mode` is `deeplink`. An `api` source may also offer one as
+   * a convenience link (crt.sh does), but the guarantee in locked invariant 4
+   * — that the subject term never reaches a Scout-owned request — belongs to
+   * `mode === "deeplink"` alone. A source with an execution adapter makes
+   * Scout-side calls by definition, and the plan shows that as a separate,
+   * explicit action.
    */
   deeplink?: (term: string) => string;
 }

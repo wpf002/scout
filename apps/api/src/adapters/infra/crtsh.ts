@@ -1,0 +1,105 @@
+import { z } from "zod";
+import type { InfraObservation, Subject } from "@scout/sources";
+import { requireSource } from "@scout/sources";
+
+export const crtshSource = requireSource("crtsh");
+
+const REQUEST_TIMEOUT_MS = 20_000;
+
+/** crt.sh returns one row per certificate/name pairing. */
+const rowSchema = z.object({
+  common_name: z.string().nullable().default(null),
+  name_value: z.string().nullable().default(null),
+  issuer_name: z.string().nullable().default(null),
+  serial_number: z.string().nullable().default(null),
+  not_before: z.string().nullable().default(null),
+  not_after: z.string().nullable().default(null),
+});
+
+export type CrtshRow = z.infer<typeof rowSchema>;
+
+const rowsSchema = z.array(rowSchema);
+
+/**
+ * Turns crt.sh rows into normalized observations.
+ *
+ * Each row yields one cert observation plus a subdomain observation for every
+ * name on it — `name_value` is newline-separated and routinely holds the SANs
+ * that make CT logs a subdomain oracle in the first place.
+ *
+ * Wildcards are recorded as certificate names but never as subdomains:
+ * `*.example.com` is not a host you can resolve, and emitting it as one would
+ * put a thing that does not exist onto the findings board.
+ */
+export function normalizeCrtsh(
+  rows: readonly CrtshRow[],
+  subject: string,
+): InfraObservation[] {
+  const observations: InfraObservation[] = [];
+  const apex = subject.trim().toLowerCase().replace(/^\*\./, "");
+
+  for (const row of rows) {
+    const names = [...new Set(
+      (row.name_value ?? "")
+        .split("\n")
+        .concat(row.common_name ?? "")
+        .map((name) => name.trim().toLowerCase())
+        .filter((name) => name.length > 0),
+    )].sort();
+
+    if (names.length > 0 || row.common_name !== null) {
+      observations.push({
+        kind: "cert",
+        serial: row.serial_number,
+        commonName: row.common_name ?? (names[0] ?? apex),
+        names,
+        issuer: row.issuer_name,
+        notBefore: row.not_before,
+        notAfter: row.not_after,
+      });
+    }
+
+    for (const name of names) {
+      if (name.startsWith("*.")) continue;
+      // Only names actually under the subject — CT rows can carry unrelated
+      // SANs, and those are not this domain's subdomains.
+      if (name !== apex && !name.endsWith(`.${apex}`)) continue;
+      observations.push({
+        kind: "subdomain",
+        hostname: name,
+        firstSeen: row.not_before,
+        lastSeen: row.not_after,
+      });
+    }
+  }
+
+  return observations;
+}
+
+export async function fetchCrtsh(
+  subject: Subject,
+): Promise<InfraObservation[]> {
+  const domain = subject.value.trim().toLowerCase();
+  const url = `https://crt.sh/?q=${encodeURIComponent(`%.${domain}`)}&output=json`;
+
+  const response = await fetch(url, {
+    headers: {
+      accept: "application/json",
+      "user-agent": "Scout-OSINT/0.1 (+authorized-engagement-tooling)",
+    },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  if (!response.ok) throw new Error(`crt.sh responded ${response.status}`);
+
+  // crt.sh occasionally returns an HTML error page with a 200.
+  const text = await response.text();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("crt.sh returned a non-JSON body");
+  }
+
+  return normalizeCrtsh(rowsSchema.parse(parsed), domain);
+}
