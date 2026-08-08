@@ -3,20 +3,19 @@ import type { EntityGraph, FindingInput, ResolvedEntity } from "./types.js";
 /**
  * Case summarization.
  *
- * The roadmap allows an AI-drafted summary, mediated by Flint, with three
- * conditions: summaries are drafts, never findings, and never invent
- * provenance. Those conditions shape this module more than the AI does.
+ * The roadmap allows a drafted case summary under three conditions: summaries
+ * are drafts, never findings, and never invent provenance. Those conditions
+ * shape this module entirely.
  *
  * Two pieces:
  *
- *   1. A deterministic summary, built by counting the graph. It ships today,
- *      needs no model, and cannot invent anything — every sentence is a fact
- *      about rows that exist.
- *   2. A `Summarizer` seam for Flint. Left INERT rather than implemented
- *      against a guessed API: this codebase has a rule that a source with no
- *      key reports `inert` and never fabricates, and inventing an integration
- *      for a service whose contract I cannot see would break the same rule in
- *      spirit.
+ *   1. A deterministic summary, built by counting the graph. It is the default
+ *      and needs nothing configured, because every sentence is a fact about
+ *      rows that exist — there is no mechanism here by which it could invent
+ *      something.
+ *   2. A `Summarizer` extension point, for wiring in a different implementation
+ *      later. No implementation ships, and the interesting part is not the
+ *      interface but the guard around it.
  *
  * Whatever produces it, a summary is a `draft` and is stored apart from
  * findings. A finding is something a source reported; a summary is something
@@ -26,15 +25,15 @@ import type { EntityGraph, FindingInput, ResolvedEntity } from "./types.js";
 export interface CaseSummary {
   /** Always true. A summary is never promoted to a finding. */
   draft: true;
-  /** `deterministic` or the name of the model that drafted it. */
+  /** Which summarizer produced this. `deterministic` unless one is wired in. */
   producedBy: string;
   generatedAt: string;
   headline: string;
   paragraphs: string[];
   /**
-   * Findings the summary is derived from. An AI-drafted summary must cite
-   * from this set and nothing else — it is what "never invent provenance"
-   * reduces to mechanically.
+   * Findings the summary is derived from. Any summarizer must cite from this
+   * set and nothing else — it is what "never invent provenance" reduces to
+   * mechanically.
    */
   citedFindingIds: string[];
 }
@@ -48,7 +47,8 @@ function describeEntity(entity: ResolvedEntity): string {
 }
 
 /**
- * Builds a summary by counting. No model, no invention, no configuration.
+ * Builds a summary by counting. Nothing to configure, and nothing that could
+ * invent a claim.
  *
  * This is the default because a summary that is merely accurate is more useful
  * than one that is fluent and occasionally wrong about a person.
@@ -123,17 +123,13 @@ export function summarizeDeterministically(
 }
 
 /**
- * The Flint seam.
+ * An alternative summarizer.
  *
  * An implementation receives the graph and the findings it may cite, and must
- * return a summary whose `citedFindingIds` is a subset of what it was given —
- * `assertNoInventedProvenance` enforces that on the way out, so a model that
- * cites a finding that does not exist fails loudly rather than producing a
- * plausible document.
- *
- * Model tiering, when this is wired: the cheap tier for mechanical labelling
- * and the stronger one for structural prose, with prompt caching on the graph
- * payload since it is identical across a rebuild.
+ * return a summary whose `citedFindingIds` is a subset of what it was given.
+ * `assertNoInventedProvenance` enforces that on the way out, so a summarizer
+ * that cites a finding which does not exist fails loudly rather than producing
+ * a plausible document.
  */
 export interface Summarizer {
   name: string;
@@ -146,8 +142,8 @@ export interface Summarizer {
 /**
  * Throws if a summary cites a finding it was not given.
  *
- * "Never invent provenance" is otherwise just an instruction in a prompt, and
- * instructions in prompts are not enforcement.
+ * This is what makes "never invent provenance" a property rather than an
+ * intention. Any summarizer wired in later is checked by it on the way out.
  */
 export function assertNoInventedProvenance(
   summary: CaseSummary,
@@ -170,8 +166,7 @@ export function assertNoInventedProvenance(
  * Runs a configured summarizer, falling back to the deterministic one.
  *
  * No summarizer configured is not an error and does not produce a blank — it
- * produces the counted summary, which is the honest answer to "what does this
- * case say" when no model is available.
+ * produces the counted summary, which is a complete answer on its own.
  */
 export async function summarizeCase(
   graph: EntityGraph,

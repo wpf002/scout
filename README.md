@@ -422,15 +422,15 @@ asserts no edge can cite a finding that does not exist on the case.
 
 ### Summaries are drafts
 
-The default summarizer **counts** — no model, so it cannot invent anything. A
-`Summarizer` seam exists for Flint but is left inert rather than implemented
-against an API I cannot see; guessing an integration would break the same rule
-that makes a keyless source report `inert`.
+The summarizer **counts**. Every sentence is a fact about rows that exist, so
+there is no mechanism by which it could invent something. A `Summarizer`
+extension point exists for swapping in a different implementation later; none
+ships.
 
-Whatever produces it, a summary is marked `draft`, stored apart from findings,
-and validated by `assertNoInventedProvenance()` — which throws if it cites a
-finding that does not exist. "Never invent provenance" is otherwise just an
-instruction in a prompt, and instructions in prompts are not enforcement.
+A summary is marked `draft`, stored apart from findings, and validated by
+`assertNoInventedProvenance()` — which throws if it cites a finding that does
+not exist. That guard is the point: "never invent provenance" is otherwise a
+promise nothing enforces.
 
 ## Reporting
 

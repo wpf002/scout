@@ -49,7 +49,7 @@ features, not just infra.
    reports `inert`. Scout never fabricates or infers a result.
 7. **Standard stack conventions.** TypeScript, pnpm/Turborepo, Fastify, Prisma,
    Postgres, Railway. Zod at every boundary. BigInt/integer for anything
-   counted. Flint is the seam if/when an AI layer is added.
+   counted.
 
 ---
 
@@ -301,10 +301,8 @@ sources get resolved into entities and linked.
 - Relationship edges with provenance (entity A appears in finding X from source
   S). Every edge traceable to a source.
 - Case graph view in the web app.
-- Optional Flint-mediated summarization: draft a case summary from findings.
-  Model tiering — Haiku for mechanical dedupe/labeling, Sonnet for structural
-  summary. Prompt caching on. Summaries are drafts, never findings, and never
-  invent provenance.
+- Optional summarization: draft a case summary from findings. Summaries are
+  drafts, never findings, and never invent provenance.
 
 **Entry gate:** Phases 3–5 producing normalized, provenance-carrying findings. ✅
 **Exit gate:** ✅ verified on a case with 9 findings from 8 sources: 11 entities,
@@ -350,11 +348,13 @@ is deliberately timid and real overlapping cases would justify loosening it.
 - Case graph view in the dashboard — deterministic column layout rather than a
   force simulation, because the same case must draw the same picture every
   time. Selecting a node answers "how do you know that".
-- Summarization: a deterministic counter that ships today and cannot invent
-  anything, plus a `Summarizer` seam for Flint left **inert** rather than
-  implemented against a guessed API. Summaries are drafts, stored apart from
-  findings, and `assertNoInventedProvenance()` throws if one cites a finding
-  that does not exist — because an instruction in a prompt is not enforcement.
+- Summarization: a deterministic counter, which is the default because every
+  sentence it writes is a fact about rows that exist. A `Summarizer` extension
+  point exists for swapping in a different implementation later; none ships.
+  Summaries are drafts, stored apart from findings, and
+  `assertNoInventedProvenance()` throws if one cites a finding that does not
+  exist — that guard is the point, since "never invent provenance" is otherwise
+  a promise nothing enforces.
 
 ---
 
