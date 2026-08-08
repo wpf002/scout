@@ -290,7 +290,7 @@ worse than no scoped tier. It held.
 
 ---
 
-## Phase 6 — Correlation + entity graph ← next (gated, see below)
+## Phase 6 — Correlation + entity graph ⏸ DEFERRED (criterion not met)
 
 Scout stops being a launcher and becomes an investigation tool: findings across
 sources get resolved into entities and linked.
@@ -315,23 +315,52 @@ multiple sources overlap on the same entities. Building the graph against
 single-source cases is premature — it needs real multi-source data to be worth
 anything. Gate this phase on actual case volume, not calendar.
 
+**Status: not met, so not built.** There is no real case volume — only demo and
+test cases. Building entity resolution now would mean tuning it against
+fixtures, which is exactly what the criterion forbids: the hard part of
+correlation is knowing which near-matches are the same entity, and fixtures
+cannot teach that. Phase 7 shipped instead, under its own entry gate
+("Phase 6 exit **or** Phase 5 exit if correlation deferred").
+
+Revisit when several real cases show the same entity arriving from more than
+one source.
+
 ---
 
-## Phase 7 — Reporting + export
+## Phase 7 — Reporting + export ✅ SHIPPED
 
 Turn a case into a deliverable.
 
-**Build:**
-- Case report generation — styled export (docx/pdf) with findings grouped by
-  tier, every finding showing source + timestamp + query provenance.
-- Investigation timeline from `QueryLog` + `Finding` timestamps.
-- Audit export: the full scoped-query log for a case, for engagement records.
-- Redaction pass before export (strip anything outside scope that leaked into
-  notes).
+**Built:**
+- `GET /cases/:id/report` in three formats — self-contained print-ready HTML,
+  a real `.docx` for a client to annotate, and JSON. All three consume the same
+  already-redacted `CaseReport`, so a renderer cannot forget to redact.
+- Findings grouped by tier in reach-for order, each carrying source, query term,
+  query kind, observation time and whether it traces to a logged call.
+- Investigation timeline merged from `QueryLog` and `Finding` timestamps.
+- Audit export as CSV, separate from the report — retention rules for a query
+  log and for an investigative deliverable are rarely the same.
+- Redaction pass in `@scout/scope`, reusing the same `checkScope` the gate uses.
 
-**Entry gate:** Phase 6 exit (or Phase 5 exit if correlation deferred).
-**Exit gate:** one command/button produces a client-ready case report with
-complete provenance and an attached audit trail.
+**Redaction is the other half of the gate.** The gate governs what Scout
+fetches; this governs what Scout emits. Two boundaries drawn deliberately:
+
+- The **audit trail is never redacted**. A refused lookup's row must still name
+  what was refused — that record is the evidence the gate held, and scrubbing
+  it would destroy the thing the log exists for.
+- It is **not a general PII scrubber**. It removes identifiers it can
+  positively recognize; prose can hide anything. The report states how many it
+  removed (kinds and fields only) so a reviewer knows redaction ran rather than
+  assuming it did.
+
+Every export writes an audit event: a case should show that its contents left
+the tool, and when.
+
+**Entry gate:** Phase 5 exit, correlation deferred. ✅
+**Exit gate:** ✅ one button produces a client-ready report with complete
+provenance and the audit trail attached. Verified on a real case: notes and
+summaries scrubbed of out-of-scope addresses, the refused lookup still named in
+the audit table, and the `.docx` confirmed to contain neither redacted value.
 
 ---
 
@@ -370,9 +399,9 @@ secrets clean, rollback documented.
 3  Infra adapters            ✅ shipped
 4  Dataset adapters          ✅ shipped
 5  Exposure + people         ✅ shipped
-6  Correlation + graph       ← next, BUT SEE THE DEFER CRITERION
-7  Reporting + export
-8  Hardening + deploy        (defer infra cost until earned)
+6  Correlation + graph       ⏸ deferred — criterion not met (no real case volume)
+7  Reporting + export        ✅ shipped
+8  Hardening + deploy        ← next (defer infra cost until earned)
 ```
 
 Critical path to a genuinely useful internal tool is **1 → 2 → 3**: cases,

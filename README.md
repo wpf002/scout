@@ -8,9 +8,9 @@ Scout is a **launcher, not an aggregator**. There is deliberately no box that
 takes a name and returns an assembled dossier. It plans, it gates, it records —
 and it makes you take each person-facing action on purpose.
 
-**Status:** Phases 0–5 shipped — foundation, persistence + cases, web
-dashboard, the infrastructure and datasets tiers, and the scope-gated
-exposure/people tier. See [ROADMAP.md](./ROADMAP.md) for the locked build
+**Status:** Phases 0–5 and 7 shipped. Phase 6 (correlation) is deliberately
+deferred — its own criterion says not to build it until real cases produce
+multi-source overlap. See [ROADMAP.md](./ROADMAP.md) for the locked build
 order.
 
 ---
@@ -160,6 +160,8 @@ rather than erase.
 | `POST` | `/exposure/:sourceId` | Scoped. `hibp`, `dehashed`. Requires `caseId` + `confirm: true`. |
 | `POST` | `/people/:sourceId` | Scoped. `hunter-io`, `whatsmyname`. Same requirements. |
 | `GET` | `/scoped/adapters` | The person-facing sources that are built. |
+| `GET` | `/cases/:id/report` | `format=html\|docx\|json`. Redacted, audited. |
+| `GET` | `/cases/:id/audit/export` | The query log as CSV, for engagement records. |
 | `POST` | `/infra/:sourceId` | One infrastructure source. Non-scoped. |
 | `POST` | `/infra/sweep` | Several at once, merged. Ungated only, reports exclusions. |
 | `GET` | `/infra/adapters` | Which infra adapters are built. |
@@ -329,19 +331,53 @@ named person holds an account they may not.
 **The gate runs before the enable check.** An out-of-scope username reports
 `blocked`, not `inert` — the refusal that matters is recorded first.
 
+## Reporting
+
+`GET /cases/:id/report` turns a case into a deliverable — findings grouped by
+tier, each carrying the source and query that produced it, plus a timeline and
+the full audit trail. Three formats share one already-redacted `CaseReport`, so
+HTML, docx and JSON cannot disagree about what left the building.
+
+The HTML is self-contained and prints to PDF; the docx is the editable version
+a client can annotate. The audit trail also exports separately as CSV, because
+retention rules for a query log and for an investigative deliverable are rarely
+the same.
+
+### Redaction is the other half of the gate
+
+The scope gate governs what Scout *fetches*. Redaction governs what Scout
+*emits*. Notes and finding summaries are typed by hand, and hand-typed text
+picks up things the engagement was never authorized to collect — a bystander's
+address pasted in while chasing a lead. Those are stripped before export, and
+the report says how many identifiers it removed (kinds and field names only —
+listing the values would defeat it).
+
+Two deliberate boundaries:
+
+- **The audit trail is never redacted.** A refused lookup's row must still name
+  what was refused; that record is the evidence the gate held, and scrubbing it
+  would destroy the thing the log exists for.
+- **It is not a general PII scrubber** and does not claim to be. It removes
+  identifiers it can positively recognize. Prose can hide anything, so this
+  reduces leakage rather than guaranteeing its absence — which is why the
+  report states plainly what it did.
+
+Every export writes an audit event. A case should show that its contents left
+the tool, and when.
+
 ## Tests
 
 ```bash
-pnpm test        # 211 tests
+pnpm test        # 236 tests
 ```
 
-- `packages/scope` (22) — the gate, including lookalike domains, `@`-smuggling,
+- `packages/scope` (32) — the gate, including lookalike domains, `@`-smuggling,
   IDN normalization, and fail-closed on unparseable input.
 - `packages/sources` (31) — registry invariants (pins the scoped set) and
   observation dedupe/attribution.
 - `packages/db` (8) — audit immutability against a live Postgres, key redaction,
   BigInt JSON safety.
-- `apps/api` (150) — the Phase 1, 3 and 4 exit gates end to end, upstream
+- `apps/api` (165) — the Phase 1, 3 and 4 exit gates end to end, upstream
   normalizers against fixture payloads, cache and rate-limiter behaviour, plus
   a red-team block: scope-shaped fields smuggled into request bodies, lookalike
   domains, nonexistent cases, empty scope, sweeping a scoped source, and

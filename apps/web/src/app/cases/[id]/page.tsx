@@ -10,6 +10,7 @@ import { InfraBoard } from "@/components/InfraBoard";
 import { DatasetBoard } from "@/components/DatasetBoard";
 import { FindingsBoard } from "@/components/FindingsBoard";
 import { AuditPanel } from "@/components/AuditPanel";
+import { ExportPanel } from "@/components/ExportPanel";
 import { SUBJECT_KINDS } from "@/lib/types";
 import type {
   AuditView,
@@ -206,6 +207,8 @@ export default function CaseWorkspace() {
       <FindingsBoard findings={findings} />
 
       <AuditPanel audit={audit} />
+
+      <ExportPanel record={record} />
     </>
   );
 }
