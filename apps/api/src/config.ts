@@ -19,12 +19,28 @@ const configSchema = z.object({
    * it from a victim's browser is not an acceptable default.
    */
   SCOUT_WEB_ORIGINS: z.string().default("http://localhost:3000"),
+  /**
+   * Require a bearer token. Defaults to ON in production, because an audit log
+   * whose every row says "local" cannot answer the question it exists to
+   * answer. Off in development so a single local operator is not blocked by
+   * ceremony.
+   */
+  SCOUT_AUTH_REQUIRED: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 export type Config = z.infer<typeof configSchema>;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = configSchema.safeParse(env);
+  const withDefaults = {
+    ...env,
+    SCOUT_AUTH_REQUIRED:
+      env["SCOUT_AUTH_REQUIRED"] ??
+      (env["NODE_ENV"] === "production" ? "true" : "false"),
+  };
+  const parsed = configSchema.safeParse(withDefaults);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `  ${i.path.join(".") || "(root)"}: ${i.message}`)

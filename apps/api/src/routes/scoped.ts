@@ -9,7 +9,7 @@ import {
 import { executeScopedSource } from "../adapters/base.js";
 import { credentialMaterialAllowed } from "../adapters/scoped/dehashed.js";
 import { badRequest, notFound } from "../errors.js";
-import { config } from "../config.js";
+import { operatorOf } from "../auth.js";
 
 const executeSchema = z.object({
   /** Required. A scoped source has no meaning outside a case. */
@@ -64,7 +64,7 @@ export async function registerScopedRoutes(
           {
             caseId: body.caseId,
             subject: body.subject,
-            operator: config.SCOUT_OPERATOR,
+            operator: operatorOf(request),
           },
           adapter.run,
         );

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { ScopeError } from "@scout/scope";
 import { ZodError } from "zod";
+import { logEvent } from "./observability.js";
 
 /** A request-level failure with a stable machine-readable code. */
 export class HttpError extends Error {
@@ -27,10 +28,13 @@ export function registerErrorHandler(app: FastifyInstance): void {
     // reason string so the UI can explain exactly why, and so it lines up with
     // the `reason` written to the audit log.
     if (error instanceof ScopeError) {
-      request.log.warn(
-        { reason: error.reason, sourceId: error.sourceId },
-        "scoped query denied",
-      );
+      // The refusal is the signal worth alerting on. Deliberately no subject
+      // term in the fields — a denied lookup is exactly the value that must
+      // not be copied into a log aggregator.
+      logEvent(request.log, "scope.denied", {
+        reason: error.reason,
+        sourceId: error.sourceId ?? null,
+      });
       return reply.status(403).send({
         error: "scope-denied",
         reason: error.reason,

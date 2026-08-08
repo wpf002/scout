@@ -19,7 +19,7 @@ import {
   scopedRoutePath,
 } from "../adapters/scoped/index.js";
 import { notFound } from "../errors.js";
-import { config } from "../config.js";
+import { operatorOf } from "../auth.js";
 
 /**
  * Where an executable source is actually run. A source with no entry here
@@ -279,7 +279,7 @@ export async function registerQueryRoutes(app: FastifyInstance): Promise<void> {
               outcome: planOutcome(entry.status),
               reason: entry.reason,
               authorizationRef: ref,
-              operator: config.SCOUT_OPERATOR,
+              operator: operatorOf(request),
               matchedScope: entry.matchedScope,
             });
           }),

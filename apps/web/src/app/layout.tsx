@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { OperatorToken } from "@/components/OperatorToken";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -23,6 +24,7 @@ export default function RootLayout({
             <nav className="nav">
               <Link href="/">Cases</Link>
               <Link href="/sources">Sources</Link>
+              <OperatorToken />
             </nav>
           </div>
         </header>

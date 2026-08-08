@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import { registerErrorHandler } from "./errors.js";
+import { registerAuth } from "./auth.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerQueryRoutes } from "./routes/query.js";
 import { registerCaseRoutes } from "./routes/cases.js";
@@ -8,6 +9,7 @@ import { registerScopedRoutes } from "./routes/scoped.js";
 import { registerInfraRoutes } from "./routes/infra.js";
 import { registerDatasetRoutes } from "./routes/datasets.js";
 import { registerReportRoutes } from "./routes/report.js";
+import { registerRetentionRoutes } from "./routes/retention.js";
 import { config } from "./config.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -45,6 +47,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   registerErrorHandler(app);
+  await registerAuth(app);
 
   await registerHealthRoutes(app);
   await registerQueryRoutes(app);
@@ -53,6 +56,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerInfraRoutes(app);
   await registerDatasetRoutes(app);
   await registerReportRoutes(app);
+  await registerRetentionRoutes(app);
 
   return app;
 }

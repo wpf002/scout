@@ -364,29 +364,46 @@ the audit table, and the `.docx` confirmed to contain neither redacted value.
 
 ---
 
-## Phase 8 — Hardening + deploy
+## Phase 8 — Hardening ✅ SHIPPED · deploy not built
 
 Production posture. Deferred deliberately to last per the performance-gate
 philosophy — you don't pay for observability/queue/auth complexity until the
 tool is doing real work that earns it.
 
-**Build:**
-- Auth + multi-operator (per-operator audit attribution). The `operator` column
-  is already on every audit row, so this is a fill-in, not a backfill.
-- Railway deploy: API + web + Postgres, env-scoped secrets.
-- Rate limiting + Redis cache promoted from in-memory (only if Phase 3/5 traffic
-  justified it).
-- Retention + soft-delete policy on case data (the Phase 1 defer). Must archive
-  rather than erase — the audit trigger blocks deletion by design.
-- Observability: structured logs on scoped-query denials + upstream failures.
-  Metrics/tracing only if traffic warrants.
-- Secrets handling review — no key ever logged, no subject term in a URL param.
-  Partly done: `redactSecrets()` scrubs configured keys out of audit rows, and
-  request bodies are stripped from logs.
+**Built:**
+- **Auth + per-operator attribution.** Bearer tokens, SHA-256 digests, an
+  `Operator` model and a `pnpm db:operator` CLI. Required by default in
+  production rather than opt-in: an audit log whose every row says `local`
+  cannot answer the question it exists to answer. The `operator` column was
+  already on every audit row, so this was the fill-in it was designed to be.
+- **Retention.** The Phase 1 defer, and its shape was forced by the Phase 1
+  decision that made it a defer. Audit rows are immutable, so a case cannot be
+  deleted — which turns out to be the correct model. `archive` hides a finished
+  case, reversibly. `purge` deletes findings and subjects irreversibly, requires
+  a written reason, and keeps the case shell, its scope and every audit row. A
+  purge reports what it retained so nobody assumes it erased the trail.
+- **Observability.** Structured events with a stable `event` field —
+  `scope.denied`, `upstream.failed`, `source.inert`, `sweep.excluded`,
+  `case.exported`, `case.purged`, `auth.rejected` — routed through one helper,
+  which is also the one place to check that no subject term or key is in the
+  fields.
+- **Secrets review, written as executable checks** rather than a paragraph
+  claiming it was done. Tests read the source tree and fail if any log line
+  mentions a key env or a built upstream URL (Hunter and Shodan carry the key
+  in the query string), or if any route path takes a subject term.
 
-**Entry gate:** Phases 1–7 (or the shipped subset) stable in local/staging.
-**Exit gate:** deployed, authed, scoped-query audit intact in production,
-secrets clean, rollback documented.
+**Deliberately not built:**
+- **Railway deploy.** Requested scope was hardening only.
+- **Redis + a job queue.** The Phase 3 defer criterion — "until a single case
+  regularly issues enough infra calls to hit rate limits" — is still unmet.
+  In-memory caching and per-source token buckets remain correct.
+- **Metrics and tracing.** The roadmap gates these on traffic warranting them.
+  It does not yet.
+
+**Entry gate:** Phases 1–7 (the shipped subset) stable locally. ✅
+**Exit gate (hardening portion):** ✅ authed with per-operator attribution
+verified end to end in a browser, scoped-query audit intact across archive and
+purge, secrets review passing as tests.
 
 ---
 
@@ -401,7 +418,9 @@ secrets clean, rollback documented.
 5  Exposure + people         ✅ shipped
 6  Correlation + graph       ⏸ deferred — criterion not met (no real case volume)
 7  Reporting + export        ✅ shipped
-8  Hardening + deploy        ← next (defer infra cost until earned)
+8  Hardening                 ✅ shipped
+   Deploy                    not built (hardening-only scope)
+   Redis / queue / metrics   deferred — criteria still unmet
 ```
 
 Critical path to a genuinely useful internal tool is **1 → 2 → 3**: cases,

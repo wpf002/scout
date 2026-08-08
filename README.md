@@ -8,9 +8,10 @@ Scout is a **launcher, not an aggregator**. There is deliberately no box that
 takes a name and returns an assembled dossier. It plans, it gates, it records —
 and it makes you take each person-facing action on purpose.
 
-**Status:** Phases 0–5 and 7 shipped. Phase 6 (correlation) is deliberately
-deferred — its own criterion says not to build it until real cases produce
-multi-source overlap. See [ROADMAP.md](./ROADMAP.md) for the locked build
+**Status:** Phases 0–5, 7 and the hardening half of 8 shipped. Phase 6
+(correlation) is deliberately deferred — its own criterion says not to build it
+until real cases produce multi-source overlap. Deployment is not built; the
+hardening it depends on is. See [ROADMAP.md](./ROADMAP.md) for the locked build
 order.
 
 ---
@@ -162,6 +163,8 @@ rather than erase.
 | `GET` | `/scoped/adapters` | The person-facing sources that are built. |
 | `GET` | `/cases/:id/report` | `format=html\|docx\|json`. Redacted, audited. |
 | `GET` | `/cases/:id/audit/export` | The query log as CSV, for engagement records. |
+| `POST` | `/cases/:id/archive`, `/restore` | Soft delete. Reversible, audited. |
+| `POST` | `/cases/:id/purge` | Deletes findings + subjects. Keeps the audit trail. |
 | `POST` | `/infra/:sourceId` | One infrastructure source. Non-scoped. |
 | `POST` | `/infra/sweep` | Several at once, merged. Ungated only, reports exclusions. |
 | `GET` | `/infra/adapters` | Which infra adapters are built. |
@@ -331,6 +334,47 @@ named person holds an account they may not.
 **The gate runs before the enable check.** An out-of-scope username reports
 `blocked`, not `inert` — the refusal that matters is recorded first.
 
+## Auth and attribution
+
+Off in development, **on by default in production** — an audit log whose every
+row says `local` cannot answer the question it exists to answer, so this is not
+opt-in.
+
+```bash
+pnpm db:operator add "alice"     # mints a token, shown once
+pnpm db:operator list
+pnpm db:operator disable "alice"
+```
+
+Requests carry `Authorization: Bearer <token>`. Every audit row and case event
+is then attributed to that operator by name. `/health` stays public so a load
+balancer can reach it.
+
+Tokens are stored as SHA-256 digests. A slow KDF would be the wrong tool: these
+are 256 bits of CSPRNG output, so there is no low-entropy guess to make
+expensive, and bcrypt would add latency to every request for nothing.
+
+The dashboard keeps its token in `sessionStorage`, never in a `NEXT_PUBLIC_`
+variable — that would bake a credential into the client bundle and ship it to
+everyone who loads the page.
+
+## Retention
+
+Phase 1 left a consequence: audit rows are immutable at the database level, so
+a case cannot be deleted. That looked like a limitation. It is the right
+retention model — data minimization should remove what was *collected about
+people*, not the record of what was *done to them*.
+
+```
+archive  →  hides a finished case from the working list. Reversible.
+purge    →  deletes findings and subjects. Irreversible. Requires a written
+            reason. The case shell, its scope entries and every audit row stay.
+```
+
+A purge reports back what it retained, so nobody assumes it erased the trail. A
+tool that could erase its own audit log on request would not be worth the
+accountability claims made elsewhere in this codebase.
+
 ## Reporting
 
 `GET /cases/:id/report` turns a case into a deliverable — findings grouped by
@@ -378,16 +422,16 @@ the tool, and when.
 ## Tests
 
 ```bash
-pnpm test        # 236 tests
+pnpm test        # 270 tests
 ```
 
-- `packages/scope` (32) — the gate, including lookalike domains, `@`-smuggling,
+- `packages/scope` (35) — the gate, including lookalike domains, `@`-smuggling,
   IDN normalization, and fail-closed on unparseable input.
 - `packages/sources` (31) — registry invariants (pins the scoped set) and
   observation dedupe/attribution.
 - `packages/db` (8) — audit immutability against a live Postgres, key redaction,
   BigInt JSON safety.
-- `apps/api` (165) — the Phase 1, 3 and 4 exit gates end to end, upstream
+- `apps/api` (196) — the Phase 1, 3 and 4 exit gates end to end, upstream
   normalizers against fixture payloads, cache and rate-limiter behaviour, plus
   a red-team block: scope-shaped fields smuggled into request bodies, lookalike
   domains, nonexistent cases, empty scope, sweeping a scoped source, and

@@ -12,7 +12,7 @@ import {
 } from "@scout/db";
 import type { Prisma } from "@scout/db";
 import { badRequest, notFound } from "../errors.js";
-import { config } from "../config.js";
+import { operatorOf } from "../auth.js";
 
 const scopeEntryInput = z.object({
   kind: scopeKindSchema,
@@ -81,13 +81,13 @@ export async function registerCaseRoutes(app: FastifyInstance): Promise<void> {
         name: body.name,
         authorizationRef: body.authorizationRef,
         notes: body.notes ?? null,
-        createdBy: config.SCOUT_OPERATOR,
+        createdBy: operatorOf(request),
         scopeEntries: {
           create: (body.scope ?? []).map((entry) => ({
             kind: toPrismaScopeKind(entry.kind),
             value: entry.value,
             note: entry.note ?? null,
-            addedBy: config.SCOUT_OPERATOR,
+            addedBy: operatorOf(request),
           })),
         },
       },
@@ -97,6 +97,7 @@ export async function registerCaseRoutes(app: FastifyInstance): Promise<void> {
     await recordAuditEvent({
       caseId: created.id,
       action: "case.created",
+      actor: operatorOf(request),
       detail: {
         name: created.name,
         authorizationRef: created.authorizationRef,
@@ -107,8 +108,12 @@ export async function registerCaseRoutes(app: FastifyInstance): Promise<void> {
     return reply.status(201).send(created);
   });
 
-  app.get("/cases", async () => {
+  app.get<{ Querystring: { includeArchived?: string } }>(
+    "/cases",
+    async (request) => {
+    const includeArchived = request.query.includeArchived === "true";
     const cases = await prisma.case.findMany({
+      where: includeArchived ? {} : { archivedAt: null },
       orderBy: { createdAt: "desc" },
       include: {
         scopeEntries: true,
@@ -116,7 +121,8 @@ export async function registerCaseRoutes(app: FastifyInstance): Promise<void> {
       },
     });
     return { count: cases.length, cases };
-  });
+  },
+  );
 
   app.get<{ Params: { id: string } }>("/cases/:id", async (request) => {
     return requireCase(request.params.id);
@@ -143,6 +149,7 @@ export async function registerCaseRoutes(app: FastifyInstance): Promise<void> {
       await recordAuditEvent({
         caseId: updated.id,
         action: `case.${body.status.toLowerCase()}`,
+        actor: operatorOf(request),
         detail: { status: body.status },
       });
     }
@@ -178,13 +185,14 @@ export async function registerCaseRoutes(app: FastifyInstance): Promise<void> {
           kind: toPrismaScopeKind(body.kind),
           value: body.value,
           note: body.note ?? null,
-          addedBy: config.SCOUT_OPERATOR,
+          addedBy: operatorOf(request),
         },
       });
 
       await recordAuditEvent({
         caseId: record.id,
         action: "scope.added",
+        actor: operatorOf(request),
         detail: {
           scopeEntryId: entry.id,
           kind: body.kind,
@@ -211,6 +219,7 @@ export async function registerCaseRoutes(app: FastifyInstance): Promise<void> {
       await recordAuditEvent({
         caseId: record.id,
         action: "scope.removed",
+        actor: operatorOf(request),
         detail: { scopeEntryId: entry.id, kind: entry.kind, value: entry.value },
       });
 
@@ -300,7 +309,7 @@ export async function registerCaseRoutes(app: FastifyInstance): Promise<void> {
           queryKind: toPrismaSubjectKind(body.queryKind),
           observedAt: body.observedAt ?? new Date(),
           queryLogId: body.queryLogId ?? null,
-          savedBy: config.SCOUT_OPERATOR,
+          savedBy: operatorOf(request),
         },
       });
 

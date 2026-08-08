@@ -2,7 +2,6 @@ import type { Source, SourceResult, Subject } from "@scout/sources";
 import { requiresScopeFor } from "@scout/sources";
 import { executeUnscopedSource } from "../adapters/base.js";
 import { badRequest } from "../errors.js";
-import { config } from "../config.js";
 
 export interface SweepableAdapter<T> {
   source: Source;
@@ -39,6 +38,7 @@ export async function runSweep<T>(
   adapters: readonly SweepableAdapter<T>[],
   subject: Subject,
   caseId: string,
+  operator: string,
 ): Promise<SweepOutcome<T>> {
   const excluded: SweepExclusion[] = [];
   const runnable: SweepableAdapter<T>[] = [];
@@ -81,7 +81,7 @@ export async function runSweep<T>(
       adapter,
       result: (await executeUnscopedSource(
         adapter.source,
-        { caseId, subject, operator: config.SCOUT_OPERATOR },
+        { caseId, subject, operator },
         adapter.run,
       )) as SourceResult<T[]>,
     })),

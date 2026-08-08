@@ -2,7 +2,7 @@
   "name": "scout",
   "private": true,
   "version": "0.1.0",
-  "description": "Tiered OSINT investigation platform — a launcher, not an aggregator.",
+  "description": "Tiered OSINT investigation platform \u2014 a launcher, not an aggregator.",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=20.11"
@@ -17,7 +17,8 @@
     "db:migrate": "pnpm --filter @scout/db exec prisma migrate dev",
     "db:deploy": "pnpm --filter @scout/db exec prisma migrate deploy",
     "db:seed": "pnpm --filter @scout/db run seed",
-    "db:studio": "pnpm --filter @scout/db exec prisma studio"
+    "db:studio": "pnpm --filter @scout/db exec prisma studio",
+    "db:operator": "pnpm --filter @scout/db run operator"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

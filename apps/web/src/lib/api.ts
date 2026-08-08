@@ -17,6 +17,30 @@ import type {
 const BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
+const TOKEN_KEY = "scout.operatorToken";
+
+/**
+ * The operator token, held in sessionStorage.
+ *
+ * Deliberately NOT a NEXT_PUBLIC_ env var: that would bake a credential into
+ * the client bundle, where it ships to everyone who loads the page and lives
+ * in the build output. sessionStorage keeps it to one tab, one session, and
+ * out of the repository.
+ */
+export function getOperatorToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem(TOKEN_KEY);
+}
+
+export function setOperatorToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  if (token === null || token.trim().length === 0) {
+    window.sessionStorage.removeItem(TOKEN_KEY);
+  } else {
+    window.sessionStorage.setItem(TOKEN_KEY, token.trim());
+  }
+}
+
 /** A refusal from the API, carrying the stable reason string. */
 export class ApiError extends Error {
   readonly status: number;
@@ -46,14 +70,16 @@ async function request<T>(
   path: string,
   init?: { method?: string; body?: unknown },
 ): Promise<T> {
+  const token = getOperatorToken();
+  const headers: Record<string, string> = {};
+  if (init?.body !== undefined) headers["content-type"] = "application/json";
+  if (token !== null) headers.authorization = `Bearer ${token}`;
+
   let response: Response;
   try {
     response = await fetch(`${BASE}${path}`, {
       method: init?.method ?? "GET",
-      headers:
-        init?.body === undefined
-          ? undefined
-          : { "content-type": "application/json" },
+      headers,
       body: init?.body === undefined ? undefined : JSON.stringify(init.body),
       cache: "no-store",
     });
@@ -79,9 +105,11 @@ async function request<T>(
       issues?: { path: string; message: string }[];
     };
     const detail =
-      body.issues !== undefined && body.issues.length > 0
-        ? body.issues.map((i) => `${i.path}: ${i.message}`).join("; ")
-        : (body.message ?? response.statusText);
+      response.status === 401
+        ? "This Scout requires an operator token. Set one from the header."
+        : body.issues !== undefined && body.issues.length > 0
+          ? body.issues.map((i) => `${i.path}: ${i.message}`).join("; ")
+          : (body.message ?? response.statusText);
     throw new ApiError(
       response.status,
       body.error ?? "error",

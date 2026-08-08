@@ -20,6 +20,24 @@ enum CaseStatus {
   CLOSED
 }
 
+/// An authenticated operator. Every audit row is attributed to one.
+///
+/// Tokens are stored as SHA-256 digests, not reversible values. A fast hash is
+/// the right choice here and a slow one would not help: these are 256-bit
+/// random tokens, not passwords, so there is no low-entropy guess to make
+/// expensive.
+model Operator {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  tokenHash String   @unique
+  active    Boolean  @default(true)
+  note      String?
+  createdAt DateTime @default(now())
+  lastSeenAt DateTime?
+
+  @@index([active])
+}
+
 enum ScopeKind {
   DOMAIN
   IDENTIFIER
@@ -73,6 +91,15 @@ model Case {
 
   notes String?
 
+  /// Soft delete. Archived cases drop out of the default listing but keep
+  /// their audit trail — which is why this is a timestamp rather than a row
+  /// deletion. The audit triggers would refuse the delete anyway.
+  archivedAt DateTime?
+  /// When the investigative content (findings, subjects) was purged. The case
+  /// shell and its audit trail survive: minimizing retained data must not mean
+  /// destroying the record of what was done.
+  purgedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   createdBy String   @default("local")
@@ -84,6 +111,7 @@ model Case {
   sourceSettings CaseSource[]
 
   @@index([status, createdAt])
+  @@index([archivedAt])
 }
 
 /// One authorized target. The gate matches subjects against these rows and

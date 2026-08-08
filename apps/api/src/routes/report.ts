@@ -4,7 +4,8 @@ import { renderReportHtml } from "../report/html.js";
 import { renderReportDocx } from "../report/docx.js";
 import { recordAuditEvent } from "@scout/db";
 import { badRequest } from "../errors.js";
-import { config } from "../config.js";
+import { logEvent } from "../observability.js";
+import { operatorOf } from "../auth.js";
 
 /** RFC 4180 quoting. Audit exports land in spreadsheets. */
 function csvCell(value: string | number | boolean | null): string {
@@ -81,13 +82,20 @@ export async function registerReportRoutes(
       await recordAuditEvent({
         caseId: report.case.id,
         action: "report.exported",
-        actor: config.SCOUT_OPERATOR,
+        actor: operatorOf(request),
         detail: {
           format,
           findings: report.tiers.reduce((n, t) => n + t.findings.length, 0),
           auditRows: report.audit.totals.total,
           redactedIdentifiers: report.redaction.count,
         },
+      });
+
+      logEvent(request.log, "case.exported", {
+        caseId: report.case.id,
+        format,
+        redactedIdentifiers: report.redaction.count,
+        credentialsScrubbed: report.redaction.credentialsScrubbed,
       });
 
       if (format === "json") return report;
@@ -126,7 +134,7 @@ export async function registerReportRoutes(
       await recordAuditEvent({
         caseId: report.case.id,
         action: "audit.exported",
-        actor: config.SCOUT_OPERATOR,
+        actor: operatorOf(request),
         detail: { rows: report.audit.totals.total },
       });
 

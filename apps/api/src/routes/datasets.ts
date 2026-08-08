@@ -15,7 +15,7 @@ import {
 import { executeSource } from "../adapters/base.js";
 import { runSweep, sweepSourceReport } from "./sweep.js";
 import { badRequest, notFound } from "../errors.js";
-import { config } from "../config.js";
+import { operatorOf } from "../auth.js";
 
 const runSchema = z.object({
   caseId: z.string().min(1),
@@ -82,7 +82,7 @@ export async function registerDatasetRoutes(
         {
           caseId: body.caseId,
           subject: body.subject,
-          operator: config.SCOUT_OPERATOR,
+          operator: operatorOf(request),
         },
         adapter.run,
       );
@@ -144,7 +144,7 @@ export async function registerDatasetRoutes(
       adapters = adapters.filter((a) => wanted.has(a.source.id));
     }
 
-    const outcome = await runSweep(adapters, body.subject, body.caseId);
+    const outcome = await runSweep(adapters, body.subject, body.caseId, operatorOf(request));
 
     const observations = outcome.ran.flatMap(({ adapter, result }) =>
       (result.status === "ok" ? (result.data ?? []) : []).map(

@@ -10,7 +10,7 @@ import {
 import { executeUnscopedSource } from "../adapters/base.js";
 import { runSweep, sweepSourceReport } from "./sweep.js";
 import { badRequest, notFound } from "../errors.js";
-import { config } from "../config.js";
+import { operatorOf } from "../auth.js";
 
 const singleSchema = z.object({
   caseId: z.string().min(1),
@@ -60,7 +60,7 @@ export async function registerInfraRoutes(
         {
           caseId: body.caseId,
           subject: body.subject,
-          operator: config.SCOUT_OPERATOR,
+          operator: operatorOf(request),
         },
         adapter.run,
       );
@@ -100,7 +100,7 @@ export async function registerInfraRoutes(
 
     // runSweep applies the effective per-subject-kind gate and reports what it
     // excluded rather than silently dropping it.
-    const outcome = await runSweep(adapters, body.subject, body.caseId);
+    const outcome = await runSweep(adapters, body.subject, body.caseId, operatorOf(request));
 
     // One board, not four source-shaped silos. Attribution is a union, so a
     // hostname seen by both crt.sh and SecurityTrails names both.
