@@ -55,6 +55,29 @@ describe("redactOutOfScope", () => {
     expect(result.text).not.toContain("notexample.com");
   });
 
+  it("strips an out-of-scope IP address", () => {
+    const result = redactOutOfScope("Callback came from 198.51.100.7.", scope);
+    expect(result.text).not.toContain("198.51.100.7");
+    expect(result.redactions[0]?.kind).toBe("ip");
+  });
+
+  it("keeps an in-scope IP address", () => {
+    const withIp: ScopeEntry[] = [
+      ...scope,
+      { id: "s3", kind: "identifier", value: "203.0.113.10" },
+    ];
+    expect(
+      redactOutOfScope("Host 203.0.113.10 responded.", withIp).text,
+    ).toContain("203.0.113.10");
+  });
+
+  it("does not mistake an out-of-range dotted quad for an address", () => {
+    // Octets are validated, so this is not treated as an IP. It is also not a
+    // domain (numeric TLD), so it survives untouched.
+    const text = "Build 1.2.3.400 shipped.";
+    expect(redactOutOfScope(text, scope).text).toBe(text);
+  });
+
   it("redacts everything when the case has no scope", () => {
     // Empty scope is OFF, so nothing is authorized and nothing goes out.
     const result = redactOutOfScope("bob@example.com and example.com", []);

@@ -352,7 +352,14 @@ address pasted in while chasing a lead. Those are stripped before export, and
 the report says how many identifiers it removed (kinds and field names only —
 listing the values would defeat it).
 
-Two deliberate boundaries:
+It recognizes emails, hostnames and IPv4 addresses. A second pass strikes
+credential material: if the case has stored a password (only possible under
+`SCOUT_ALLOW_CREDENTIAL_MATERIAL`), that value is struck from every free-text
+field, because scope-based redaction cannot catch a password — it is not an
+identifier. `Finding.data` is never rendered into a report at all, so the
+structured payload cannot ride along either.
+
+Three deliberate boundaries:
 
 - **The audit trail is never redacted.** A refused lookup's row must still name
   what was refused; that record is the evidence the gate held, and scrubbing it
@@ -361,6 +368,9 @@ Two deliberate boundaries:
   identifiers it can positively recognize. Prose can hide anything, so this
   reduces leakage rather than guaranteeing its absence — which is why the
   report states plainly what it did.
+- **A bare dotted quad is treated as an address**, not a version string. The
+  two are genuinely ambiguous, and under-detecting an identifier is the worse
+  failure when this feeds redaction.
 
 Every export writes an audit event. A case should show that its contents left
 the tool, and when.
@@ -404,6 +414,34 @@ erodes:
 The browser loops are checked with Playwright against a real Chromium — 23
 checks for Phase 2, 14 for Phase 3, 19 for Phase 4, 9 for the designation
 distinctions, and 17 for the scoped tier.
+
+### What the suite does not cover
+
+Fixture tests pin the *shape* each provider returns. They cannot tell you
+whether a provider still returns that shape today, or whether your key works.
+
+```bash
+pnpm build && node scripts/verify-live.mjs [domain]
+```
+
+calls each configured upstream for real and reports what came back. It is
+deliberately outside `pnpm test`: it needs live keys, costs quota, and fails
+during a third-party outage — none of which belong in a suite that gates
+commits. Sources without a key report `skipped`, and the probes use a domain,
+never a person.
+
+### Known exceptions, on purpose
+
+- **`opensanctions` is ungated for person names.** Sanctions and PEP screening
+  runs against names you have no prior relationship with, and returns published
+  designations rather than private facts. It is the only entry on the reviewed
+  list in `invariants.test.ts`; adding a second requires writing down why.
+- **ViewDNS stays a deeplink.** Its API needs a paid key, so a key-gated
+  adapter would ship code no one here can exercise. The link is the honest
+  integration until someone has one.
+- **Redis and a job queue are not built.** The Phase 3 defer criterion —
+  "until a case regularly hits real rate limits" — has not been met. In-memory
+  caching and per-source token buckets are correct until it is.
 
 The DB-backed suites skip without `DATABASE_URL`. They don't clean up — audit
 rows can't be deleted — so point them at a disposable database.

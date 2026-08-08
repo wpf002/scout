@@ -2,6 +2,7 @@ import { TIERS, getSource } from "@scout/sources";
 import type { Tier } from "@scout/sources";
 import { redactOutOfScope, type Redaction } from "@scout/scope";
 import { prisma, toScopeEntry } from "@scout/db";
+import { collectSecretValues, scrubSecrets } from "./secrets.js";
 import { notFound } from "../errors.js";
 
 export interface ReportFinding {
@@ -75,6 +76,13 @@ export interface CaseReport {
     /** Kinds only — the values themselves are never exported. */
     kinds: string[];
     fields: string[];
+    /**
+     * How many credential values stored on this case were struck out of
+     * free-text fields. Separate from `count` because it answers a different
+     * question: not "was this target authorized" but "did a secret leak into
+     * prose".
+     */
+    credentialsScrubbed: number;
   };
 }
 
@@ -100,14 +108,25 @@ export async function buildCaseReport(caseId: string): Promise<CaseReport> {
   const scope = record.scopeEntries.map(toScopeEntry);
   const redactions: Redaction[] = [];
   const redactedFields = new Set<string>();
+  let credentialsScrubbed = 0;
+
+  // Credential material this case has actually stored. Collected once, struck
+  // from every free-text field below — a password typed into a note by hand is
+  // invisible to scope-based redaction, because it is not an identifier.
+  const secrets = collectSecretValues(record.findings.map((f) => f.data));
 
   const clean = (text: string | null, field: string): string => {
-    const result = redactOutOfScope(text, scope);
-    if (result.redactions.length > 0) {
-      redactions.push(...result.redactions);
+    const scoped = redactOutOfScope(text, scope);
+    if (scoped.redactions.length > 0) {
+      redactions.push(...scoped.redactions);
       redactedFields.add(field);
     }
-    return result.text;
+    const scrubbed = scrubSecrets(scoped.text, secrets);
+    if (scrubbed.count > 0) {
+      credentialsScrubbed += scrubbed.count;
+      redactedFields.add(field);
+    }
+    return scrubbed.text;
   };
 
   const findings: ReportFinding[] = record.findings.map((finding) => ({
@@ -217,6 +236,7 @@ export async function buildCaseReport(caseId: string): Promise<CaseReport> {
       // Kinds only. Exporting the redacted values would defeat the redaction.
       kinds: [...new Set(redactions.map((r) => r.kind))].sort(),
       fields: [...redactedFields].sort(),
+      credentialsScrubbed,
     },
   };
 }

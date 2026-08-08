@@ -51,6 +51,21 @@ run("Scout reporting — Phase 7", () => {
       },
     });
 
+    // A finding carrying credential material in its payload AND a password
+    // typed into the summary by hand — the case scope-redaction cannot catch.
+    await app.inject({
+      method: "POST",
+      url: `/cases/${caseId}/findings`,
+      payload: {
+        sourceId: "dehashed",
+        title: "Credential for bob@example.com in ExampleBreach",
+        summary: "Validated: the password hunter2sekrit still works on the VPN.",
+        queryTerm: "bob@example.com",
+        queryKind: "email",
+        data: { databaseName: "ExampleBreach", password: "hunter2sekrit" },
+      },
+    });
+
     // One refused scoped attempt, so the audit trail has a denial in it.
     await app.inject({
       method: "POST",
@@ -184,6 +199,60 @@ run("Scout reporting — Phase 7", () => {
         (row: { outcome: string }) => row.outcome === "DENIED",
       );
       expect(denial.subjectValue).toBe("victim@unrelated.net");
+    });
+  });
+
+  describe("credential material never reaches a deliverable", () => {
+    it("keeps the stored payload out of every format", async () => {
+      for (const format of ["json", "html"]) {
+        const response = await app.inject({
+          method: "GET",
+          url: `/cases/${caseId}/report?format=${format}`,
+        });
+        // Finding.data is never rendered, so the structured secret cannot
+        // ride along.
+        expect(response.body, format).not.toContain("hunter2sekrit");
+      }
+    });
+
+    it("strikes a password typed into a summary by hand", async () => {
+      const report = (
+        await app.inject({
+          method: "GET",
+          url: `/cases/${caseId}/report?format=json`,
+        })
+      ).json();
+
+      const finding = report.tiers
+        .flatMap((t: { findings: { summary: string | null }[] }) => t.findings)
+        .find((f: { summary: string | null }) =>
+          f.summary?.includes("VPN"),
+        );
+      expect(finding.summary).not.toContain("hunter2sekrit");
+      expect(finding.summary).toContain("REDACTED");
+      expect(report.redaction.credentialsScrubbed).toBeGreaterThan(0);
+    });
+
+    it("keeps it out of the .docx too", async () => {
+      // A docx stores its body deflated, so grepping the raw bytes proves
+      // nothing. What makes the docx safe is upstream of the renderer: it is
+      // built from the same already-scrubbed CaseReport as every other format,
+      // so asserting that report is clean covers all three. The renderer
+      // cannot reintroduce a value it was never given.
+      const report = (
+        await app.inject({
+          method: "GET",
+          url: `/cases/${caseId}/report?format=json`,
+        })
+      ).json();
+      expect(JSON.stringify(report)).not.toContain("hunter2sekrit");
+
+      const docx = await app.inject({
+        method: "GET",
+        url: `/cases/${caseId}/report?format=docx`,
+      });
+      expect(docx.statusCode).toBe(200);
+      expect(docx.rawPayload.length).toBeGreaterThan(1000);
     });
   });
 

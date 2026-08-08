@@ -250,6 +250,12 @@ const EMAIL_PATTERN = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 // Requires a plausible TLD and no leading dot, so `v1.2` is not a domain.
 const DOMAIN_PATTERN =
   /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b/gi;
+// Octets validated to 0–255, so `1.2.3.400` and most version strings are not
+// mistaken for addresses. A bare `1.2.3.4` is genuinely ambiguous with a
+// version number; it is treated as an address, because under-detecting an
+// identifier is the worse failure when this feeds redaction.
+const IPV4_PATTERN =
+  /\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b/g;
 
 /**
  * Pulls candidate entities out of free text.
@@ -286,10 +292,25 @@ export function extractEntities(
     [...found.values()].map((e) => e.value.slice(e.value.indexOf("@") + 1)),
   );
 
+  // IPs before domains: the domain pattern would otherwise claim `203.0.113.10`
+  // as a hostname ending in a numeric "TLD".
+  for (const match of text.matchAll(IPV4_PATTERN)) {
+    found.set(`ip:${match[0]}`, {
+      kind: "ip",
+      value: match[0],
+      confidence: "medium",
+      fromSourceId,
+    });
+  }
+  const seenIps = new Set(
+    [...found.values()].filter((e) => e.kind === "ip").map((e) => e.value),
+  );
+
   for (const match of text.matchAll(DOMAIN_PATTERN)) {
     const value = match[0].toLowerCase().replace(/\.$/, "");
     if (emailDomains.has(value)) continue;
     if (found.has(`email:${value}`)) continue;
+    if (seenIps.has(value)) continue;
     found.set(`domain:${value}`, {
       kind: "domain",
       value,
