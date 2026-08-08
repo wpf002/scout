@@ -306,6 +306,117 @@ run("Scout datasets tier", () => {
     });
   });
 
+  // ── the sweep, and what it refuses to sweep ─────────────────────────────
+  describe("dataset sweep", () => {
+    it("batches the sources that are ungated for this subject kind", async () => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/datasets/sweep",
+        payload: {
+          caseId,
+          confirm: true,
+          subject: { kind: "person", value: "Jane Designated" },
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(
+        body.sources.map((s: { sourceId: string }) => s.sourceId),
+      ).toEqual(["opensanctions"]);
+      expect(body.totals.sanctioned).toBe(1);
+
+      // Intelligence X does not accept a person subject, and says so rather
+      // than just being absent.
+      const intelx = body.excluded.find(
+        (e: { sourceId: string }) => e.sourceId === "intelligence-x",
+      );
+      expect(intelx.reason).toBe("kind-not-accepted");
+    });
+
+    it("excludes a per-kind gated source and reports why", async () => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/datasets/sweep",
+        payload: {
+          caseId,
+          confirm: true,
+          subject: { kind: "email", value: "bob@example.com" },
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      // Only IntelX accepts email, and it is gated for it — so there is
+      // nothing to sweep, and the refusal says so instead of returning an
+      // empty result set that would read as "no hits".
+      expect(response.json().message).toMatch(/scope-gated/);
+    });
+
+    it("never runs a gated source even when named explicitly", async () => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/datasets/sweep",
+        payload: {
+          caseId,
+          confirm: true,
+          sourceIds: ["intelligence-x"],
+          subject: { kind: "email", value: "bob@example.com" },
+        },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().message).toMatch(/scope-gated/);
+    });
+
+    it("still sweeps a source that is gated for a different kind", async () => {
+      // Same source, domain subject — ungated, so it runs.
+      const response = await app.inject({
+        method: "POST",
+        url: "/datasets/sweep",
+        payload: {
+          caseId,
+          confirm: true,
+          subject: { kind: "domain", value: "example.com" },
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(
+        response.json().sources.map((s: { sourceId: string }) => s.sourceId),
+      ).toContain("intelligence-x");
+    });
+
+    it("requires an explicit confirmation", async () => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/datasets/sweep",
+        payload: {
+          caseId,
+          subject: { kind: "person", value: "Jane Designated" },
+        },
+      });
+      expect(response.statusCode).toBe(400);
+    });
+
+    it("writes no audit row for an excluded source", async () => {
+      const before = await prisma.queryLog.count({
+        where: { caseId, sourceId: "intelligence-x" },
+      });
+      await app.inject({
+        method: "POST",
+        url: "/datasets/sweep",
+        payload: {
+          caseId,
+          confirm: true,
+          subject: { kind: "person", value: "Someone Else" },
+        },
+      });
+      const after = await prisma.queryLog.count({
+        where: { caseId, sourceId: "intelligence-x" },
+      });
+      // Nothing was attempted, so there is nothing to record.
+      expect(after).toBe(before);
+    });
+  });
+
   // ── shared route behaviour ──────────────────────────────────────────────
   describe("dataset routes", () => {
     it("404s for a source with no adapter", async () => {

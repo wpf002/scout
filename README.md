@@ -158,9 +158,10 @@ rather than erase.
 | `GET` | `/cases/:id/audit` | Query log + scope changes. |
 | `POST` | `/exposure/hibp` | Scoped. Requires `caseId` and `confirm: true`. |
 | `POST` | `/infra/:sourceId` | One infrastructure source. Non-scoped. |
-| `POST` | `/infra/sweep` | Several at once, merged. Non-scoped only, `confirm: true`. |
+| `POST` | `/infra/sweep` | Several at once, merged. Ungated only, reports exclusions. |
 | `GET` | `/infra/adapters` | Which infra adapters are built. |
 | `POST` | `/datasets/:sourceId` | One dataset source. `confirm: true` when the kind is gated. |
+| `POST` | `/datasets/sweep` | Batch the ungated dataset sources. Reports exclusions. |
 | `GET` | `/datasets/adapters` | Which dataset adapters are built, and their `scopedKinds`. |
 
 Subject terms travel in POST bodies, never URL params, and request bodies are
@@ -233,10 +234,18 @@ Leaks and pastes (**Intelligence X**), sanctions and PEP screening
 (**OpenSanctions**). Aleph, ICIJ, OpenCorporates and Wikidata stay deeplinks —
 none has a stable free API worth the coupling.
 
-**Sources run one at a time here — there is no dataset sweep.** Unlike the
-infra tier, these are not uniformly non-scoped, so a batch path would have to
-reason about per-subject-kind gating inside a fan-out. That is the cheapest
-place to get it wrong.
+### Sweeps report what they refused to run
+
+Both tiers have a sweep (`/infra/sweep`, `/datasets/sweep`), sharing one
+implementation that filters on the effective per-subject-kind gate. A `person`
+sweep runs OpenSanctions; an `email` sweep excludes Intelligence X, because for
+that input it is a person-facing lookup.
+
+Exclusions come back in the response and render in the UI. A sweep that quietly
+omitted a gated source would read as "covered everything", and an investigator
+would take the absence of a hit as evidence when it was really a refusal. When
+nothing is left to sweep, the request fails with the reason rather than
+returning an empty result set that looks like a clean negative.
 
 ### Per-subject-kind scoping
 
@@ -258,13 +267,23 @@ Every layer reads the same function — planner, dispatcher, adapter, and the
 applied rather than the source's blanket flag. Routes call `executeSource()`,
 which picks the runner from the effective gate so no route can choose wrong.
 
-### Sanctioned is not the same claim as listed
+### Five listings, five different claims
 
-A sanction means a government has designated someone. A PEP listing means they
-hold public office. Rendering both as "SANCTIONED" would be a false accusation
-against every politician in the dataset, so `SanctionMatch.sanctioned` is true
-only for actual designation topics, and the UI treats the two differently — red
-and unmissable versus amber and merely present.
+Sanctions data flattens badly, and flattening it makes false accusations about
+real people. `classifyDesignation()` keeps them apart:
+
+| Designation | What it actually claims |
+|---|---|
+| `sanctioned` | The entity itself is designated. |
+| `linked-to-sanctioned` | Associated with a designated party — a subsidiary, a relative. **Not itself designated.** |
+| `debarred` | Excluded from public procurement. Adverse, but not a sanction. |
+| `pep` | Holds or held public office. Nothing adverse on its own. |
+| `listed` | Present in a reference dataset with no adverse claim. |
+
+`sanctioned` is true only for the first. The trap here is `sanction.linked`,
+which *reads* like a sanction topic — treating it as one would designate
+someone who has not been designated. Unrecognized topics fall through to
+`listed` rather than having severity inferred from an unfamiliar string.
 
 Absence of a match is likewise never rendered as "clear".
 
@@ -279,16 +298,16 @@ rules out.
 ## Tests
 
 ```bash
-pnpm test        # 151 tests
+pnpm test        # 166 tests
 ```
 
 - `packages/scope` (22) — the gate, including lookalike domains, `@`-smuggling,
   IDN normalization, and fail-closed on unparseable input.
-- `packages/sources` (25) — registry invariants (pins the scoped set) and
+- `packages/sources` (31) — registry invariants (pins the scoped set) and
   observation dedupe/attribution.
 - `packages/db` (8) — audit immutability against a live Postgres, key redaction,
   BigInt JSON safety.
-- `apps/api` (96) — the Phase 1, 3 and 4 exit gates end to end, upstream
+- `apps/api` (105) — the Phase 1, 3 and 4 exit gates end to end, upstream
   normalizers against fixture payloads, cache and rate-limiter behaviour, plus
   a red-team block: scope-shaped fields smuggled into request bodies, lookalike
   domains, nonexistent cases, empty scope, sweeping a scoped source, and
@@ -313,7 +332,8 @@ erodes:
   pinned.
 
 The browser loops are checked with Playwright against a real Chromium — 23
-checks for Phase 2, 14 for Phase 3, 19 for Phase 4.
+checks for Phase 2, 14 for Phase 3, 19 for Phase 4, and 9 for the
+designation distinctions.
 
 The DB-backed suites skip without `DATABASE_URL`. They don't clean up — audit
 rows can't be deleted — so point them at a disposable database.

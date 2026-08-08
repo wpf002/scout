@@ -205,15 +205,22 @@ planner, dispatcher, adapter, and the audit row's `requiresScope` column, which
 now records the gate that actually applied rather than the source's blanket
 flag.
 
-Consequence: **there is no dataset sweep.** Dataset sources are not uniformly
-non-scoped, so a batch path would have to reason about per-kind gating inside a
-fan-out. Sources run one at a time through `executeSource()`, which picks the
-runner from the effective gate so no route can choose wrong.
+Sources run one at a time through `executeSource()`, which picks the runner
+from the effective gate so no route can choose wrong. A `/datasets/sweep` was
+added alongside it, sharing one implementation with the infra sweep that
+filters on the same per-kind gate and **reports what it excluded** — a sweep
+that silently omitted a gated source would read as "covered everything", and an
+absence would be mistaken for a clean negative.
 
-**Sanctioned is not the same claim as listed.** A sanction means a government
-has designated someone; a PEP listing means they hold public office. Only
-actual designation topics set `sanctioned`, and the UI treats the two
-differently. Absence of a match is never rendered as "clear".
+**Five listings, five different claims.** Sanctions data flattens badly, and
+flattening it makes false accusations about real people. `sanctioned` is true
+only when the entity itself is designated; `linked-to-sanctioned` (associated
+with a designated party), `debarred` (procurement exclusion) and `pep` (holds
+public office) are surfaced as the distinct claims they are. The trap is
+`sanction.linked`, which reads like a sanction topic — treating it as one
+designates someone who has not been designated. Unrecognized topics fall
+through to `listed` rather than having severity guessed from an unfamiliar
+string. Absence of a match is never rendered as "clear".
 
 **Entry gate:** Phase 3 exit. ✅
 **Exit gate:** ✅ a person subject returns normalized hits from IntelX +

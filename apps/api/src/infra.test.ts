@@ -230,6 +230,26 @@ run("Scout infrastructure tier", () => {
       ]);
     });
 
+    it("reports sources it excluded rather than silently dropping them", async () => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/infra/sweep",
+        payload: {
+          caseId,
+          confirm: true,
+          subject: { kind: "ip", value: "203.0.113.10" },
+        },
+      });
+      expect(response.statusCode).toBe(200);
+
+      // crt.sh accepts only domains. An investigator must be able to see that
+      // it was never asked, rather than read its absence as "no result".
+      const crtsh = response
+        .json()
+        .excluded.find((e: { sourceId: string }) => e.sourceId === "crtsh");
+      expect(crtsh.reason).toBe("kind-not-accepted");
+    });
+
     it("requires an explicit confirmation", async () => {
       const response = await app.inject({
         method: "POST",

@@ -112,6 +112,30 @@ export interface DatasetHit {
   entities: ExtractedEntity[];
 }
 
+/**
+ * What a listing actually claims about an entity.
+ *
+ * These are different accusations and must not be flattened into one. In
+ * particular `linked-to-sanctioned` means the entity is *associated with* a
+ * designated party — a subsidiary, a family member — not that it is itself
+ * designated. Rendering that as "sanctioned" would be a false accusation
+ * about a real person, which is the exact failure this type exists to prevent.
+ */
+export const DESIGNATIONS = [
+  /** The entity itself is subject to sanctions. */
+  "sanctioned",
+  /** Associated with a designated party. NOT itself designated. */
+  "linked-to-sanctioned",
+  /** Excluded from public procurement. A real finding, but not a sanction. */
+  "debarred",
+  /** Holds or held public office. Says nothing adverse on its own. */
+  "pep",
+  /** Present in a reference dataset with no adverse designation. */
+  "listed",
+] as const;
+
+export type Designation = (typeof DESIGNATIONS)[number];
+
 export interface SanctionMatch {
   kind: "sanction-match";
   entityId: string;
@@ -125,13 +149,37 @@ export interface SanctionMatch {
   countries: string[];
   /** `sanction`, `role.pep`, `crime`, … */
   topics: string[];
+  /** The strongest claim the listings actually support. */
+  designation: Designation;
   /**
-   * True when this entity is actually designated, as opposed to merely
-   * present in a reference dataset. Drives the unmissable UI treatment — a
-   * PEP listing and an active sanction are not the same claim about someone.
+   * True ONLY when this entity is itself designated. Drives the unmissable UI
+   * treatment. Association with a sanctioned party, procurement debarment and
+   * PEP status are all serious and all surfaced — but none of them is this.
    */
   sanctioned: boolean;
   entities: ExtractedEntity[];
+}
+
+/**
+ * Maps OpenSanctions topics to the claim they support.
+ *
+ * Ordered by severity: the strongest applicable claim wins, so an entity that
+ * is both designated and a PEP reads as designated. Anything unrecognized
+ * falls through to `listed` — present in a dataset, no adverse claim — because
+ * inferring severity from an unfamiliar topic string would be guessing.
+ */
+export function classifyDesignation(
+  topics: readonly string[],
+): Designation {
+  const set = new Set(topics);
+
+  // The entity itself is designated, by some authority.
+  if (set.has("sanction") || set.has("sanction.counter")) return "sanctioned";
+  if (set.has("debarment")) return "debarred";
+  // Explicitly below debarment: this is a claim about someone else.
+  if (set.has("sanction.linked")) return "linked-to-sanctioned";
+  if ([...set].some((topic) => topic.startsWith("role.pep"))) return "pep";
+  return "listed";
 }
 
 export type DatasetObservation = DatasetHit | SanctionMatch;

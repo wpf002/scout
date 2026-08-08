@@ -161,6 +161,20 @@ export function InfraBoard({
             certificates.
           </div>
 
+          {result.excluded.length > 0 && (
+            // Never let a source's absence read as "no result". An excluded
+            // source was not asked, which is a different thing from finding
+            // nothing.
+            <div className="notice">
+              <strong>Not swept:</strong>{" "}
+              {result.excluded.map((e) => (
+                <span key={e.sourceId} style={{ marginRight: 10 }}>
+                  <span className="mono">{e.sourceId}</span> ({e.reason})
+                </span>
+              ))}
+            </div>
+          )}
+
           <div className="row" style={{ marginBottom: 10 }}>
             {(["all", "subdomain", "host", "cert"] as const).map((option) => (
               <button

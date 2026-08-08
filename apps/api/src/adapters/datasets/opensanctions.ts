@@ -1,6 +1,10 @@
 import { z } from "zod";
 import type { SanctionMatch, Subject } from "@scout/sources";
-import { dedupeEntities, requireSource } from "@scout/sources";
+import {
+  classifyDesignation,
+  dedupeEntities,
+  requireSource,
+} from "@scout/sources";
 
 export const openSanctionsSource = requireSource("opensanctions");
 
@@ -30,23 +34,15 @@ const searchSchema = z.object({
 
 export type OpenSanctionsSearch = z.infer<typeof searchSchema>;
 
-/**
- * Topics that mean the entity is actually designated, rather than merely
- * present in a reference dataset.
- *
- * The distinction is the whole point of the field. A PEP listing says someone
- * holds public office; a sanction says a government has designated them.
- * Rendering both as "SANCTIONED" would be a false accusation against every
- * politician in the database.
- */
-const SANCTION_TOPICS = new Set(["sanction", "sanction.linked", "debarment"]);
-
 export function normalizeOpenSanctions(
   payload: OpenSanctionsSearch,
 ): SanctionMatch[] {
   return payload.results.map((entity) => {
     const topics = entity.properties.topics ?? [];
     const datasets = [...entity.datasets].sort();
+    // Classification lives in @scout/sources so the API and the dashboard
+    // cannot disagree about what a listing claims.
+    const designation = classifyDesignation(topics);
 
     return {
       kind: "sanction-match" as const,
@@ -57,7 +53,8 @@ export function normalizeOpenSanctions(
       score: entity.score,
       countries: [...(entity.properties.country ?? [])].sort(),
       topics: [...topics].sort(),
-      sanctioned: topics.some((topic) => SANCTION_TOPICS.has(topic)),
+      designation,
+      sanctioned: designation === "sanctioned",
       // Structured fields, so these are high confidence — the provider has
       // already decided this email belongs to this entity.
       entities: dedupeEntities([

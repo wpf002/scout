@@ -8,6 +8,7 @@ import type {
   DatasetAdapterInfo,
   DatasetObservation,
   DatasetRunResult,
+  Designation,
   ExtractedEntity,
   SubjectKind,
 } from "@/lib/types";
@@ -174,8 +175,9 @@ export function DatasetBoard({
             {sanctionedCount === 1 ? "entity" : "entities"} matched
           </div>
           <div style={{ fontSize: 12.5, marginTop: 5 }}>
-            This subject matches an entity on a designation list. Check the
-            listed datasets below before acting on it.
+            This subject matches an entity that is itself designated. Rows
+            marked <em>linked to sanctioned</em>, <em>debarred</em> or{" "}
+            <em>PEP</em> are different claims and are not counted here.
           </div>
         </div>
       )}
@@ -321,6 +323,35 @@ export function DatasetBoard({
   );
 }
 
+/**
+ * Each designation gets its own words. "Listed" is deliberately never
+ * rendered as "clear" — absence of a designation in these datasets is not a
+ * statement that the entity is clean.
+ */
+const DESIGNATION_LABEL: Record<Designation, string> = {
+  sanctioned: "sanctioned",
+  "linked-to-sanctioned": "linked to sanctioned",
+  debarred: "debarred",
+  pep: "PEP",
+  listed: "listed",
+};
+
+const DESIGNATION_STYLE: Record<Designation, string> = {
+  sanctioned: "deny",
+  "linked-to-sanctioned": "warn",
+  debarred: "warn",
+  pep: "warn",
+  listed: "",
+};
+
+const DESIGNATION_ROW: Record<Designation, string> = {
+  sanctioned: "sanctioned",
+  "linked-to-sanctioned": "pep",
+  debarred: "pep",
+  pep: "pep",
+  listed: "",
+};
+
 function ObservationRow({
   observation,
   onSave,
@@ -329,11 +360,8 @@ function ObservationRow({
   onSave: () => void;
 }) {
   if (observation.kind === "sanction-match") {
-    const isPep = !observation.sanctioned && observation.topics.length > 0;
     return (
-      <div
-        className={`entry ${observation.sanctioned ? "sanctioned" : isPep ? "pep" : ""}`}
-      >
+      <div className={`entry ${DESIGNATION_ROW[observation.designation]}`}>
         <div className="spread">
           <div>
             <div className="entry-title">
@@ -363,13 +391,9 @@ function ObservationRow({
             </div>
           </div>
           <div className="row" style={{ justifyContent: "flex-end" }}>
-            {observation.sanctioned ? (
-              <span className="badge deny">sanctioned</span>
-            ) : (
-              // Deliberately not "clear" — absence of a designation in these
-              // datasets is not a statement that the person is clean.
-              <span className="badge warn">listed</span>
-            )}
+            <span className={`badge ${DESIGNATION_STYLE[observation.designation]}`}>
+              {DESIGNATION_LABEL[observation.designation]}
+            </span>
             <button className="tiny" onClick={onSave}>
               + Save
             </button>

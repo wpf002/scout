@@ -1,18 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { InfraObservation, SourceResult } from "@scout/sources";
-import {
-  mergeObservations,
-  requiresScopeFor,
-  subjectSchema,
-} from "@scout/sources";
+import { mergeObservations, subjectSchema } from "@scout/sources";
 import { jsonSafe } from "@scout/db";
+import type { InfraAdapter } from "../adapters/infra/index.js";
 import {
   getInfraAdapter,
-  infraAdaptersFor,
   INFRA_ADAPTERS,
 } from "../adapters/infra/index.js";
 import { executeUnscopedSource } from "../adapters/base.js";
+import { runSweep, sweepSourceReport } from "./sweep.js";
 import { badRequest, notFound } from "../errors.js";
 import { config } from "../config.js";
 
@@ -88,9 +84,8 @@ export async function registerInfraRoutes(
   app.post("/infra/sweep", async (request) => {
     const body = sweepSchema.parse(request.body);
 
-    let adapters = infraAdaptersFor(body.subject);
+    let adapters: readonly InfraAdapter[] = INFRA_ADAPTERS;
     if (body.sourceIds !== undefined) {
-      const wanted = new Set(body.sourceIds);
       const unknown = body.sourceIds.filter(
         (id) => getInfraAdapter(id) === undefined,
       );
@@ -99,81 +94,40 @@ export async function registerInfraRoutes(
           `No infrastructure adapter for: ${unknown.join(", ")}.`,
         );
       }
+      const wanted = new Set(body.sourceIds);
       adapters = adapters.filter((a) => wanted.has(a.source.id));
     }
 
-    // Belt and braces. INFRA_ADAPTERS is asserted non-scoped by its own test;
-    // this makes a regression fail the request rather than leak a lookup.
-    // Checked against the effective per-subject-kind gate, so a source that is
-    // free for domains but gated for email can never be swept with an email.
-    const scoped = adapters.filter((a) =>
-      requiresScopeFor(a.source, body.subject.kind),
-    );
-    if (scoped.length > 0) {
-      throw badRequest(
-        `Refusing to sweep scoped sources: ${scoped.map((a) => a.source.id).join(", ")}. ` +
-          "Person-facing sources run one confirmed subject at a time.",
-      );
-    }
-
-    if (adapters.length === 0) {
-      throw badRequest(
-        `No infrastructure source accepts a ${body.subject.kind} subject.`,
-      );
-    }
-
-    const settled = await Promise.all(
-      adapters.map(async (adapter) => {
-        const result = await executeUnscopedSource(
-          adapter.source,
-          {
-            caseId: body.caseId,
-            subject: body.subject,
-            operator: config.SCOUT_OPERATOR,
-          },
-          adapter.run,
-        );
-        return { adapter, result: result as SourceResult<InfraObservation[]> };
-      }),
-    );
+    // runSweep applies the effective per-subject-kind gate and reports what it
+    // excluded rather than silently dropping it.
+    const outcome = await runSweep(adapters, body.subject, body.caseId);
 
     // One board, not four source-shaped silos. Attribution is a union, so a
     // hostname seen by both crt.sh and SecurityTrails names both.
     const merged = mergeObservations(
-      settled.flatMap(({ adapter, result }) =>
+      outcome.ran.flatMap(({ adapter, result }) =>
         (result.status === "ok" ? (result.data ?? []) : []).map(
           (observation) => ({ sourceId: adapter.source.id, observation }),
         ),
       ),
     );
 
-    const counts = {
-      subdomain: merged.filter((m) => m.observation.kind === "subdomain").length,
-      host: merged.filter((m) => m.observation.kind === "host").length,
-      cert: merged.filter((m) => m.observation.kind === "cert").length,
-    };
-
     return jsonSafe({
       subject: body.subject,
       caseId: body.caseId,
-      sources: settled.map(({ adapter, result }) => ({
-        sourceId: adapter.source.id,
-        name: adapter.source.name,
-        status: result.status,
-        reason: result.reason ?? null,
-        message: result.message ?? null,
-        observationCount:
-          result.status === "ok" ? (result.data ?? []).length : 0,
-        queryLogId: result.provenance.queryLogId ?? null,
-      })),
+      sources: sweepSourceReport(outcome),
+      excluded: outcome.excluded,
       totals: {
-        rawObservations: settled.reduce(
+        rawObservations: outcome.ran.reduce(
           (sum, { result }) =>
             sum + (result.status === "ok" ? (result.data ?? []).length : 0),
           0,
         ),
         merged: merged.length,
-        ...counts,
+        subdomain: merged.filter((m) => m.observation.kind === "subdomain")
+          .length,
+        host: merged.filter((m) => m.observation.kind === "host").length,
+        cert: merged.filter((m) => m.observation.kind === "cert").length,
       },
       observations: merged,
     });

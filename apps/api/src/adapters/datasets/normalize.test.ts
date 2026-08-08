@@ -52,7 +52,39 @@ describe("OpenSanctions", () => {
     // "SANCTIONED" would be a false accusation against every politician in
     // the dataset.
     expect(matches[1]?.sanctioned).toBe(false);
+    expect(matches[1]?.designation).toBe("pep");
     expect(matches[1]?.topics).toEqual(["role.pep"]);
+  });
+
+  it("does NOT mark an associate of a sanctioned entity as sanctioned", () => {
+    // The failure this guards against is subtle and severe: `sanction.linked`
+    // reads like a sanction topic, and treating it as one would designate
+    // someone who has not been designated.
+    const linked = normalizeOpenSanctions({
+      results: [
+        {
+          id: "NK-ghi",
+          caption: "Associated Holdings Ltd",
+          schema: "Company",
+          datasets: ["us_ofac_sdn"],
+          score: 0.6,
+          properties: {
+            country: [],
+            topics: ["sanction.linked"],
+            email: [],
+            website: [],
+            name: [],
+          },
+        },
+      ],
+    });
+
+    expect(linked[0]?.sanctioned).toBe(false);
+    expect(linked[0]?.designation).toBe("linked-to-sanctioned");
+  });
+
+  it("carries the designation alongside the boolean", () => {
+    expect(matches[0]?.designation).toBe("sanctioned");
   });
 
   it("extracts structured entities at high confidence", () => {

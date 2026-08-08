@@ -1,6 +1,47 @@
 import { describe, expect, it } from "vitest";
 import type { InfraObservation } from "./results.js";
-import { mergeObservations, observationKey } from "./results.js";
+import {
+  classifyDesignation,
+  mergeObservations,
+  observationKey,
+} from "./results.js";
+
+describe("classifyDesignation — different listings are different accusations", () => {
+  it("calls a designated entity sanctioned", () => {
+    expect(classifyDesignation(["sanction"])).toBe("sanctioned");
+  });
+
+  it("does NOT call an associate of a sanctioned entity sanctioned", () => {
+    // `sanction.linked` means the entity is associated with a designated
+    // party — a subsidiary, a relative. Reporting that person as sanctioned
+    // would be a false accusation about someone who has not been designated.
+    expect(classifyDesignation(["sanction.linked"])).toBe(
+      "linked-to-sanctioned",
+    );
+  });
+
+  it("does NOT call a PEP sanctioned", () => {
+    expect(classifyDesignation(["role.pep"])).toBe("pep");
+    expect(classifyDesignation(["role.pep.family"])).toBe("pep");
+  });
+
+  it("keeps procurement debarment distinct from sanctions", () => {
+    // A real adverse finding, but not a sanction.
+    expect(classifyDesignation(["debarment"])).toBe("debarred");
+  });
+
+  it("reports the strongest applicable claim when several apply", () => {
+    expect(classifyDesignation(["role.pep", "sanction"])).toBe("sanctioned");
+    expect(classifyDesignation(["role.pep", "sanction.linked"])).toBe(
+      "linked-to-sanctioned",
+    );
+  });
+
+  it("falls through to listed rather than guessing at an unknown topic", () => {
+    expect(classifyDesignation(["wildlife.trafficking"])).toBe("listed");
+    expect(classifyDesignation([])).toBe("listed");
+  });
+});
 
 const sub = (hostname: string, extra: Partial<InfraObservation> = {}) =>
   ({

@@ -176,6 +176,18 @@ export interface DatasetHit {
   entities: ExtractedEntity[];
 }
 
+/**
+ * What a listing actually claims. These are different accusations —
+ * `linked-to-sanctioned` means associated with a designated party, not
+ * designated — and the UI must not flatten them.
+ */
+export type Designation =
+  | "sanctioned"
+  | "linked-to-sanctioned"
+  | "debarred"
+  | "pep"
+  | "listed";
+
 export interface SanctionMatch {
   kind: "sanction-match";
   entityId: string;
@@ -185,9 +197,17 @@ export interface SanctionMatch {
   score: number | null;
   countries: string[];
   topics: string[];
-  /** Actually designated, as opposed to merely present in a reference list. */
+  designation: Designation;
+  /** True ONLY when the entity itself is designated. */
   sanctioned: boolean;
   entities: ExtractedEntity[];
+}
+
+export interface SweepExclusion {
+  sourceId: string;
+  name: string;
+  reason: "scope-gated" | "kind-not-accepted";
+  message: string;
 }
 
 export type DatasetObservation = DatasetHit | SanctionMatch;
@@ -258,18 +278,22 @@ export interface AttributedObservation {
   sourceIds: string[];
 }
 
+export interface SweepSourceReport {
+  sourceId: string;
+  name: string;
+  status: "ok" | "inert" | "error" | "blocked";
+  reason: string | null;
+  message: string | null;
+  observationCount: number;
+  queryLogId: string | null;
+}
+
 export interface InfraSweepResult {
   subject: Subject;
   caseId: string;
-  sources: {
-    sourceId: string;
-    name: string;
-    status: "ok" | "inert" | "error" | "blocked";
-    reason: string | null;
-    message: string | null;
-    observationCount: number;
-    queryLogId: string | null;
-  }[];
+  sources: SweepSourceReport[];
+  /** Sources deliberately not run, and why. Never silently omitted. */
+  excluded: SweepExclusion[];
   totals: {
     rawObservations: number;
     merged: number;
