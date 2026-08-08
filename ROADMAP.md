@@ -231,7 +231,7 @@ kind for one source and that suggestions are not auto-linked.
 
 ---
 
-## Phase 5 — Exposure + people (scoped tier) ← next
+## Phase 5 — Exposure + people (scoped tier) ✅ SHIPPED
 
 The scope-gated adapters. This phase is where the audit log, per-case scope, and
 `enforceScope()` template earn their existence. Gate hard; every adapter calls
@@ -253,19 +253,44 @@ it, and inherits the gate, the audit rows, and the inert/error degradation.
   the source, the matched scope entry, and the auth ref before it runs. The API
   already requires `confirm: true`.
 
+**Also decided this phase:**
+
+- **One handler, one gate.** All four scoped sources went behind a single route
+  handler and a single registry. HIBP's bespoke Phase 0 route was folded in.
+  Four bespoke routes would have been four chances to apply the gate slightly
+  differently, and the one that drifts is the one that leaks.
+- **Credential material is redacted by default.** DeHashed returns passwords;
+  Scout reports that one exists and drops the value. A case database should not
+  become a credential store. `SCOUT_ALLOW_CREDENTIAL_MATERIAL=true` opts in for
+  engagements that genuinely need it, and the response says which mode produced
+  it so a redacted result is never read as an empty one.
+- **WhatsMyName is off until switched on.** It has no hosted API, so Scout
+  enumerates from the project's public site list itself — dozens of outbound
+  requests about one named person. Capped, bounded-concurrency, and inert until
+  `WHATSMYNAME_ENABLED=true`. Detection requires the expected status *and* the
+  expected marker string, because a false positive here asserts that a named
+  person holds an account they may not.
+
 **Entry gate:** Phase 4 exit + audit log proven in Phase 1. ✅
-**Exit gate:** each scoped adapter refuses out-of-scope input at the adapter
-level (not just the route), writes an audit row on every attempt, and requires
-an in-scope match + confirmation to execute. Red-team test: no path executes a
-scoped source for an out-of-scope subject.
+**Exit gate:** ✅ each scoped adapter refuses out-of-scope input at the adapter
+level, writes an audit row on every attempt, and requires an in-scope match +
+confirmation to execute.
+
+The red team is the real gate, and it is exhaustive: every scoped route × every
+out-of-scope shape (lookalike domains, `@`-smuggling, another case's scope,
+empty scope, no case, no confirmation, scope-shaped fields smuggled into the
+body), plus every attempt to reach a scoped source through the infra route, the
+dataset route, the infra sweep and the dataset sweep. Each asserts not just the
+status code but that **the upstream stub was never called** — a test that only
+checked the response could pass while the request still went out.
 
 **Kill criterion for the tier:** if per-case scope + audit can't be made
 airtight, these adapters do not ship. The gate is the product; a leaky gate is
-worse than no scoped tier.
+worse than no scoped tier. It held.
 
 ---
 
-## Phase 6 — Correlation + entity graph
+## Phase 6 — Correlation + entity graph ← next (gated, see below)
 
 Scout stops being a launcher and becomes an investigation tool: findings across
 sources get resolved into entities and linked.
@@ -344,8 +369,8 @@ secrets clean, rollback documented.
 2  Web dashboard             ✅ shipped
 3  Infra adapters            ✅ shipped
 4  Dataset adapters          ✅ shipped
-5  Exposure + people         ← next (scoped; hard gate + audit)
-6  Correlation + graph       (defer until real multi-source case volume)
+5  Exposure + people         ✅ shipped
+6  Correlation + graph       ← next, BUT SEE THE DEFER CRITERION
 7  Reporting + export
 8  Hardening + deploy        (defer infra cost until earned)
 ```

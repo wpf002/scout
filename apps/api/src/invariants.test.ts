@@ -19,6 +19,7 @@ import {
   type SubjectKind,
 } from "@scout/sources";
 import { INFRA_ADAPTERS } from "./adapters/infra/index.js";
+import { SCOPED_ADAPTERS } from "./adapters/scoped/index.js";
 import { executeUnscopedSource } from "./adapters/base.js";
 import { EXECUTION_ROUTES } from "./routes/query.js";
 
@@ -62,6 +63,27 @@ describe("invariant 1 — the scope gate is absolute", () => {
       "hunter-io",
       "whatsmyname",
     ]);
+  });
+
+  it("keeps every scoped source behind a built adapter, and vice versa", () => {
+    // The scoped registry and the registry's own scoped set must be the same
+    // four sources. A person-facing source with no adapter is unreachable
+    // (fine), but an adapter for a source not marked scoped would run
+    // ungated through the wrong runner.
+    expect(SCOPED_ADAPTERS.map((a) => a.source.id).sort()).toEqual(
+      scopedSources().map((s) => s.id).sort(),
+    );
+    for (const adapter of SCOPED_ADAPTERS) {
+      expect(adapter.source.requiresScope).toBe(true);
+    }
+  });
+
+  it("routes every scoped source under its own tier", () => {
+    for (const adapter of SCOPED_ADAPTERS) {
+      expect(EXECUTION_ROUTES[adapter.source.id]).toBe(
+        `/${adapter.source.tier}/${adapter.source.id}`,
+      );
+    }
   });
 
   it("refuses to run a scoped source on the unscoped path", async () => {

@@ -4,7 +4,7 @@ import { registerErrorHandler } from "./errors.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerQueryRoutes } from "./routes/query.js";
 import { registerCaseRoutes } from "./routes/cases.js";
-import { registerExposureRoutes } from "./routes/exposure.js";
+import { registerScopedRoutes } from "./routes/scoped.js";
 import { registerInfraRoutes } from "./routes/infra.js";
 import { registerDatasetRoutes } from "./routes/datasets.js";
 import { config } from "./config.js";
@@ -48,7 +48,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerHealthRoutes(app);
   await registerQueryRoutes(app);
   await registerCaseRoutes(app);
-  await registerExposureRoutes(app);
+  await registerScopedRoutes(app);
   await registerInfraRoutes(app);
   await registerDatasetRoutes(app);
 

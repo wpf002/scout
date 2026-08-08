@@ -8,9 +8,10 @@ Scout is a **launcher, not an aggregator**. There is deliberately no box that
 takes a name and returns an assembled dossier. It plans, it gates, it records —
 and it makes you take each person-facing action on purpose.
 
-**Status:** Phases 0–4 shipped — foundation, persistence + cases, web
-dashboard, the infrastructure tier, and the datasets tier. See
-[ROADMAP.md](./ROADMAP.md) for the locked build order.
+**Status:** Phases 0–5 shipped — foundation, persistence + cases, web
+dashboard, the infrastructure and datasets tiers, and the scope-gated
+exposure/people tier. See [ROADMAP.md](./ROADMAP.md) for the locked build
+order.
 
 ---
 
@@ -156,7 +157,9 @@ rather than erase.
 | `POST`/`GET` | `/cases/:id/subjects` | |
 | `POST`/`GET` | `/cases/:id/findings` | Tier derived from the registry, not the request. |
 | `GET` | `/cases/:id/audit` | Query log + scope changes. |
-| `POST` | `/exposure/hibp` | Scoped. Requires `caseId` and `confirm: true`. |
+| `POST` | `/exposure/:sourceId` | Scoped. `hibp`, `dehashed`. Requires `caseId` + `confirm: true`. |
+| `POST` | `/people/:sourceId` | Scoped. `hunter-io`, `whatsmyname`. Same requirements. |
+| `GET` | `/scoped/adapters` | The person-facing sources that are built. |
 | `POST` | `/infra/:sourceId` | One infrastructure source. Non-scoped. |
 | `POST` | `/infra/sweep` | Several at once, merged. Ungated only, reports exclusions. |
 | `GET` | `/infra/adapters` | Which infra adapters are built. |
@@ -295,10 +298,41 @@ medium. Extraction is a pattern matcher, not entity recognition — guessing tha
 a capitalized phrase is someone's name is exactly the fabrication invariant 6
 rules out.
 
+## The scoped tier
+
+The person-facing sources: **HIBP** and **DeHashed** (exposure), **Hunter.io**
+and **WhatsMyName** (people). This is the tier the whole audit layer exists for.
+
+**One handler, one gate.** All four run through a single route handler and a
+single registry. Four bespoke routes would have been four chances to apply the
+gate slightly differently, and the one that drifts is the one that leaks. A
+test asserts the scoped registry and the registry's own scoped set are the same
+four sources.
+
+**Credential material is redacted by default.** DeHashed returns passwords.
+Scout reports `hasPassword: true` and the breach name, and drops the value —
+knowing a credential exists in a named breach is the finding, and a case
+database should not become a credential store. `SCOUT_ALLOW_CREDENTIAL_MATERIAL=true`
+opts in for engagements that genuinely need it (credential-stuffing
+validation), and the response says which mode produced it so a redacted result
+is never mistaken for an empty one.
+
+**WhatsMyName is off until you turn it on.** It has no hosted API, so Scout
+does the enumeration itself from the project's public site list — dozens of
+outbound requests about one named person, the most invasive thing here. It is
+capped at `WHATSMYNAME_SITE_LIMIT` sites, runs with bounded concurrency, and
+stays `inert` until `WHATSMYNAME_ENABLED=true`. Detection requires both the
+expected status *and* the expected marker string: status alone false-positives
+on sites that return 200 for every URL, and a false positive asserts that a
+named person holds an account they may not.
+
+**The gate runs before the enable check.** An out-of-scope username reports
+`blocked`, not `inert` — the refusal that matters is recorded first.
+
 ## Tests
 
 ```bash
-pnpm test        # 166 tests
+pnpm test        # 211 tests
 ```
 
 - `packages/scope` (22) — the gate, including lookalike domains, `@`-smuggling,
@@ -307,7 +341,7 @@ pnpm test        # 166 tests
   observation dedupe/attribution.
 - `packages/db` (8) — audit immutability against a live Postgres, key redaction,
   BigInt JSON safety.
-- `apps/api` (105) — the Phase 1, 3 and 4 exit gates end to end, upstream
+- `apps/api` (150) — the Phase 1, 3 and 4 exit gates end to end, upstream
   normalizers against fixture payloads, cache and rate-limiter behaviour, plus
   a red-team block: scope-shaped fields smuggled into request bodies, lookalike
   domains, nonexistent cases, empty scope, sweeping a scoped source, and
@@ -332,8 +366,8 @@ erodes:
   pinned.
 
 The browser loops are checked with Playwright against a real Chromium — 23
-checks for Phase 2, 14 for Phase 3, 19 for Phase 4, and 9 for the
-designation distinctions.
+checks for Phase 2, 14 for Phase 3, 19 for Phase 4, 9 for the designation
+distinctions, and 17 for the scoped tier.
 
 The DB-backed suites skip without `DATABASE_URL`. They don't clean up — audit
 rows can't be deleted — so point them at a disposable database.

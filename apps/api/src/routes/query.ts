@@ -14,6 +14,10 @@ import { checkScope, envScope, type ScopeEntry } from "@scout/scope";
 import { loadCaseWithScope, prisma, recordQuery } from "@scout/db";
 import { INFRA_ADAPTERS } from "../adapters/infra/index.js";
 import { DATASET_ADAPTERS } from "../adapters/datasets/index.js";
+import {
+  SCOPED_ADAPTERS,
+  scopedRoutePath,
+} from "../adapters/scoped/index.js";
 import { notFound } from "../errors.js";
 import { config } from "../config.js";
 
@@ -26,7 +30,12 @@ import { config } from "../config.js";
  * building an adapter is what makes a source runnable, not editing a map.
  */
 export const EXECUTION_ROUTES: Record<string, string> = {
-  hibp: "/exposure/hibp",
+  ...Object.fromEntries(
+    SCOPED_ADAPTERS.map((adapter) => [
+      adapter.source.id,
+      scopedRoutePath(adapter.source),
+    ]),
+  ),
   ...Object.fromEntries(
     INFRA_ADAPTERS.map((adapter) => [
       adapter.source.id,

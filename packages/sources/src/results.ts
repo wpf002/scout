@@ -79,6 +79,68 @@ export interface ExposureData {
   breaches: BreachRecord[];
 }
 
+/* ── exposure + people tiers (scoped) ────────────────────────────────────
+ *
+ * Everything here describes a person. The shapes are deliberately narrower
+ * than what the providers return: an investigator needs to know that a
+ * credential for this account exists in a named breach, and almost never needs
+ * the credential itself. Pulling secret material into a case database widens
+ * the blast radius of that database for very little investigative gain.
+ */
+
+export interface CredentialRecord {
+  kind: "credential-record";
+  /** Which breach this record came from. The provenance that matters. */
+  databaseName: string;
+  email: string | null;
+  username: string | null;
+  /**
+   * Whether secret material is present upstream — NOT the material itself.
+   * The values are omitted unless the operator explicitly opts in; see
+   * `SCOUT_ALLOW_CREDENTIAL_MATERIAL`.
+   */
+  hasPassword: boolean;
+  hasHashedPassword: boolean;
+  /** Populated only under the explicit opt-in above. Null otherwise. */
+  password: string | null;
+  hashedPassword: string | null;
+  name: string | null;
+  phone: string | null;
+  ipAddress: string | null;
+}
+
+export interface EmailCandidate {
+  value: string;
+  /** `personal` or `generic` — a role address is not a person. */
+  type: string | null;
+  confidence: number | null;
+  firstName: string | null;
+  lastName: string | null;
+  position: string | null;
+}
+
+export interface EmailPatternResult {
+  kind: "email-pattern";
+  domain: string;
+  /** e.g. `{first}.{last}` — the shape, not any particular person. */
+  pattern: string | null;
+  organization: string | null;
+  emails: EmailCandidate[];
+}
+
+export interface UsernameSighting {
+  kind: "username-sighting";
+  username: string;
+  site: string;
+  category: string | null;
+  url: string;
+}
+
+export type PersonObservation =
+  | CredentialRecord
+  | EmailPatternResult
+  | UsernameSighting;
+
 /* ── datasets tier ───────────────────────────────────────────────────────
  *
  * Two shapes, because the tier does two different jobs: Intelligence X

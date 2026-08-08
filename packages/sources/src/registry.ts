@@ -215,7 +215,12 @@ export const SOURCES: readonly Source[] = Object.freeze([
     description:
       "Username enumeration across sites. Scope-gated to authorized identifiers.",
     homepage: "https://whatsmyname.app",
-    keyEnv: "WHATSMYNAME_API_KEY",
+    // Not an API key — WhatsMyName has no hosted API, and Scout does the
+    // enumeration itself from the project's public site list. That makes this
+    // the most outbound-heavy thing Scout does, so it stays inert until an
+    // operator turns it on deliberately. There is no key to act as an
+    // accidental off switch, so the switch is explicit.
+    keyEnv: "WHATSMYNAME_ENABLED",
   },
 
   // ── onion ───────────────────────────────────────────────────────────────

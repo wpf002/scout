@@ -1,10 +1,8 @@
 import { z } from "zod";
-import type { ExposureData, SourceResult, Subject } from "@scout/sources";
+import type { BreachRecord, Subject } from "@scout/sources";
 import { requireSource } from "@scout/sources";
-import type { ScopedRunContext } from "./base.js";
-import { executeScopedSource } from "./base.js";
 
-const HIBP = requireSource("hibp");
+export const hibpSource = requireSource("hibp");
 
 const HIBP_BASE = "https://haveibeenpwned.com/api/v3";
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -21,7 +19,31 @@ const breachSchema = z.object({
 
 const breachListSchema = z.array(breachSchema);
 
-async function fetchBreaches(subject: Subject): Promise<ExposureData> {
+export type HibpBreach = z.infer<typeof breachSchema>;
+
+export function normalizeHibp(
+  breaches: readonly HibpBreach[],
+): BreachRecord[] {
+  return breaches.map((breach) => ({
+    name: breach.Name,
+    title: breach.Title,
+    domain: breach.Domain,
+    breachDate: breach.BreachDate,
+    // Counted things are integers. The largest known breaches exceed a signed
+    // 32-bit int, so this is a bigint (locked invariant 7).
+    pwnCount: BigInt(breach.PwnCount),
+    dataClasses: breach.DataClasses,
+    verified: breach.IsVerified,
+  }));
+}
+
+/**
+ * Breach exposure for an account.
+ *
+ * Scope-gated: `executeScopedSource` enforces the case's scope and writes the
+ * audit row before this function becomes reachable.
+ */
+export async function fetchHibp(subject: Subject): Promise<BreachRecord[]> {
   const key = process.env["HIBP_API_KEY"];
   if (key === undefined || key.trim().length === 0) {
     // Unreachable via executeScopedSource, which checks hasKey first. Kept as
@@ -47,9 +69,7 @@ async function fetchBreaches(subject: Subject): Promise<ExposureData> {
 
   // HIBP uses 404 for "this account appears in no breaches" — a successful
   // negative answer, not a failure.
-  if (response.status === 404) {
-    return { subject: subject.value, breachCount: 0, breaches: [] };
-  }
+  if (response.status === 404) return [];
 
   if (!response.ok) {
     // Status only. The body can echo request detail back, and this string
@@ -57,35 +77,5 @@ async function fetchBreaches(subject: Subject): Promise<ExposureData> {
     throw new Error(`HIBP responded ${response.status}`);
   }
 
-  const parsed = breachListSchema.parse(await response.json());
-
-  return {
-    subject: subject.value,
-    breachCount: parsed.length,
-    breaches: parsed.map((b) => ({
-      name: b.Name,
-      title: b.Title,
-      domain: b.Domain,
-      breachDate: b.BreachDate,
-      // Counted things are integers. The largest known breaches exceed a
-      // signed 32-bit int, so this is a bigint (locked invariant 7).
-      pwnCount: BigInt(b.PwnCount),
-      dataClasses: b.DataClasses,
-      verified: b.IsVerified,
-    })),
-  };
+  return normalizeHibp(breachListSchema.parse(await response.json()));
 }
-
-/**
- * Breach exposure for an account.
- *
- * Scope-gated: `executeScopedSource` enforces the case's scope and writes the
- * audit row before `fetchBreaches` becomes reachable.
- */
-export function queryHibp(
-  ctx: ScopedRunContext,
-): Promise<SourceResult<ExposureData>> {
-  return executeScopedSource(HIBP, ctx, fetchBreaches);
-}
-
-export const hibpSource = HIBP;
