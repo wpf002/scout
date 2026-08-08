@@ -1,0 +1,242 @@
+// Scout — persistence layer (Phase 1).
+//
+// The shape here encodes the platform's invariants:
+//   - Scope hangs off a Case, never off a request parameter.
+//   - A Case cannot exist without an authorizationRef.
+//   - Every scoped query attempt writes a QueryLog row, allowed or denied.
+//   - Every Finding carries the source + query + case + time that produced it.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CaseStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum ScopeKind {
+  DOMAIN
+  IDENTIFIER
+}
+
+enum SubjectKind {
+  DOMAIN
+  IP
+  EMAIL
+  USERNAME
+  PERSON
+  COMPANY
+  HASH
+  KEYWORD
+}
+
+enum Tier {
+  DATASETS
+  INFRA
+  EXPOSURE
+  PEOPLE
+  ONION
+  UTILS
+}
+
+/// PLAN — the planner considered this source for this subject.
+/// EXECUTE — Scout actually attempted the upstream call.
+enum QueryPhase {
+  PLAN
+  EXECUTE
+}
+
+enum QueryOutcome {
+  ALLOWED
+  DENIED
+  INERT
+  ERROR
+}
+
+/// An investigation. Owns its own authorization scope, which is the unit that
+/// matters: permission is granted per engagement, not per Scout instance.
+model Case {
+  id     String     @id @default(cuid())
+  name   String
+  status CaseStatus @default(ACTIVE)
+
+  /// Reference to the engagement or permission that authorizes this work.
+  /// Required at creation — a case with no authorization can never run a
+  /// scoped source, so there is no legitimate state where this is absent.
+  authorizationRef String
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String   @default("local")
+
+  scopeEntries   ScopeEntry[]
+  subjects       Subject[]
+  findings       Finding[]
+  queryLogs      QueryLog[]
+  sourceSettings CaseSource[]
+
+  @@index([status, createdAt])
+}
+
+/// One authorized target. The gate matches subjects against these rows and
+/// nothing else. Adding one is an audited act (see AuditEvent).
+model ScopeEntry {
+  id     String    @id @default(cuid())
+  caseId String
+  case   Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  kind   ScopeKind
+  /// Stored as entered; normalized at match time by @scout/scope.
+  value  String
+  note   String?
+
+  addedBy   String   @default("local")
+  createdAt DateTime @default(now())
+
+  @@unique([caseId, kind, value])
+  @@index([caseId])
+}
+
+/// A thing being investigated within a case.
+model Subject {
+  id     String      @id @default(cuid())
+  caseId String
+  case   Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  kind   SubjectKind
+  value  String
+  label  String?
+
+  createdAt DateTime @default(now())
+
+  findings Finding[]
+
+  @@unique([caseId, kind, value])
+  @@index([caseId])
+}
+
+/// A saved observation. Provenance is not optional decoration — sourceId,
+/// queryTerm, caseId and observedAt are all required, so an orphan finding
+/// cannot be written.
+model Finding {
+  id        String   @id @default(cuid())
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  subjectId String?
+  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  sourceId String
+  tier     Tier
+
+  title   String
+  summary String?
+  /// Normalized payload from the adapter. BigInt counts are stored as strings
+  /// here because JSON has no integer type wide enough for them.
+  data    Json    @default("{}")
+
+  // ── provenance ──
+  queryTerm  String
+  queryKind  SubjectKind
+  observedAt DateTime
+  /// The audit row this finding came out of, when it came from a Scout call.
+  /// Null for findings the investigator saved by hand from a deeplink.
+  queryLogId String?
+  queryLog   QueryLog? @relation(fields: [queryLogId], references: [id], onDelete: SetNull)
+
+  savedBy   String   @default("local")
+  createdAt DateTime @default(now())
+
+  @@index([caseId, sourceId])
+  @@index([caseId, createdAt])
+}
+
+/// The accountability layer. One row per scoped query attempt — planned or
+/// executed, allowed or denied.
+///
+/// These rows are immutable: a database trigger (see migration
+/// `20260808163341_audit_immutable`) rejects UPDATE and DELETE. An audit log
+/// that the application can quietly rewrite is not an audit log.
+model QueryLog {
+  id     String @id @default(cuid())
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  sourceId      String
+  tier          Tier
+  requiresScope Boolean
+
+  phase   QueryPhase
+  outcome QueryOutcome
+  /// Why this outcome, as a stable machine-readable string. For DENIED these
+  /// are exactly the `DenyReason` values exported by @scout/scope
+  /// (`out-of-scope`, `scope-empty`, `case-required`, …); for INERT they
+  /// describe what was missing (`missing-key`, `adapter-not-built`).
+  reason String?
+
+  subjectKind  SubjectKind
+  /// The term as submitted. Recorded so a denial is reviewable after the fact.
+  subjectValue String
+
+  /// Snapshot of the case's authorization at the moment of the query — kept
+  /// verbatim so later edits to the case cannot rewrite history.
+  authorizationRef String
+  operator         String @default("local")
+
+  /// Which scope entry authorized this query, snapshotted rather than joined.
+  /// Deliberately NOT a foreign key: removing a scope entry later must not
+  /// reach back and rewrite the rows it authorized — and with the immutability
+  /// trigger in place, a SetNull cascade would simply fail. The audit row
+  /// records what scope said at query time, permanently.
+  matchedScopeEntryId String?
+  matchedScopeValue   String?
+
+  /// Upstream failure detail when outcome is ERROR. Never contains a key.
+  errorMessage String?
+  durationMs   Int?
+
+  createdAt DateTime @default(now())
+
+  findings Finding[]
+
+  @@index([caseId, createdAt])
+  @@index([caseId, sourceId])
+  @@index([outcome, createdAt])
+}
+
+/// Per-case source toggles. The registry in @scout/sources stays the source of
+/// truth for what a source *is*; this only records whether a case wants it.
+model CaseSource {
+  id       String  @id @default(cuid())
+  caseId   String
+  case     Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sourceId String
+  enabled  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([caseId, sourceId])
+  @@index([caseId])
+}
+
+/// Case-lifecycle events that are not queries: scope added or removed, case
+/// opened or closed. Scope changes are authorization changes, so they belong
+/// in the record next to the queries they enable.
+model AuditEvent {
+  id     String  @id @default(cuid())
+  caseId String?
+
+  action  String
+  detail  Json    @default("{}")
+  actor   String  @default("local")
+
+  createdAt DateTime @default(now())
+
+  @@index([caseId, createdAt])
+}

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
+
+# secrets — never commit a populated env file
+.env
+.env.*
+!.env.example
+
+# local postgres cluster created by scripts/dev-db.sh
+.pgdata/
+
+*.log
+.DS_Store

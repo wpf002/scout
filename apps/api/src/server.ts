@@ -1,0 +1,42 @@
+import Fastify, { type FastifyInstance } from "fastify";
+import { registerErrorHandler } from "./errors.js";
+import { registerHealthRoutes } from "./routes/health.js";
+import { registerQueryRoutes } from "./routes/query.js";
+import { registerCaseRoutes } from "./routes/cases.js";
+import { registerExposureRoutes } from "./routes/exposure.js";
+import { config } from "./config.js";
+
+export async function buildServer(): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger: {
+      level:
+        config.NODE_ENV === "test"
+          ? "silent"
+          : config.NODE_ENV === "production"
+            ? "info"
+            : "debug",
+      // Subject terms and keys travel in bodies and headers. Neither belongs
+      // in a log line, so requests are logged by route and status only.
+      redact: {
+        paths: [
+          'req.headers["hibp-api-key"]',
+          'req.headers["x-api-key"]',
+          "req.headers.authorization",
+          "req.body",
+        ],
+        remove: true,
+      },
+    },
+    // Subject terms must not end up in URLs; bodies stay modest.
+    bodyLimit: 1_048_576,
+  });
+
+  registerErrorHandler(app);
+
+  await registerHealthRoutes(app);
+  await registerQueryRoutes(app);
+  await registerCaseRoutes(app);
+  await registerExposureRoutes(app);
+
+  return app;
+}
