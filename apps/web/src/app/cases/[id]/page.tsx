@@ -97,12 +97,31 @@ export default function CaseWorkspace() {
     void load();
   }, [load]);
 
+  /**
+   * Re-read the audit whenever a tab is opened.
+   *
+   * It used to be fetched once on mount and refreshed only when a finding was
+   * saved — so refusing a query and then opening Audit showed a log with the
+   * refusal missing from it. Every plan and every execution writes rows, and
+   * none of them go through this page, so there is nothing here to hook.
+   *
+   * The refusal count on the tab strip is read from the same object, which is
+   * the part that makes staleness serious: a denial that happened is not
+   * something the interface may quietly show as zero.
+   */
+  useEffect(() => {
+    api
+      .audit(caseId)
+      .then(setAudit)
+      .catch(() => undefined);
+  }, [caseId, tab]);
+
   useEffect(() => {
     api
       .alerts(caseId)
       .then((result) => setAlertCount(result.alerts.length))
       .catch(() => setAlertCount(0));
-  }, [caseId]);
+  }, [caseId, tab]);
 
   async function addSubject(event: React.FormEvent) {
     event.preventDefault();
