@@ -25,12 +25,15 @@ export default function SourcesPage() {
 
   return (
     <>
-      <h1>Sources</h1>
-      <p className="lede">
-        The registry, in reach-for order. Work top-down: datasets and
-        infrastructure do most of the work and touch no personal data. The
-        scoped tiers sit lower on purpose.
-      </p>
+      <div className="band">
+        <span className="eyebrow">Reach-for order</span>
+        <h1>Start where nobody gets hurt.</h1>
+        <p>
+          Datasets and infrastructure do most of the work and touch no personal
+          data. The scoped tiers sit lower on purpose, and a source with no key
+          reports inert rather than guessing.
+        </p>
+      </div>
 
       {error !== null && <div className="error">{error}</div>}
       {sources === null && <div className="empty">Loading…</div>}

@@ -66,6 +66,7 @@ export default function Dashboard() {
     <>
       <div className="spread" style={{ alignItems: "center" }}>
         <div>
+          <span className="eyebrow">Standing watch</span>
           <h1>Watch floor</h1>
           <p className="lede" style={{ marginBottom: 0 }}>
             What changed since you last looked, and which cases it belongs to.

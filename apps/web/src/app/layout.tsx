@@ -19,7 +19,7 @@ export default function RootLayout({
         <header className="topbar">
           <div className="topbar-inner">
             <Link href="/" className="brand">
-              Scout<span>launcher, not aggregator</span>
+              SCOUT<span>launcher, not aggregator</span>
             </Link>
             <nav className="nav">
               <Link href="/">Watch floor</Link>

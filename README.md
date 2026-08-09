@@ -219,6 +219,29 @@ enforcement point to keep in sync. What the UI does is make the posture legible:
 - Adding scope requires ticking an explicit authorization claim, which is
   written to the audit log.
 
+### Visual language
+
+Dark, always — not "dark unless the OS says otherwise". The signal language is
+calibrated against a near-black ground and half of it stops carrying meaning on
+white, so following the system preference would mean maintaining a second
+calibration that nobody tests.
+
+One decision constrains the rest. Crimson is the brand accent, and red already
+meant *refused* here. Hue alone can no longer carry that, so the two are
+separated by **treatment**:
+
+| | |
+|---|---|
+| **Brand** | Crimson as outline, glow, and thin rule. Never a filled block. |
+| **Refusal** | Crimson **filled**, with the word. `.badge.deny`, `.entry.blocked`. |
+
+A denial has to survive being scrolled past, and it now does so by being the
+only solid red mass on the page rather than by being the only red thing. Links
+are plain text with an underline for the same reason — a case name rendered in
+the same red as a refusal reads like something went wrong with it. Not
+incidentally, none of this depends on colour vision to tell a link from a
+denial.
+
 ### The watch floor
 
 `/` is a dashboard built around one question — *what changed since I last
@@ -242,6 +265,26 @@ on the tab you land on:
 
 The tab strip carries counts for findings, unread alerts, and **refusals**. A
 denial is not a footnote to hunt for in the audit view.
+
+### The graph reads left to right
+
+Entities render as cards — kind, value, and how many sources corroborate them —
+on a dark field with orthogonal connectors. Straight diagonals cross at every
+angle and thirty of them is a haystack; elbows share vertical channels, so
+density degrades into something still readable.
+
+Columns are **(kind, depth)**, not kind alone. A case whose entities are all one
+kind — five hostnames under one domain, the common shape — used to stack into a
+single column with every connector routed straight through the cards. Depth is
+distance along same-kind edges, computed by bounded relaxation rather than
+recursion because the extractor makes no promise the edges are acyclic and a
+cycle must not hang the page.
+
+`subdomain-of` points child → parent, so laying it out in edge direction puts
+the leaves on the left and the registrable domain on the right — backwards from
+how anyone describes it. One `orient()` function decides which end goes left,
+and both the layout and the drawing call it, because when they disagreed the
+columns read correctly and every connector looped backwards around the cards.
 
 ### Pivots
 

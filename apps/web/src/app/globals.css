@@ -1,41 +1,72 @@
+/**
+ * Dark-first, and deliberately blue-black rather than neutral grey — the ground
+ * an investigation tool sits on should recede, not compete.
+ *
+ * One decision worth stating because it constrains everything below: crimson is
+ * the brand accent AND red already meant "refused" here. Hue alone can no
+ * longer carry that, so the two are separated by *treatment*:
+ *
+ *   brand   — crimson as outline, glow, and thin rule. Never a filled block.
+ *   refusal — crimson FILLED, with the word. `.badge.deny`, `.entry.blocked`.
+ *
+ * A denial has to survive being scrolled past, and it now does so by being the
+ * only solid red mass on the page rather than by being the only red thing.
+ * Not incidentally, that also stops the interface from depending on colour
+ * vision to distinguish "this is a link" from "this was refused".
+ */
 :root {
-  --bg: #0d1117;
-  --bg-raised: #151b23;
-  --bg-inset: #0a0e13;
-  --border: #2a3441;
-  --border-strong: #3d4a5c;
-  --text: #e6edf3;
-  --text-dim: #9aa7b5;
-  --text-faint: #6b7887;
+  --bg: #08080f;
+  --bg-raised: #101019;
+  --bg-inset: #0b0b13;
+  --bg-elevated: #16161f;
 
-  --accent: #58a6ff;
-  --ok: #3fb950;
-  --warn: #d29922;
-  --deny: #f85149;
-  --scoped: #bc8cff;
+  /* The pale periwinkle band. Section intros sit on it, inverted. */
+  --band: #ccd9ec;
+  --band-text: #0a0a12;
+  --band-dim: #454b5c;
 
-  --radius: 6px;
+  --border: #21212f;
+  --border-strong: #33334a;
+  --text: #edeef4;
+  --text-dim: #979cb0;
+  --text-faint: #676c80;
+
+  --brand: #e0173a;
+  --brand-bright: #ff2e50;
+  --brand-glow: rgba(224, 23, 58, 0.22);
+  --brand-wash: rgba(224, 23, 58, 0.08);
+
+  --accent: var(--brand);
+  --ok: #35c46a;
+  --warn: #e0a33c;
+  --deny: #ff3b52;
+  --scoped: #9b6bff;
+
+  --radius: 8px;
+  --radius-lg: 14px;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* System stack only — an investigation tool should not need the network to
+     render its own headings. */
+  --display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+    ui-serif, serif;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #ffffff;
-    --bg-raised: #f6f8fa;
-    --bg-inset: #eef1f4;
-    --border: #d5dbe2;
-    --border-strong: #b9c2cc;
-    --text: #1f2328;
-    --text-dim: #59636e;
-    --text-faint: #818b96;
-
-    --accent: #0969da;
-    --ok: #1a7f37;
-    --warn: #9a6700;
-    --deny: #cf222e;
-    --scoped: #8250df;
-  }
+/**
+ * Dark, always — not "dark unless the OS says otherwise".
+ *
+ * This is a tool people sit in front of for hours reading dense, low-contrast
+ * evidence, and the whole signal language below — the crimson bloom, the glow
+ * on a selected node, the single solid red mass that means a refusal — is
+ * calibrated against a near-black ground. Half of it stops carrying meaning on
+ * white. Following the system preference would mean maintaining two versions of
+ * that calibration, and the light one would be the untested one.
+ *
+ * `color-scheme` tells the browser to match its own furniture — scrollbars,
+ * form controls, the flash before first paint.
+ */
+html {
+  color-scheme: dark;
 }
 
 * {
@@ -57,8 +88,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Links read as text with an underline, not as coloured text.
+   Crimson is reserved — a case name rendered in the same red as a refusal
+   badge reads like something went wrong with it. */
 a {
-  color: var(--accent);
+  color: var(--text);
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: var(--brand-bright);
+  text-decoration-color: var(--brand);
 }
 
 code,
@@ -74,41 +115,61 @@ code,
   padding: 0 24px 96px;
 }
 
+/* The nav floats clear of the viewport edge rather than spanning it, so the
+   page reads as a surface sitting on the ground rather than as browser chrome. */
 .topbar {
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-raised);
-  margin-bottom: 28px;
+  max-width: 1180px;
+  margin: 16px auto 30px;
+  padding: 0 24px;
 }
 
 .topbar-inner {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 14px 24px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 10px 12px 10px 22px;
   display: flex;
   align-items: center;
   gap: 22px;
   flex-wrap: wrap;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
 .brand {
   font-weight: 650;
-  font-size: 16px;
-  letter-spacing: -0.01em;
+  font-size: 15px;
+  letter-spacing: 0.02em;
   color: var(--text);
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The mark: a crimson bloom, the one place the accent is allowed to be solid
+   without meaning a refusal. */
+.brand::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 100px;
+  background: var(--brand-bright);
+  box-shadow: 0 0 0 4px var(--brand-wash), 0 0 14px 2px var(--brand-glow);
+  flex: none;
 }
 
 .brand span {
   color: var(--text-faint);
   font-weight: 400;
-  font-size: 12px;
-  margin-left: 8px;
+  font-size: 11.5px;
   letter-spacing: 0;
 }
 
 .nav {
   display: flex;
-  gap: 18px;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
 }
 
@@ -116,16 +177,64 @@ code,
   color: var(--text-dim);
   text-decoration: none;
   font-size: 13px;
+  padding: 6px 13px;
+  border-radius: 100px;
 }
 
 .nav a:hover {
   color: var(--text);
+  background: var(--bg-inset);
 }
 
 h1 {
-  font-size: 22px;
-  letter-spacing: -0.02em;
-  margin: 0 0 6px;
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  margin: 0 0 8px;
+}
+
+/* The small outlined label that sits above a section heading and names what
+   the section is about in one word. */
+.eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: 100px;
+  padding: 3px 13px;
+  margin-bottom: 12px;
+}
+
+/* An inverted intro block. Used sparingly — it is loud by design, and a page
+   with two of them has neither. */
+.band {
+  background: var(--band);
+  color: var(--band-text);
+  border-radius: var(--radius-lg);
+  padding: 34px 30px;
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.band h1,
+.band h2 {
+  color: var(--band-text);
+  margin: 0 0 10px;
+}
+
+.band p {
+  color: var(--band-dim);
+  margin: 0 auto;
+  max-width: 62ch;
+}
+
+.band .eyebrow {
+  color: var(--band-dim);
+  border-color: rgba(10, 10, 18, 0.28);
 }
 
 h2 {
@@ -148,8 +257,8 @@ h3 {
 .card {
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px;
+  border-radius: var(--radius-lg);
+  padding: 20px;
   margin-bottom: 18px;
 }
 
@@ -232,11 +341,17 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* The white pill. One per screen at most — it is the thing to do next. */
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 550;
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #fff;
+  border-color: #fff;
 }
 
 button.danger {
@@ -280,9 +395,14 @@ button.tiny {
   border-color: var(--warn);
 }
 
+/* Filled, not outlined. See the note at the top of this file: crimson is the
+   brand accent now, so a refusal is distinguished by being solid — the only
+   solid red mass on the page — rather than by being red at all. */
 .badge.deny {
-  color: var(--deny);
+  color: #fff;
+  background: var(--deny);
   border-color: var(--deny);
+  font-weight: 600;
 }
 
 .badge.accent {
@@ -323,11 +443,12 @@ button.tiny {
   border-radius: var(--radius);
   padding: 12px 14px;
   margin-bottom: 8px;
-  background: var(--bg-raised);
+  background: var(--bg-elevated);
 }
 
 .entry.blocked {
   border-left: 3px solid var(--deny);
+  background: color-mix(in srgb, var(--deny) 9%, var(--bg-elevated));
 }
 
 .entry.ready {
@@ -569,24 +690,40 @@ tr:last-child td {
 }
 
 .stat {
+  position: relative;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  overflow: hidden;
+}
+
+/* A crimson bloom in the corner of each card — the depth cue that keeps a row
+   of flat panels from reading as a spreadsheet. */
+.stat::after {
+  content: "";
+  position: absolute;
+  top: -46px;
+  right: -46px;
+  width: 110px;
+  height: 110px;
+  border-radius: 100px;
+  background: radial-gradient(circle, var(--brand-glow), transparent 68%);
+  pointer-events: none;
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.07em;
   color: var(--text-faint);
 }
 
 .stat-value {
-  font-family: var(--mono);
-  font-size: 21px;
-  line-height: 1.3;
-  letter-spacing: -0.02em;
+  font-family: var(--display);
+  font-size: 30px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .stat-note {
@@ -703,6 +840,99 @@ tr:last-child td {
 .timeline-body {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* ── graph canvas ─────────────────────────────────────────────────────── */
+/* Entities render as cards on a dark field rather than as labelled boxes: a
+   node you can read at a glance — kind, value, how many sources back it — is
+   the difference between a picture of a graph and something you can work.
+   Connectors are orthogonal, so a dense graph stays readable where crossing
+   diagonals would turn into a haystack. */
+.graph-canvas {
+  background:
+    radial-gradient(
+      620px 320px at 62% 42%,
+      var(--brand-wash),
+      transparent 70%
+    ),
+    var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  overflow-x: auto;
+}
+
+.node-card {
+  cursor: pointer;
+}
+
+.node-card rect.body {
+  fill: var(--bg-elevated);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.node-card:hover rect.body {
+  stroke: var(--brand);
+}
+
+.node-card.selected rect.body {
+  stroke: var(--brand-bright);
+  stroke-width: 1.8;
+  filter: drop-shadow(0 0 9px var(--brand-glow));
+}
+
+.node-card.dimmed {
+  opacity: 0.32;
+}
+
+.node-card .value {
+  fill: var(--text);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.node-card .kind {
+  fill: var(--text-faint);
+  font-family: var(--sans);
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+/* The count chip in the node's corner — how many sources corroborate it. */
+.node-card .count-bg {
+  fill: var(--brand);
+}
+
+.node-card .count-text {
+  fill: #fff;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.graph-edge {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.graph-edge.active {
+  stroke: var(--brand-bright);
+  stroke-width: 1.6;
+}
+
+.graph-edge.faded {
+  opacity: 0.18;
+}
+
+.graph-col-label {
+  fill: var(--text-faint);
+  font-family: var(--sans);
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 
 /* ── modal ────────────────────────────────────────────────────────────── */

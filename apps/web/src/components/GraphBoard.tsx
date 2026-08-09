@@ -38,6 +38,24 @@ const WATCHABLE_KINDS: SubjectKind[] = ["domain", "ip", "company", "person"];
 
 export type PivotTarget = "collect" | "watch";
 
+/**
+ * Which end of a link is drawn on the left.
+ *
+ * `subdomain-of` points child → parent, so following edge direction would put
+ * the leaves left and the registrable domain right — backwards from how anyone
+ * describes it. Layout and drawing both go through here so they cannot
+ * disagree; when they did, the columns read correctly and every connector
+ * looped backwards around the cards.
+ */
+function orient(link: { from: string; to: string; relation: string }): [
+  string,
+  string,
+] {
+  return link.relation === "subdomain-of"
+    ? [link.to, link.from]
+    : [link.from, link.to];
+}
+
 /** Column order — infrastructure on the left, people on the right. */
 const KIND_ORDER: EntityKind[] = [
   "domain",
@@ -61,10 +79,54 @@ const KIND_COLOR: Record<EntityKind, string> = {
   breach: "var(--deny)",
 };
 
-const NODE_H = 26;
-const NODE_W = 172;
-const COL_GAP = 62;
-const ROW_GAP = 10;
+const NODE_H = 44;
+const NODE_W = 196;
+const COL_GAP = 78;
+const ROW_GAP = 14;
+
+/**
+ * An orthogonal connector: out of the right edge, across a mid-channel, into
+ * the left edge of the target.
+ *
+ * Straight diagonals cross each other at every angle, and a graph with thirty
+ * of them is a haystack. Elbows share vertical channels, so density degrades
+ * into something still readable.
+ */
+function elbow(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): string {
+  const x1 = from.x + NODE_W;
+  const y1 = from.y + NODE_H / 2;
+  const x2 = to.x;
+  const y2 = to.y + NODE_H / 2;
+
+  // A backwards edge — a cycle the depth pass could not unwind. Route it out
+  // to the right of both cards and back, so it goes around them rather than
+  // through them.
+  if (x2 <= x1) {
+    const out = Math.max(x1, to.x + NODE_W) + COL_GAP / 2;
+    return [
+      `M ${x1} ${y1}`,
+      `L ${out} ${y1}`,
+      `L ${out} ${y2}`,
+      `L ${to.x + NODE_W} ${y2}`,
+    ].join(" ");
+  }
+
+  const mid = x1 + (x2 - x1) / 2;
+  const r = Math.min(8, Math.abs(y2 - y1) / 2, Math.abs(mid - x1));
+  if (r < 1) return `M ${x1} ${y1} L ${x2} ${y2}`;
+  const down = y2 > y1 ? 1 : -1;
+  return [
+    `M ${x1} ${y1}`,
+    `L ${mid - r} ${y1}`,
+    `Q ${mid} ${y1} ${mid} ${y1 + r * down}`,
+    `L ${mid} ${y2 - r * down}`,
+    `Q ${mid} ${y2} ${mid + r} ${y2}`,
+    `L ${x2} ${y2}`,
+  ].join(" ");
+}
 
 /**
  * The case graph.
@@ -148,11 +210,56 @@ export function GraphBoard({
     );
   }
 
-  // Deterministic column layout.
-  const columns = KIND_ORDER.map((kind) => ({
-    kind,
-    entities: graph.entities.filter((e) => e.kind === kind),
-  })).filter((column) => column.entities.length > 0);
+  /**
+   * Columns are (kind, depth), not kind alone.
+   *
+   * A case whose entities are all one kind — five hostnames under one domain,
+   * which is the common shape — used to stack into a single column with every
+   * connector routed straight through the cards. Depth is the distance along
+   * same-kind edges, so `acme.example` sits left of its subdomains and the
+   * links read left to right like the rest of the graph.
+   *
+   * Computed by relaxation rather than recursion because the extractor makes no
+   * promise the edges are acyclic, and a cycle must not hang the page. The pass
+   * count is bounded by the entity count, so the worst case is a chain.
+   */
+  const depth = new Map<string, number>(
+    graph.entities.map((entity) => [entity.key, 0]),
+  );
+  const kindOf = new Map(graph.entities.map((e) => [e.key, e.kind]));
+  for (let pass = 0; pass < graph.entities.length; pass += 1) {
+    let moved = false;
+    for (const link of graph.links) {
+      if (kindOf.get(link.from) !== kindOf.get(link.to)) continue;
+      // `subdomain-of` points child → parent, so laying it out in edge
+      // direction puts the leaves on the left and the registrable domain on
+      // the right — backwards from how anyone describes it. The containing
+      // thing goes on the left and the graph fans out rightward from it.
+      const [head, tail] = orient(link);
+      const from = depth.get(head);
+      const to = depth.get(tail);
+      if (from === undefined || to === undefined) continue;
+      if (to <= from) {
+        depth.set(tail, from + 1);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+
+  const columns = KIND_ORDER.flatMap((kind) => {
+    const ofKind = graph.entities.filter((e) => e.kind === kind);
+    const depths = [...new Set(ofKind.map((e) => depth.get(e.key) ?? 0))].sort(
+      (a, b) => a - b,
+    );
+    return depths.map((d, index) => ({
+      kind,
+      // Only the first column of a kind is labelled; repeating it down the
+      // row would read as four different things rather than one deepening.
+      label: index === 0 ? kind : "",
+      entities: ofKind.filter((e) => (depth.get(e.key) ?? 0) === d),
+    }));
+  }).filter((column) => column.entities.length > 0);
 
   const positions = new Map<string, { x: number; y: number }>();
   columns.forEach((column, columnIndex) => {
@@ -214,7 +321,7 @@ export function GraphBoard({
           the boards above and they will resolve into entities here.
         </div>
       ) : (
-        <div style={{ overflowX: "auto", paddingBottom: 6 }}>
+        <div className="graph-canvas">
           <svg
             width={width}
             height={height}
@@ -224,83 +331,90 @@ export function GraphBoard({
           >
             {columns.map((column, index) => (
               <text
-                key={column.kind}
+                key={`${column.kind}-${index}`}
+                className="graph-col-label"
                 x={index * (NODE_W + COL_GAP)}
                 y={12}
-                fill="var(--text-faint)"
-                fontSize={10}
-                fontFamily="var(--mono)"
-                style={{ textTransform: "uppercase", letterSpacing: "0.06em" }}
               >
-                {column.kind}
+                {column.label}
               </text>
             ))}
 
             {graph.links.map((link, index) => {
-              const from = positions.get(link.from);
-              const to = positions.get(link.to);
+              const [head, tail] = orient(link);
+              const from = positions.get(head);
+              const to = positions.get(tail);
               if (from === undefined || to === undefined) return null;
               const active =
                 selected !== null &&
                 (link.from === selected || link.to === selected);
               return (
-                <line
+                <path
                   key={index}
-                  x1={from.x + NODE_W}
-                  y1={from.y + NODE_H / 2}
-                  x2={to.x}
-                  y2={to.y + NODE_H / 2}
-                  stroke={active ? "var(--accent)" : "var(--border-strong)"}
-                  strokeWidth={active ? 1.8 : 1}
-                  opacity={selected === null || active ? 0.85 : 0.2}
+                  className={`graph-edge ${active ? "active" : selected === null ? "" : "faded"}`}
+                  d={elbow(from, to)}
                 >
                   <title>
                     {`${link.relation} — evidenced by ${link.findingIds.length} finding(s) from ${link.sourceIds.join(", ")}`}
                   </title>
-                </line>
+                </path>
               );
             })}
 
             {graph.entities.map((entity) => {
               const position = positions.get(entity.key);
               if (position === undefined) return null;
-              const corroborated = entity.sourceIds.length > 1;
+              const sources = entity.sourceIds.length;
               const active = selected === entity.key;
+              const dimmed = selected !== null && !active;
+              const label = entity.label ?? entity.value;
               return (
                 <g
                   key={entity.key}
+                  className={`node-card ${active ? "selected" : ""} ${dimmed ? "dimmed" : ""}`}
                   transform={`translate(${position.x}, ${position.y})`}
                   onClick={() => setSelected(active ? null : entity.key)}
-                  style={{ cursor: "pointer" }}
                 >
                   <rect
+                    className="body"
                     width={NODE_W}
                     height={NODE_H}
-                    rx={4}
-                    fill="var(--bg-inset)"
-                    stroke={active ? "var(--accent)" : KIND_COLOR[entity.kind]}
-                    strokeWidth={active ? 2 : corroborated ? 1.8 : 1}
-                    opacity={selected === null || active ? 1 : 0.45}
+                    rx={10}
                   />
-                  <text
-                    x={9}
-                    y={17}
-                    fill="var(--text)"
-                    fontSize={11}
-                    fontFamily="var(--mono)"
-                    opacity={selected === null || active ? 1 : 0.45}
-                  >
-                    {(entity.label ?? entity.value).slice(0, 22)}
+                  {/* The kind reads as a colour bar rather than a border, so the
+                      selection ring stays the only thing that changes on click. */}
+                  <rect
+                    x={1}
+                    y={9}
+                    width={3}
+                    height={NODE_H - 18}
+                    rx={2}
+                    fill={KIND_COLOR[entity.kind]}
+                  />
+                  <text className="kind" x={14} y={17}>
+                    {entity.kind}
                   </text>
-                  {corroborated && (
-                    <circle
-                      cx={NODE_W - 9}
-                      cy={NODE_H / 2}
-                      r={3}
-                      fill="var(--ok)"
-                    >
+                  <text className="value" x={14} y={32}>
+                    {label.length > 24 ? `${label.slice(0, 23)}…` : label}
+                  </text>
+                  {sources > 1 && (
+                    <g>
+                      <circle
+                        className="count-bg"
+                        cx={NODE_W - 15}
+                        cy={15}
+                        r={8}
+                      />
+                      <text
+                        className="count-text"
+                        x={NODE_W - 15}
+                        y={18.5}
+                        textAnchor="middle"
+                      >
+                        {sources}
+                      </text>
                       <title>{`Corroborated by ${entity.sourceIds.join(", ")}`}</title>
-                    </circle>
+                    </g>
                   )}
                 </g>
               );
