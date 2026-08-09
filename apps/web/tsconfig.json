@@ -15,8 +15,15 @@
     "jsx": "preserve",
     "incremental": true,
     "plugins": [{ "name": "next" }],
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "next/link": ["./node_modules/next/link.d.ts"],
+      "next/navigation": ["./node_modules/next/navigation.d.ts"],
+      "@scout/scope": ["../../packages/scope/dist/index.d.ts"],
+      "@scout/sources": ["../../packages/sources/dist/index.d.ts"],
+      "@scout/graph": ["../../packages/graph/dist/index.d.ts"]
+    }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "demo/dist"]
 }
