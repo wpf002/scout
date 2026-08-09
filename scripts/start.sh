@@ -24,6 +24,7 @@ die()  { printf '\033[31m ✗\033[0m %s\n' "$1" >&2; exit 1; }
 
 API_PORT="${PORT:-3001}"
 WEB_PORT="${WEB_PORT:-3000}"
+WATCH_EVERY="${SCOUT_WATCH_SECONDS:-10}"
 
 # ── config ─────────────────────────────────────────────────────────────────
 if [ ! -f .env ]; then
@@ -182,7 +183,9 @@ stop_servers() {
   free_port "$WEB_PORT" || true
 }
 
+SHUTTING_DOWN=0
 cleanup() {
+  SHUTTING_DOWN=1
   printf '\n'
   step "Stopping"
   stop_servers
@@ -227,12 +230,18 @@ ready() { curl -fsS -o /dev/null --max-time 3 "$1" 2>/dev/null; }
 #      path the browser actually uses
 #
 # Checking only (1) and (2) is how a broken proxy ships as "running".
-verify() {
-  ready "http://localhost:$API_PORT/health" || return 1
-  curl -fsS --max-time 5 "http://localhost:$WEB_PORT/" 2>/dev/null | grep -q "SCOUT" || return 1
-  curl -fsS --max-time 5 "http://localhost:$WEB_PORT/api/health" 2>/dev/null | grep -q '"status":"ok"' || return 1
-  return 0
+api_ok() { ready "http://localhost:$API_PORT/health"; }
+
+web_ok() {
+  curl -fsS --max-time 5 "http://localhost:$WEB_PORT/" 2>/dev/null | grep -q "SCOUT"
 }
+
+proxy_ok() {
+  curl -fsS --max-time 5 "http://localhost:$WEB_PORT/api/health" 2>/dev/null \
+    | grep -q '"status":"ok"'
+}
+
+verify() { api_ok && web_ok && proxy_ok; }
 
 await() {
   for _ in $(seq 1 "$1"); do
@@ -291,6 +300,51 @@ printf '  Checked   dashboard shell served · API healthy · /api proxy answerin
 printf '  API       http://localhost:%s   (proxied at /api)\n' "$API_PORT"
 printf '  Sources   %s of 19 keyed; the rest report "inert" rather than guessing\n' "${KEYED:-?}"
 printf '  Logs      %s\n            %s\n' "$API_LOG" "$WEB_LOG"
+printf '  Watchdog   checking every %ss; restarts either server if it stops\n' "$WATCH_EVERY"
 printf '\n  Ctrl-C stops both.\n\n'
 
-wait
+# ── watchdog ───────────────────────────────────────────────────────────────
+# Starting the servers is not the same as keeping them running.
+#
+# A dev server can be killed out from under you — by an OOM reaper, by a
+# process-group teardown, by a supervisor that owns the terminal — and when it
+# happens there is no error anywhere: the log simply stops mid-request. The
+# script used to `wait` here, so the servers were gone and the last thing on
+# screen still said "Scout is running".
+#
+# Each check restarts only the half that is actually down, and one failed check
+# is not an outage — a slow compile or a single dropped request should not
+# trigger a restart, so it takes two consecutive failures.
+strikes=0
+while [ "$SHUTTING_DOWN" = "0" ]; do
+  sleep "$WATCH_EVERY"
+  [ "$SHUTTING_DOWN" = "1" ] && break
+
+  if verify; then
+    strikes=0
+    continue
+  fi
+
+  strikes=$((strikes + 1))
+  [ "$strikes" -lt 2 ] && continue
+
+  if ! api_ok; then
+    warn "The API stopped answering. Restarting it."
+    free_port "$API_PORT" || true
+    start_api
+  fi
+  if ! web_ok; then
+    warn "The dashboard stopped answering. Restarting it."
+    free_port "$WEB_PORT" || true
+    start_web
+  fi
+
+  if await 90; then
+    step "Back up."
+    strikes=0
+  else
+    warn "Still down after a restart. Recent logs:"
+    tail -12 "$API_LOG"; printf '  ── dashboard ──\n'; tail -12 "$WEB_LOG"
+    strikes=0
+  fi
+done

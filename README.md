@@ -60,6 +60,15 @@ compile-error page, and the API reachable **through** the `/api` proxy — the
 path the browser actually uses. If any of them fails the script tails the
 relevant log, leaves nothing running, and exits non-zero.
 
+It then **stays** started. Starting a dev server is not the same as keeping it
+running: one can be killed out from under you — by an OOM reaper, a
+process-group teardown, a supervisor that owns the terminal — and when it
+happens there is no error anywhere. The log simply stops mid-request, and the
+last thing on screen still says the app is up. A watchdog re-checks every 10s
+(`SCOUT_WATCH_SECONDS`) and restarts only the half that is actually down. One
+failed check is not an outage, so it takes two consecutive failures — a slow
+compile should not trigger a restart.
+
 It also repairs the things that used to make it fail:
 
 | | |
