@@ -53,6 +53,27 @@ dashboard together, waits until both actually answer, and then prints:
 `/api`, so it is the only address you need — there is no second port to get
 right and no CORS allowlist involved. Ctrl-C stops both.
 
+It says *verified, not assumed* because a port answering is not the same as
+the app working. Three things are checked before that line prints: the API's
+health endpoint, the dashboard serving its shell rather than a 200 from a
+compile-error page, and the API reachable **through** the `/api` proxy — the
+path the browser actually uses. If any of them fails the script tails the
+relevant log, leaves nothing running, and exits non-zero.
+
+It also repairs the things that used to make it fail:
+
+| | |
+|---|---|
+| A stale server on either port | Killed, escalating to `SIGKILL`, and waited out until the port is genuinely free |
+| A production `.next` | Cleared — `next dev` cannot run on one, and says so only via a wall of `ENOENT` |
+| Anything else | One automatic retry with a cleared build cache before giving up |
+
+Port detection combines `lsof`, `fuser`, `ss` and a `/proc` scan rather than
+trusting the first tool installed. `lsof` exists in some containers and returns
+nothing while exiting 0, which is indistinguishable from "the port is free" —
+that silent empty answer let a stale server hold a port the script had just
+reported clear.
+
 `bootstrap.sh` starts a throwaway local Postgres via `scripts/dev-db.sh` if
 `DATABASE_URL` isn't reachable. To do it by hand:
 
