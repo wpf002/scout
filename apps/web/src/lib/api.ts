@@ -19,8 +19,15 @@ import type {
   TimelineEntry,
 } from "./types";
 
-const BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+/**
+ * Where the API lives, from the browser's point of view.
+ *
+ * Empty by default, which means same-origin `/api/…` — Next rewrites that to
+ * the real API server. One URL to open, and no cross-origin request, so a
+ * mistyped port or a stale CORS allowlist cannot produce a page that loads and
+ * then silently shows nothing.
+ */
+const BASE = `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api`;
 
 const TOKEN_KEY = "scout.operatorToken";
 
@@ -92,7 +99,8 @@ async function request<T>(
     throw new ApiError(
       0,
       "unreachable",
-      `Cannot reach the Scout API at ${BASE}. Is it running?`,
+      "Cannot reach the Scout API. Start it with `pnpm --filter @scout/api dev`, " +
+        "or run `./scripts/start.sh` to bring up everything at once.",
     );
   }
 

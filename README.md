@@ -38,10 +38,20 @@ The scope gate is the product. A leaky gate is worse than no scoped tier at all.
 Requires Node ≥ 20.11, pnpm 10, and Postgres.
 
 ```bash
-./scripts/bootstrap.sh          # deps, .env, database, migrations, seed, build
-pnpm --filter @scout/api dev    # API  → http://localhost:3001
-pnpm --filter @scout/web dev    # web  → http://localhost:3000
+pnpm start
 ```
+
+That is the whole thing. It creates `.env` if missing, starts Postgres if it is
+not up, applies migrations, seeds an empty database, runs the API and the
+dashboard together, waits until both actually answer, and then prints:
+
+```
+  →  http://localhost:3000
+```
+
+**Open that URL, with the port.** The dashboard proxies the API itself at
+`/api`, so it is the only address you need — there is no second port to get
+right and no CORS allowlist involved. Ctrl-C stops both.
 
 `bootstrap.sh` starts a throwaway local Postgres via `scripts/dev-db.sh` if
 `DATABASE_URL` isn't reachable. To do it by hand:
