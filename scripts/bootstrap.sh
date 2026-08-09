@@ -40,7 +40,16 @@ echo "==> Seeding demo case"
 pnpm --filter @scout/db run seed
 
 echo "==> Building"
-pnpm build
+# NODE_ENV must be `production` for this one command.
+#
+# `.env` sets NODE_ENV=development and the block above exports it, which is
+# right for everything else here — but `next build` under NODE_ENV=development
+# fails prerendering the 404 page with "<Html> should not be imported outside
+# of pages/_document", an error that names nothing you wrote and sends you
+# looking for a file this app does not have.
+#
+# Scoped to the build so the rest of the script keeps the developer defaults.
+NODE_ENV=production pnpm build
 
 echo
 echo "Ready. Start the API with:  pnpm --filter @scout/api dev"
