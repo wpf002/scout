@@ -450,9 +450,31 @@ purge, secrets review passing as tests.
 6  Correlation + graph       ✅ shipped (defer criterion overridden on request)
 7  Reporting + export        ✅ shipped
 8  Hardening                 ✅ shipped
+   Monitoring + watch floor  ✅ shipped (not a numbered phase)
    Deploy                    not built (hardening-only scope)
    Redis / queue / metrics   deferred — criteria still unmet
 ```
+
+### Monitoring and the watch floor
+
+Not on the original roadmap. Added after a review of how comparable platforms
+are actually used, where the dominant pattern is a standing watch and a feed of
+what changed — the one thing Scout, being pull-only, could not do at all.
+
+It ships under a restriction that is not negotiable and is enforced at both
+creation and every run: **a monitor may only include sources ungated for its
+subject kind.** Watching a domain's infrastructure is ordinary recon; watching a
+person on a timer is standing surveillance, and a schedule is precisely what
+"one confirmed action at a time" was written to prevent.
+
+Alongside it, the case workspace became tabbed (ten stacked cards had pushed the
+scope panel off the top of the page), `/` became a dashboard built around what
+changed rather than around totals, `GET /cases/:id/timeline` exposes the case
+chronology with its refusals intact, and graph entities offer pivots that fill
+the next form and run nothing.
+
+The job-queue defer criterion is **still unmet** and was not overridden:
+`POST /monitors/run-due` is a seam for an existing scheduler, not a worker.
 
 Critical path to a genuinely useful internal tool is **1 → 2 → 3**: cases,
 a dashboard, and the infrastructure tier. That's a working OSINT workstation.

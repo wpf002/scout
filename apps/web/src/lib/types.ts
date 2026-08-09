@@ -403,3 +403,66 @@ export interface CaseGraph {
   suggestions: MergeSuggestion[];
   summary: CaseSummary;
 }
+
+/* ── monitoring ──────────────────────────────────────────────────────── */
+
+export interface MonitorRecord {
+  id: string;
+  caseId: string;
+  name: string;
+  subjectKind: string;
+  subjectValue: string;
+  sourceIds: string[];
+  intervalMinutes: number;
+  enabled: boolean;
+  lastRunAt: string | null;
+  createdBy: string;
+  _count?: { runs: number; changes: number };
+}
+
+export interface MonitorRunResult {
+  runId: string;
+  observationCount: number;
+  added: number;
+  removed: number;
+  /** First run: the snapshot is stored and nothing is reported as new. */
+  baseline: boolean;
+  errors: { sourceId: string; message: string }[];
+}
+
+export interface Alert {
+  id: string;
+  caseId: string;
+  caseName: string | null;
+  monitorId: string;
+  monitor: { name: string; subjectValue: string; subjectKind: string };
+  changeType: "ADDED" | "REMOVED";
+  observationKind: string;
+  observationKey: string;
+  sourceIds: string[];
+  acknowledgedAt: string | null;
+  createdAt: string;
+}
+
+/**
+ * A subject handed from one board to another — clicking an entity in the graph
+ * and continuing the investigation from it.
+ *
+ * The `nonce` exists because pivoting to the *same* subject twice is a real
+ * action, and a plain value comparison would swallow the second one.
+ */
+export interface PivotRequest {
+  kind: SubjectKind;
+  value: string;
+  nonce: number;
+}
+
+export interface TimelineEntry {
+  at: string;
+  kind: "query" | "finding" | "event";
+  outcome: string | null;
+  sourceId: string | null;
+  label: string;
+  detail: string;
+  operator: string;
+}

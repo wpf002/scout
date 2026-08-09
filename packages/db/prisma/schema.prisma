@@ -111,6 +111,7 @@ model Case {
   sourceSettings  CaseSource[]
   entityMerges    EntityMerge[]
   mergeDismissals MergeDismissal[]
+  monitors        Monitor[]
 
   @@index([status, createdAt])
   @@index([archivedAt])
@@ -308,4 +309,97 @@ model MergeDismissal {
 
   @@unique([caseId, suggestionId])
   @@index([caseId])
+}
+
+/// A standing watch on a subject.
+///
+/// Continuous monitoring is the capability every comparable platform leads
+/// with, and Scout was pull-only without it. It carries one hard restriction
+/// that those platforms do not: **a monitor may only include sources that are
+/// ungated for its subject kind.**
+///
+/// The reason is locked invariant 2. Person-facing sources run "one confirmed
+/// action at a time"; a recurring automated re-run is the precise opposite of
+/// that. You can watch a domain's infrastructure change. You cannot put a
+/// person under standing automated surveillance — which is what a scope gate
+/// and a per-action confirmation exist to prevent.
+model Monitor {
+  id     String @id @default(cuid())
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  name         String
+  subjectKind  SubjectKind
+  subjectValue String
+  /// Validated at creation: every entry must be ungated for `subjectKind`.
+  sourceIds    String[]
+
+  intervalMinutes Int     @default(1440)
+  enabled         Boolean @default(true)
+
+  lastRunAt DateTime?
+  createdBy String    @default("local")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  runs    MonitorRun[]
+  changes MonitorChange[]
+
+  @@index([caseId])
+  @@index([enabled, lastRunAt])
+}
+
+/// One execution of a monitor, with the observation set it saw.
+model MonitorRun {
+  id        String  @id @default(cuid())
+  monitorId String
+  monitor   Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  caseId    String
+
+  startedAt  DateTime @default(now())
+  durationMs Int?
+  /// Observation keys seen this run. Diffing two of these is what produces
+  /// changes — the raw payloads live in the audit-logged query results.
+  snapshot   Json     @default("[]")
+  observationCount Int @default(0)
+  changeCount      Int @default(0)
+  errorMessage     String?
+
+  changes MonitorChange[]
+
+  @@index([monitorId, startedAt])
+}
+
+enum ChangeType {
+  ADDED
+  REMOVED
+}
+
+/// Something that changed between two runs. This is the alert.
+model MonitorChange {
+  id        String     @id @default(cuid())
+  monitorId String
+  monitor   Monitor    @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  runId     String
+  run       MonitorRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  caseId    String
+
+  changeType     ChangeType
+  /// `subdomain` | `host` | `cert` | `dataset-hit` | `sanction-match`
+  observationKind String
+  observationKey  String
+  detail          Json    @default("{}")
+  sourceIds       String[]
+
+  /// Acknowledging is how an alert stops being noise. There is no unique
+  /// constraint here on purpose: a host that disappears and comes back is two
+  /// events, not one, and collapsing them would hide the flap. Duplicates
+  /// within a single run are already impossible — the run diffs a keyed set.
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+
+  createdAt DateTime @default(now())
+
+  @@index([caseId, acknowledgedAt])
+  @@index([monitorId, createdAt])
 }

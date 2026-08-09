@@ -327,6 +327,67 @@ export async function registerCaseRoutes(app: FastifyInstance): Promise<void> {
     return { count: findings.length, findings };
   });
 
+  /**
+   * GET /cases/:id/timeline — the case as a sequence of events.
+   *
+   * Separate from the report on purpose. The report's timeline arrives via an
+   * export, and an export is an audited act; looking at your own case's
+   * chronology is not, and should not have to masquerade as one.
+   */
+  app.get<{ Params: { id: string } }>("/cases/:id/timeline", async (request) => {
+    const record = await requireCase(request.params.id);
+    const [queryLogs, findings, events] = await Promise.all([
+      prisma.queryLog.findMany({
+        where: { caseId: record.id },
+        orderBy: { createdAt: "asc" },
+        take: 1000,
+      }),
+      prisma.finding.findMany({
+        where: { caseId: record.id },
+        orderBy: { observedAt: "asc" },
+      }),
+      prisma.auditEvent.findMany({
+        where: { caseId: record.id },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
+
+    const timeline = [
+      ...queryLogs.map((log) => ({
+        at: log.createdAt.toISOString(),
+        kind: "query" as const,
+        outcome: log.outcome as string | null,
+        sourceId: log.sourceId as string | null,
+        label: `${log.phase} ${log.sourceId}`,
+        detail:
+          log.outcome === "DENIED"
+            ? `refused (${log.reason})`
+            : `${log.subjectKind.toLowerCase()} ${log.subjectValue}`,
+        operator: log.operator,
+      })),
+      ...findings.map((finding) => ({
+        at: finding.observedAt.toISOString(),
+        kind: "finding" as const,
+        outcome: null,
+        sourceId: finding.sourceId as string | null,
+        label: "Finding saved",
+        detail: finding.title,
+        operator: finding.savedBy,
+      })),
+      ...events.map((event) => ({
+        at: event.createdAt.toISOString(),
+        kind: "event" as const,
+        outcome: null,
+        sourceId: null,
+        label: event.action,
+        detail: "",
+        operator: event.actor,
+      })),
+    ].sort((a, b) => a.at.localeCompare(b.at));
+
+    return { caseId: record.id, count: timeline.length, timeline };
+  });
+
   // ── audit ──────────────────────────────────────────────────────────────
   /**
    * The accountability view: every scoped query attempt under this case, plus

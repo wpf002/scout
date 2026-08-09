@@ -494,6 +494,217 @@ tr:last-child td {
   color: var(--deny);
 }
 
+/* ── tabs ─────────────────────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  margin: 22px 0 18px;
+}
+
+.tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--text-dim);
+  padding: 8px 13px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tab:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 550;
+}
+
+.tab-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 100px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+}
+
+.tab.active .tab-count {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── dashboard ────────────────────────────────────────────────────────── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .stat-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.stat {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+
+.stat-value {
+  font-family: var(--mono);
+  font-size: 21px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.stat-note {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.case-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.case-row:last-child {
+  border-bottom: none;
+}
+
+/* ── alert feed ───────────────────────────────────────────────────────── */
+.alert-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  margin-bottom: 7px;
+  background: var(--bg-inset);
+}
+
+.alert-row.added {
+  border-left-color: var(--ok);
+}
+
+.alert-row.removed {
+  border-left-color: var(--deny);
+}
+
+.alert-row input[type="checkbox"] {
+  width: auto;
+  margin-top: 4px;
+  flex: none;
+}
+
+.alert-key {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.alert-when {
+  font-size: 10.5px;
+  white-space: nowrap;
+  padding-top: 3px;
+}
+
+/* ── timeline ─────────────────────────────────────────────────────────── */
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 14px;
+  border-left: 1px solid var(--border);
+}
+
+.timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 165px 1fr;
+  gap: 14px;
+  padding: 7px 0 7px 10px;
+}
+
+@media (max-width: 640px) {
+  .timeline-item {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+.timeline-item::before {
+  content: "";
+  position: absolute;
+  left: -19px;
+  top: 13px;
+  width: 7px;
+  height: 7px;
+  border-radius: 100px;
+  background: var(--bg);
+  border: 1.5px solid var(--border-strong);
+}
+
+.timeline-item.finding::before {
+  border-color: var(--ok);
+}
+
+.timeline-item.event::before {
+  border-color: var(--accent);
+}
+
+/* A refusal is the part of the record that proves the gate ran. It gets a
+   marker you can find by scanning, not a muted one. */
+.timeline-item.denied::before {
+  border-color: var(--deny);
+  background: var(--deny);
+}
+
+.timeline-when {
+  font-size: 11px;
+  padding-top: 2px;
+}
+
+.timeline-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* ── modal ────────────────────────────────────────────────────────────── */
 .backdrop {
   position: fixed;

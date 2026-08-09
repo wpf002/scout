@@ -393,4 +393,49 @@ run("Scout API — Phase 1", () => {
       ).toBe(true);
     });
   });
+
+  // ── the chronology ───────────────────────────────────────────────────────
+  describe("GET /cases/:id/timeline", () => {
+    it("interleaves queries, findings and case events in time order", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: `/cases/${caseId}/timeline`,
+      });
+      expect(response.statusCode).toBe(200);
+
+      const body = response.json();
+      const kinds = new Set(
+        body.timeline.map((entry: { kind: string }) => entry.kind),
+      );
+      expect(kinds.has("query")).toBe(true);
+      expect(kinds.has("finding")).toBe(true);
+      expect(kinds.has("event")).toBe(true);
+
+      const times = body.timeline.map((entry: { at: string }) => entry.at);
+      expect([...times].sort()).toEqual(times);
+    });
+
+    it("keeps the refusals in the chronology", async () => {
+      // A timeline that showed only what came back would read as if nothing
+      // had ever been attempted out of scope — the one claim it is least
+      // entitled to make.
+      const body = (
+        await app.inject({ method: "GET", url: `/cases/${caseId}/timeline` })
+      ).json();
+
+      const denials = body.timeline.filter(
+        (entry: { outcome: string | null }) => entry.outcome === "DENIED",
+      );
+      expect(denials.length).toBeGreaterThan(0);
+      expect(denials[0].detail).toMatch(/refused/);
+    });
+
+    it("404s for a case that does not exist", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: "/cases/does-not-exist/timeline",
+      });
+      expect(response.statusCode).toBe(404);
+    });
+  });
 });

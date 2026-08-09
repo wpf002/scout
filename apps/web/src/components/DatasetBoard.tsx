@@ -10,6 +10,7 @@ import type {
   DatasetRunResult,
   Designation,
   ExtractedEntity,
+  PivotRequest,
   SubjectKind,
 } from "@/lib/types";
 
@@ -27,9 +28,12 @@ import type {
 export function DatasetBoard({
   record,
   onFindingSaved,
+  pivot,
 }: {
   record: CaseRecord;
   onFindingSaved: () => void;
+  /** A subject carried in from the graph. Fills the form; runs nothing. */
+  pivot?: PivotRequest | null;
 }) {
   const [adapters, setAdapters] = useState<DatasetAdapterInfo[]>([]);
   const [kind, setKind] = useState<SubjectKind>("person");
@@ -46,6 +50,16 @@ export function DatasetBoard({
       .then((r) => setAdapters(r.adapters))
       .catch(() => setAdapters([]));
   }, []);
+
+  // Fills the form only. A pivot that auto-ran a dataset source would be a
+  // blind fan-out wearing a click.
+  useEffect(() => {
+    if (pivot === undefined || pivot === null) return;
+    setKind(pivot.kind);
+    setValue(pivot.value);
+    setResults({});
+    setErrors({});
+  }, [pivot]);
 
   const gatedFor = (adapter: DatasetAdapterInfo) =>
     adapter.requiresScope || adapter.scopedKinds.includes(kind);

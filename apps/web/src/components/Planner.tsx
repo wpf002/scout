@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { SUBJECT_KINDS, TIER_BLURB, TIER_ORDER } from "@/lib/types";
 import type {
   CaseRecord,
+  PivotRequest,
   PlanEntry,
   QueryPlan,
   SourceResult,
@@ -26,9 +27,12 @@ import type {
 export function Planner({
   record,
   onFindingSaved,
+  pivot,
 }: {
   record: CaseRecord;
   onFindingSaved: () => void;
+  /** A subject carried in from the graph. Fills the form; runs nothing. */
+  pivot?: PivotRequest | null;
 }) {
   const [kind, setKind] = useState<SubjectKind>("domain");
   const [value, setValue] = useState("");
@@ -41,6 +45,18 @@ export function Planner({
   const [running, setRunning] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<PlanEntry | null>(null);
   const [saveFor, setSaveFor] = useState<string | null>(null);
+
+  // A pivot fills the form and clears the previous plan. It stops there on
+  // purpose: arriving from the graph is not a confirmation, and the whole
+  // point of the planner is that nothing runs until someone presses Run.
+  useEffect(() => {
+    if (pivot === undefined || pivot === null) return;
+    setKind(pivot.kind);
+    setValue(pivot.value);
+    setPlan(null);
+    setResults({});
+    setDenials({});
+  }, [pivot]);
 
   async function runPlan(event: React.FormEvent) {
     event.preventDefault();

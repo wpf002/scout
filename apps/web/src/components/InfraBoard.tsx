@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type {
   AttributedObservation,
   CaseRecord,
   InfraObservation,
   InfraSweepResult,
+  PivotRequest,
 } from "@/lib/types";
 
 /**
@@ -24,9 +25,12 @@ import type {
 export function InfraBoard({
   record,
   onFindingSaved,
+  pivot,
 }: {
   record: CaseRecord;
   onFindingSaved: () => void;
+  /** A subject carried in from the graph. Fills the form; sweeps nothing. */
+  pivot?: PivotRequest | null;
 }) {
   const [value, setValue] = useState("");
   const [result, setResult] = useState<InfraSweepResult | null>(null);
@@ -34,6 +38,15 @@ export function InfraBoard({
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | InfraObservation["kind"]>("all");
   const [saved, setSaved] = useState<Set<string>>(new Set());
+
+  // Only domain and IP pivots land here — the board sweeps infrastructure, and
+  // a person's name in this box would just fail four ways at once.
+  useEffect(() => {
+    if (pivot === undefined || pivot === null) return;
+    if (pivot.kind !== "domain" && pivot.kind !== "ip") return;
+    setValue(pivot.value);
+    setResult(null);
+  }, [pivot]);
 
   async function sweep(event: React.FormEvent) {
     event.preventDefault();

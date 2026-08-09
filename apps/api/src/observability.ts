@@ -18,6 +18,8 @@ export type ScoutEvent =
   | "source.inert"
   /** A batch sweep skipped a source, with the reason. */
   | "sweep.excluded"
+  /** A standing monitor saw something change. */
+  | "monitor.changed"
   /** Case contents left the tool. */
   | "case.exported"
   /** Investigative content was purged. */

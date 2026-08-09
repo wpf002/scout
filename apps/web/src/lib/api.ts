@@ -1,4 +1,5 @@
 import type {
+  Alert,
   AuditView,
   CaseGraph,
   CaseRecord,
@@ -6,6 +7,8 @@ import type {
   DatasetRunResult,
   FindingRecord,
   InfraSweepResult,
+  MonitorRecord,
+  MonitorRunResult,
   QueryPlan,
   ScopeEntry,
   SourceResult,
@@ -13,6 +16,7 @@ import type {
   Subject,
   SubjectKind,
   SubjectRecord,
+  TimelineEntry,
 } from "./types";
 
 const BASE =
@@ -252,6 +256,64 @@ export const api = {
     }),
 
   audit: (caseId: string) => request<AuditView>(`/cases/${caseId}/audit`),
+
+  timeline: (caseId: string) =>
+    request<{ count: number; timeline: TimelineEntry[] }>(
+      `/cases/${caseId}/timeline`,
+    ),
+
+  /* ── monitoring ─────────────────────────────────────────────────────── */
+
+  listMonitors: (caseId: string) =>
+    request<{ count: number; monitors: MonitorRecord[] }>(
+      `/cases/${caseId}/monitors`,
+    ),
+
+  /**
+   * Creates a standing watch. The API rejects any source that is gated for
+   * this subject kind — you can watch infrastructure, never a person on a
+   * timer.
+   */
+  createMonitor: (
+    caseId: string,
+    body: {
+      name: string;
+      subject: Subject;
+      sourceIds: string[];
+      intervalMinutes?: number;
+    },
+  ) =>
+    request<MonitorRecord>(`/cases/${caseId}/monitors`, {
+      method: "POST",
+      body,
+    }),
+
+  runMonitor: (caseId: string, monitorId: string) =>
+    request<MonitorRunResult>(`/cases/${caseId}/monitors/${monitorId}/run`, {
+      method: "POST",
+    }),
+
+  setMonitorEnabled: (caseId: string, monitorId: string, enabled: boolean) =>
+    request<MonitorRecord>(`/cases/${caseId}/monitors/${monitorId}`, {
+      method: "PATCH",
+      body: { enabled },
+    }),
+
+  deleteMonitor: (caseId: string, monitorId: string) =>
+    request<void>(`/cases/${caseId}/monitors/${monitorId}`, {
+      method: "DELETE",
+    }),
+
+  alerts: (caseId?: string) =>
+    request<{ count: number; unacknowledged: number; alerts: Alert[] }>(
+      caseId === undefined ? "/alerts" : `/alerts?caseId=${caseId}`,
+    ),
+
+  acknowledgeAlerts: (ids: string[]) =>
+    request<{ acknowledged: number }>("/alerts/acknowledge", {
+      method: "POST",
+      body: { ids },
+    }),
 
   /** The entity graph, recomputed from findings on every read. */
   graph: (caseId: string) => request<CaseGraph>(`/cases/${caseId}/graph`),

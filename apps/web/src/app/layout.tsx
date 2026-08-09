@@ -22,7 +22,8 @@ export default function RootLayout({
               Scout<span>launcher, not aggregator</span>
             </Link>
             <nav className="nav">
-              <Link href="/">Cases</Link>
+              <Link href="/">Watch floor</Link>
+              <Link href="/cases">Cases</Link>
               <Link href="/sources">Sources</Link>
               <OperatorToken />
             </nav>

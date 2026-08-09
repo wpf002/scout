@@ -7,7 +7,36 @@ import type {
   CaseRecord,
   EntityKind,
   ResolvedEntity,
+  SubjectKind,
 } from "@/lib/types";
+
+/**
+ * Which entities can become the next query.
+ *
+ * `cert` and `breach` are absent because neither is a subject: a certificate
+ * serial is evidence about a host, and a breach name is a corpus, not someone
+ * to look up. Offering a pivot on them would invite a query no source accepts.
+ */
+const PIVOTABLE: Partial<Record<EntityKind, SubjectKind>> = {
+  domain: "domain",
+  ip: "ip",
+  email: "email",
+  username: "username",
+  person: "person",
+  company: "company",
+};
+
+/**
+ * Kinds a standing watch can actually take.
+ *
+ * `person` and `company` are here for sanctions re-screening, which is an
+ * ungated dataset lookup against published designation lists. They are *not*
+ * here for breach exposure or identity enumeration — the API refuses a monitor
+ * on those outright, so an offer here would be a button that always fails.
+ */
+const WATCHABLE_KINDS: SubjectKind[] = ["domain", "ip", "company", "person"];
+
+export type PivotTarget = "collect" | "watch";
 
 /** Column order — infrastructure on the left, people on the right. */
 const KIND_ORDER: EntityKind[] = [
@@ -49,7 +78,21 @@ const ROW_GAP = 10;
  * every node traces to evidence — a graph is only worth anything if you can
  * ask it "how do you know that".
  */
-export function GraphBoard({ record }: { record: CaseRecord }) {
+export function GraphBoard({
+  record,
+  onPivot,
+}: {
+  record: CaseRecord;
+  /**
+   * Continue the investigation from an entity. The graph hands over a subject
+   * and nothing else — it never runs the next query itself, because a pivot
+   * that executed on click would be a fan-out with extra steps.
+   */
+  onPivot?: (
+    subject: { kind: SubjectKind; value: string },
+    target: PivotTarget,
+  ) => void;
+}) {
   const [graph, setGraph] = useState<CaseGraph | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -267,7 +310,11 @@ export function GraphBoard({ record }: { record: CaseRecord }) {
       )}
 
       {selectedEntity !== null && (
-        <Evidence entity={selectedEntity} neighbourCount={neighbours.length} />
+        <Evidence
+          entity={selectedEntity}
+          neighbourCount={neighbours.length}
+          {...(onPivot === undefined ? {} : { onPivot })}
+        />
       )}
 
       {graph.suggestions.length > 0 && (
@@ -323,10 +370,17 @@ export function GraphBoard({ record }: { record: CaseRecord }) {
 function Evidence({
   entity,
   neighbourCount,
+  onPivot,
 }: {
   entity: ResolvedEntity;
   neighbourCount: number;
+  onPivot?: (
+    subject: { kind: SubjectKind; value: string },
+    target: PivotTarget,
+  ) => void;
 }) {
+  const pivotKind = PIVOTABLE[entity.kind];
+
   return (
     <div className="entry" style={{ marginTop: 12 }}>
       <div className="entry-title mono">{entity.label ?? entity.value}</div>
@@ -358,6 +412,40 @@ function Evidence({
           {new Date(entity.lastSeen).toLocaleString()}
         </div>
       </div>
+
+      {onPivot !== undefined && (
+        <div className="row" style={{ marginTop: 10 }}>
+          {pivotKind === undefined ? (
+            <span className="faint" style={{ fontSize: 11.5 }}>
+              A {entity.kind} is evidence, not a subject — nothing to pivot to.
+            </span>
+          ) : (
+            <>
+              <button
+                className="tiny"
+                onClick={() =>
+                  onPivot({ kind: pivotKind, value: entity.value }, "collect")
+                }
+              >
+                Pivot to this
+              </button>
+              {WATCHABLE_KINDS.includes(pivotKind) && (
+                <button
+                  className="tiny"
+                  onClick={() =>
+                    onPivot({ kind: pivotKind, value: entity.value }, "watch")
+                  }
+                >
+                  Watch it
+                </button>
+              )}
+              <span className="faint" style={{ fontSize: 11.5 }}>
+                Fills the next form. Runs nothing.
+              </span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

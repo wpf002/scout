@@ -157,6 +157,13 @@ rather than erase.
 | `POST`/`GET` | `/cases/:id/subjects` | |
 | `POST`/`GET` | `/cases/:id/findings` | Tier derived from the registry, not the request. |
 | `GET` | `/cases/:id/audit` | Query log + scope changes. |
+| `GET` | `/cases/:id/timeline` | Queries, findings and case events in one chronology, refusals included. |
+| `POST`/`GET` | `/cases/:id/monitors` | Standing watches. **Refuses any source gated for the subject kind.** |
+| `PATCH`/`DELETE` | `/cases/:id/monitors/:monitorId` | Pause, retime, rename, remove. |
+| `POST` | `/cases/:id/monitors/:monitorId/run` | Run one now. First run is a baseline. |
+| `POST` | `/monitors/run-due` | Sweep seam for whatever already runs on a schedule. No worker. |
+| `GET` | `/alerts` | Unacknowledged changes across every case. `?caseId=`, `?includeAcknowledged=true`. |
+| `POST` | `/alerts/acknowledge` | Records who cleared what. |
 | `POST` | `/exposure/:sourceId` | Scoped. `hibp`, `dehashed`. Requires `caseId` + `confirm: true`. |
 | `POST` | `/people/:sourceId` | Scoped. `hunter-io`, `whatsmyname`. Same requirements. |
 | `GET` | `/scoped/adapters` | The person-facing sources that are built. |
@@ -201,6 +208,38 @@ enforcement point to keep in sync. What the UI does is make the posture legible:
   source.
 - Adding scope requires ticking an explicit authorization claim, which is
   written to the audit log.
+
+### The watch floor
+
+`/` is a dashboard built around one question — *what changed since I last
+looked* — because everything else in Scout is something you go and fetch. It
+shows the alert feed, the active cases, and whether the API and its keys are
+where you left them.
+
+What it deliberately does not show is a case score, a risk ranking, or a
+cross-engagement findings total. A number like that gets read as an
+assessment, and Scout has no basis for one: a case with forty findings and a
+case with two are not comparable, they are differently scoped.
+
+### The case workspace is tabbed
+
+Ten stacked cards pushed the scope panel — the one thing that governs whether
+anything can run at all — off the top of the page. Scope and subjects now live
+on the tab you land on:
+
+`Overview` · `Collect` · `Findings` · `Graph` · `Watch` · `Timeline` ·
+`Audit` · `Export`
+
+The tab strip carries counts for findings, unread alerts, and **refusals**. A
+denial is not a footnote to hunt for in the audit view.
+
+### Pivots
+
+Selecting an entity in the graph offers **Pivot to this** and **Watch it**.
+Both hand a subject to the next form and stop there. A pivot that ran the next
+query on click would be a fan-out wearing a click, and `cert` and `breach`
+entities offer no pivot at all — a certificate serial is evidence about a host,
+not somebody to look up.
 
 ## The infrastructure tier
 
@@ -432,6 +471,63 @@ A summary is marked `draft`, stored apart from findings, and validated by
 not exist. That guard is the point: "never invent provenance" is otherwise a
 promise nothing enforces.
 
+## Monitoring
+
+Scout was pull-only: you opened a case and went looking. A **monitor** is a
+standing watch that re-runs a set of sources on an interval and raises an alert
+when an observation appears or disappears.
+
+```
+POST /cases/:id/monitors                create a watch
+POST /cases/:id/monitors/:id/run        run it now
+POST /monitors/run-due                  run everything whose interval elapsed
+GET  /alerts                            the feed, newest first
+POST /alerts/acknowledge                how an alert stops being noise
+```
+
+### A monitor can never watch a person
+
+This is the restriction the whole feature is built around: **a monitor may only
+include sources that are ungated for its subject kind.** `assertMonitorable()`
+checks the effective per-subject-kind gate, so Intelligence X can be watched
+for a domain and never for an email selector, and HIBP, Dehashed, Hunter.io and
+WhatsMyName can never be watched at all.
+
+Watching a domain's infrastructure change is ordinary recon. Putting a person
+under a recurring breach-exposure or identity-enumeration lookup is standing
+surveillance, and "one confirmed action at a time" is exactly what a timer
+removes. The check runs again on **every** run, not just at creation — the
+registry can change under a stored monitor, and a source that becomes gated has
+to stop being watched rather than keep running under an old decision.
+
+OpenSanctions accepts a person and remains monitorable, which is not a hole in
+the rule but the rule working: it screens a name against published designation
+lists, and periodic re-screening is the ordinary use of one. The gate is the
+line, and it was drawn source by source long before monitors existed.
+
+### Baselines and outages
+
+The first run is a **baseline**: it stores the snapshot and reports nothing.
+Treating everything visible on day one as "newly appeared" would bury the first
+real change under a hundred false ones, which is how a feed becomes something
+people stop reading.
+
+A run where every source failed carries the previous snapshot forward and
+raises no removals. A run that reached nothing is not evidence that everything
+is gone, and an outage that emptied the feed into alerts would do more damage
+than the outage.
+
+Monitored queries go through `executeUnscopedSource` like any other, so they
+land in the audit log identically. A recurring lookup is not a lesser event
+than a one-off.
+
+### No background worker
+
+The job-queue defer criterion is still unmet, and `POST /monitors/run-due` is
+the seam rather than a pretence otherwise: point cron, a scheduled job, or an
+external orchestrator at it. Calling it more often than the intervals is
+harmless — nothing that is not due will run.
+
 ## Reporting
 
 `GET /cases/:id/report` turns a case into a deliverable — findings grouped by
@@ -479,7 +575,7 @@ the tool, and when.
 ## Tests
 
 ```bash
-pnpm test        # 314 tests
+pnpm test        # 340 tests
 ```
 
 - `packages/scope` (35) — the gate, including lookalike domains, `@`-smuggling,
@@ -490,11 +586,18 @@ pnpm test        # 314 tests
   BigInt JSON safety.
 - `packages/graph` (29) — extraction, exact-identity resolution, the
   suggested/automatic boundary, and summary provenance validation.
-- `apps/api` (211) — the Phase 1, 3 and 4 exit gates end to end, upstream
+- `apps/api` (237) — the Phase 1, 3 and 4 exit gates end to end, upstream
   normalizers against fixture payloads, cache and rate-limiter behaviour, plus
   a red-team block: scope-shaped fields smuggled into request bodies, lookalike
   domains, nonexistent cases, empty scope, sweeping a scoped source, and
   reaching a per-kind gated source through the ungated path.
+
+`apps/api/src/monitors.test.ts` (23) carries the monitoring restriction as its
+load-bearing assertion: a parameterized case refuses to create a monitor on
+each of `hibp`, `dehashed`, `hunter-io` and `whatsmyname`, and a pair of cases
+pins the per-kind boundary — Intelligence X accepted for a domain, refused for
+an email selector. The rest cover baselines, change detection in both
+directions, and the outage that must not read as everything disappearing.
 
 `apps/api/src/invariants.test.ts` encodes the locked invariants as structural
 tests — no database, no network, no keys. These fail a test run rather than a
@@ -557,6 +660,9 @@ ever making a real request about a real person.
 
 ## What's next
 
-Phase 2 (web dashboard) then Phase 3 (infrastructure adapters). The critical
-path to a genuinely useful workstation is **1 → 2 → 3**; everything after is
-depth. See [ROADMAP.md](./ROADMAP.md).
+Phases 0–8 are shipped, plus monitoring and the watch floor on top. What is
+still deliberately absent is written down rather than implied: no Railway
+deploy, no Redis or job queue, no metrics or tracing — each gated on a defer
+criterion that is still unmet, and `POST /monitors/run-due` is the seam that
+lets scheduling happen without pretending a worker exists. See
+[ROADMAP.md](./ROADMAP.md).
