@@ -198,11 +198,17 @@ run("monitoring and alerts", () => {
       expect(result.baseline).toBe(false);
       expect(result.added).toBeGreaterThan(0);
 
+      // Asserted by key rather than by "the most recent row": the new host
+      // produces a subdomain change and a cert change in the same createMany,
+      // so their timestamps tie and the row order is not something to lean on.
       const change = await prisma.monitorChange.findFirst({
-        where: { monitorId, changeType: "ADDED" },
-        orderBy: { createdAt: "desc" },
+        where: {
+          monitorId,
+          changeType: "ADDED",
+          observationKey: { contains: "vpn.example.com" },
+        },
       });
-      expect(change?.observationKey).toContain("vpn.example.com");
+      expect(change).not.toBeNull();
       expect(change?.sourceIds).toContain("crtsh");
     });
 
@@ -370,6 +376,202 @@ run("monitoring and alerts", () => {
       });
       const monitor = await prisma.monitor.findUnique({ where: { id: monitorId } });
       expect(monitor?.enabled).toBe(false);
+    });
+
+    /**
+     * The property that makes it safe to run the in-process ticker, an
+     * external cron, and a second API replica against one database at the same
+     * time. Without the claim, all three would run the same monitor: three
+     * upstream calls, and on a first run, three competing baselines.
+     */
+    it("only one of two racing claims wins", async () => {
+      // Driven at the claim itself rather than through two sweeps: two sweeps
+      // racing is a matter of scheduling luck, and a test that passes because
+      // the interleaving happened to be benign is worse than none — it would
+      // go on passing after the claim was removed.
+      const created = await app.inject({
+        method: "POST",
+        url: `/cases/${caseId}/monitors`,
+        payload: {
+          name: "contended",
+          subject: { kind: "domain", value: "example.com" },
+          sourceIds: ["crtsh"],
+        },
+      });
+      const id = created.json().id;
+
+      const { claimMonitorRun } = await import("./monitor/run.js");
+      const at = new Date();
+
+      // Both callers read the same state — lastRunAt null — and both try to
+      // claim it. This is exactly the situation two API replicas are in.
+      const outcomes = await Promise.all([
+        claimMonitorRun(id, null, at),
+        claimMonitorRun(id, null, at),
+      ]);
+      expect(outcomes.filter(Boolean).length).toBe(1);
+
+      await prisma.monitor.delete({ where: { id } });
+    });
+
+    it("refuses to claim a monitor that is not due", async () => {
+      const created = await app.inject({
+        method: "POST",
+        url: `/cases/${caseId}/monitors`,
+        payload: {
+          name: "not due",
+          subject: { kind: "domain", value: "example.com" },
+          sourceIds: ["crtsh"],
+        },
+      });
+      const id = created.json().id;
+
+      const { claimMonitorRun } = await import("./monitor/run.js");
+      const now = new Date();
+      expect(await claimMonitorRun(id, null, now)).toBe(true);
+      // Ran a moment ago; an hour-old cutoff must not match it.
+      const anHourAgo = new Date(now.getTime() - 3_600_000);
+      expect(await claimMonitorRun(id, anHourAgo, new Date())).toBe(false);
+
+      await prisma.monitor.delete({ where: { id } });
+    });
+
+    it("refuses to claim a disabled monitor", async () => {
+      const created = await app.inject({
+        method: "POST",
+        url: `/cases/${caseId}/monitors`,
+        payload: {
+          name: "paused",
+          subject: { kind: "domain", value: "example.com" },
+          sourceIds: ["crtsh"],
+        },
+      });
+      const id = created.json().id;
+      await prisma.monitor.update({
+        where: { id },
+        data: { enabled: false },
+      });
+
+      const { claimMonitorRun } = await import("./monitor/run.js");
+      expect(await claimMonitorRun(id, null, new Date())).toBe(false);
+
+      await prisma.monitor.delete({ where: { id } });
+    });
+
+    it("stamps lastRunAt before the run, so a crash delays rather than repeats", async () => {
+      const created = await app.inject({
+        method: "POST",
+        url: `/cases/${caseId}/monitors`,
+        payload: {
+          name: "stamped",
+          subject: { kind: "domain", value: "example.com" },
+          sourceIds: ["crtsh"],
+          intervalMinutes: 1440,
+        },
+      });
+      const id = created.json().id;
+      clearResponseCache();
+
+      const { runDueMonitors } = await import("./monitor/run.js");
+      await runDueMonitors("local", Date.now());
+
+      const monitor = await prisma.monitor.findUnique({ where: { id } });
+      expect(monitor?.lastRunAt).not.toBeNull();
+
+      // Immediately due again? No — the claim already moved the clock.
+      const second = await runDueMonitors("local", Date.now());
+      expect(second.results.some((r) => r.monitorId === id)).toBe(false);
+
+      await prisma.monitor.delete({ where: { id } });
+    });
+  });
+
+  // ── the in-process ticker ───────────────────────────────────────────────
+  describe("scheduler", () => {
+    const silentLog = {
+      info: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    } as unknown as Parameters<
+      typeof import("./monitor/scheduler.js").startMonitorScheduler
+    >[0]["log"];
+
+    it("does not stack sweeps when one is still running", async () => {
+      const { startMonitorScheduler } = await import("./monitor/scheduler.js");
+      const scheduler = startMonitorScheduler({
+        log: silentLog,
+        // Long enough that the timer never fires on its own during the test —
+        // the overlap is driven by calling tick() directly.
+        intervalSeconds: 86_400,
+        operator: "ticker",
+      });
+
+      const created = await app.inject({
+        method: "POST",
+        url: `/cases/${caseId}/monitors`,
+        payload: {
+          name: "ticked",
+          subject: { kind: "domain", value: "example.com" },
+          sourceIds: ["crtsh"],
+        },
+      });
+      const id = created.json().id;
+      clearResponseCache();
+
+      // The second tick is skipped, not queued behind the first.
+      const outcomes = await Promise.all([scheduler.tick(), scheduler.tick()]);
+      expect(outcomes).toEqual(["ran", "skipped"]);
+      expect(await prisma.monitorRun.count({ where: { monitorId: id } })).toBe(1);
+
+      // And the guard resets, so the scheduler is not wedged after an overlap.
+      expect(await scheduler.tick()).toBe("ran");
+
+      scheduler.stop();
+      await prisma.monitor.delete({ where: { id } });
+    });
+
+    it("survives a sweep whose upstreams are all failing", async () => {
+      const { startMonitorScheduler } = await import("./monitor/scheduler.js");
+      const scheduler = startMonitorScheduler({
+        log: silentLog,
+        intervalSeconds: 86_400,
+        operator: "ticker",
+      });
+
+      upstreamFails = true;
+      clearResponseCache();
+      // An outage is not an exception — `runMonitor` handles it and carries
+      // the snapshot forward, so the tick completes normally and the timer
+      // stays alive for the next one.
+      expect(await scheduler.tick()).toBe("ran");
+      expect(await scheduler.tick()).toBe("ran");
+
+      scheduler.stop();
+    });
+
+    it("keeps ticking after a sweep throws outright", async () => {
+      const { startMonitorScheduler } = await import("./monitor/scheduler.js");
+
+      // A thrown sweep — a dropped database connection, say — must be caught
+      // inside the tick. A rejection escaping here would take down the timer
+      // and the watch would silently stop.
+      let calls = 0;
+      const scheduler = startMonitorScheduler({
+        log: silentLog,
+        intervalSeconds: 86_400,
+        operator: "ticker",
+        sweep: async () => {
+          calls += 1;
+          if (calls === 1) throw new Error("database went away");
+          return { checked: 0, ran: 0 };
+        },
+      });
+
+      expect(await scheduler.tick()).toBe("failed");
+      // Still alive.
+      expect(await scheduler.tick()).toBe("ran");
+      expect(calls).toBe(2);
+      scheduler.stop();
     });
   });
 });

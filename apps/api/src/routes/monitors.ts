@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { subjectSchema } from "@scout/sources";
 import { jsonSafe, prisma, recordAuditEvent, toPrismaSubjectKind } from "@scout/db";
-import { assertMonitorable, runMonitor } from "../monitor/run.js";
+import { assertMonitorable, runDueMonitors, runMonitor } from "../monitor/run.js";
 import { operatorOf } from "../auth.js";
 import { logEvent } from "../observability.js";
 import { badRequest, notFound } from "../errors.js";
@@ -145,42 +145,15 @@ export async function registerMonitorRoutes(
   /**
    * POST /monitors/run-due — run every monitor whose interval has elapsed.
    *
-   * Scout has no background worker and does not pretend to: the job-queue
-   * defer criterion is still unmet. This endpoint is the seam for whatever
-   * already runs on a schedule where Scout is deployed — cron, a Railway
-   * scheduled job, an external orchestrator. Calling it more often than the
-   * intervals is harmless; nothing that is not due will run.
+   * The external seam. Point cron, a platform scheduled job, or an external
+   * orchestrator at it; calling it more often than the intervals is harmless,
+   * because nothing that is not due will run. The same sweep is also available
+   * in-process — see `monitor/scheduler.ts` — and both call `runDueMonitors`,
+   * so there is one definition of "due".
    */
-  app.post("/monitors/run-due", async (request) => {
-    const now = Date.now();
-    const monitors = await prisma.monitor.findMany({ where: { enabled: true } });
-
-    const due = monitors.filter(
-      (monitor) =>
-        monitor.lastRunAt === null ||
-        now - monitor.lastRunAt.getTime() >= monitor.intervalMinutes * 60_000,
-    );
-
-    const results = [];
-    for (const monitor of due) {
-      try {
-        const result = await runMonitor(monitor.id, operatorOf(request));
-        results.push({ monitorId: monitor.id, ...result });
-      } catch (error) {
-        // One bad monitor must not stop the rest of the sweep.
-        results.push({
-          monitorId: monitor.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    return jsonSafe({
-      checked: monitors.length,
-      ran: results.length,
-      results,
-    });
-  });
+  app.post("/monitors/run-due", async (request) =>
+    jsonSafe(await runDueMonitors(operatorOf(request), Date.now())),
+  );
 
   /**
    * GET /alerts — the feed.

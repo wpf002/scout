@@ -20,6 +20,14 @@ export type ScoutEvent =
   | "sweep.excluded"
   /** A standing monitor saw something change. */
   | "monitor.changed"
+  /** The in-process ticker started. Confirms the timer is actually on. */
+  | "monitor.scheduler.started"
+  /** A sweep ran and had something to do. */
+  | "monitor.tick"
+  /** A tick arrived while the previous sweep was still running. */
+  | "monitor.tick.skipped"
+  /** A sweep threw. The timer survives; this is how you find out. */
+  | "monitor.tick.failed"
   /** Case contents left the tool. */
   | "case.exported"
   /** Investigative content was purged. */
@@ -40,9 +48,12 @@ export function logEvent(
   event: ScoutEvent,
   fields: Record<string, string | number | boolean | null> = {},
 ): void {
-  const level = event === "upstream.failed" || event === "auth.rejected"
-    ? "warn"
-    : event === "scope.denied"
+  const level =
+    event === "upstream.failed" ||
+    event === "auth.rejected" ||
+    event === "scope.denied" ||
+    event === "monitor.tick.failed" ||
+    event === "monitor.tick.skipped"
       ? "warn"
       : "info";
   logger[level]({ event, ...fields }, event);

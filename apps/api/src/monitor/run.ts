@@ -96,6 +96,89 @@ function describe(observation: unknown): {
   return null;
 }
 
+export interface DueSweepResult {
+  checked: number;
+  ran: number;
+  results: ({ monitorId: string } & (
+    | MonitorRunResult
+    | { error: string }
+  ))[];
+}
+
+/**
+ * Claims one monitor for this sweep, atomically.
+ *
+ * The claim is a conditional update: `lastRunAt` is stamped *before* the run,
+ * and only if it still holds the value that made the monitor due. Two callers
+ * racing — an external cron and the in-process ticker, or two API instances
+ * behind a load balancer — cannot both win, because the second one's `WHERE`
+ * no longer matches.
+ *
+ * Stamping before the work means a process that dies mid-run leaves the
+ * monitor waiting a full interval rather than being picked up again
+ * immediately. That is the safe direction to fail: a missed run is a delay, a
+ * double run is a duplicated upstream call and a second baseline.
+ */
+export async function claimMonitorRun(
+  monitorId: string,
+  dueBefore: Date | null,
+  at: Date,
+): Promise<boolean> {
+  const claimed = await prisma.monitor.updateMany({
+    where: {
+      id: monitorId,
+      enabled: true,
+      // Exactly the condition that made it due, re-checked at write time.
+      ...(dueBefore === null
+        ? { lastRunAt: null }
+        : { lastRunAt: { lte: dueBefore } }),
+    },
+    data: { lastRunAt: at },
+  });
+  return claimed.count === 1;
+}
+
+/**
+ * Runs every enabled monitor whose interval has elapsed.
+ *
+ * Shared by `POST /monitors/run-due` and the in-process ticker so there is one
+ * definition of "due" rather than two that can drift. Sequential on purpose: a
+ * sweep that fanned out would hit the same upstreams from N directions at once,
+ * which is the behaviour the per-source rate limiters exist to prevent.
+ */
+export async function runDueMonitors(
+  operator: string,
+  now: number,
+): Promise<DueSweepResult> {
+  const monitors = await prisma.monitor.findMany({ where: { enabled: true } });
+  const at = new Date(now);
+
+  const results: DueSweepResult["results"] = [];
+  for (const monitor of monitors) {
+    const lastRunAt = monitor.lastRunAt;
+    let dueBefore: Date | null = null;
+    if (lastRunAt !== null) {
+      dueBefore = new Date(now - monitor.intervalMinutes * 60_000);
+      if (lastRunAt > dueBefore) continue;
+    }
+
+    if (!(await claimMonitorRun(monitor.id, dueBefore, at))) continue;
+
+    try {
+      const result = await runMonitor(monitor.id, operator);
+      results.push({ monitorId: monitor.id, ...result });
+    } catch (error) {
+      // One bad monitor must not stop the rest of the sweep.
+      results.push({
+        monitorId: monitor.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { checked: monitors.length, ran: results.length, results };
+}
+
 export interface MonitorRunResult {
   runId: string;
   observationCount: number;

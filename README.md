@@ -8,9 +8,9 @@ Scout is a **launcher, not an aggregator**. There is deliberately no box that
 takes a name and returns an assembled dossier. It plans, it gates, it records —
 and it makes you take each person-facing action on purpose.
 
-**Status:** Phases 0–7 shipped, plus the hardening half of 8. Deployment is not
-built; the hardening it depends on is. See [ROADMAP.md](./ROADMAP.md) for the
-locked build order.
+**Status:** Phases 0–7 shipped, plus the hardening half of 8, plus continuous
+monitoring and the watch floor on top. Deployment is not built; the hardening it
+depends on is. See [ROADMAP.md](./ROADMAP.md) for the locked build order.
 
 ---
 
@@ -161,7 +161,7 @@ rather than erase.
 | `POST`/`GET` | `/cases/:id/monitors` | Standing watches. **Refuses any source gated for the subject kind.** |
 | `PATCH`/`DELETE` | `/cases/:id/monitors/:monitorId` | Pause, retime, rename, remove. |
 | `POST` | `/cases/:id/monitors/:monitorId/run` | Run one now. First run is a baseline. |
-| `POST` | `/monitors/run-due` | Sweep seam for whatever already runs on a schedule. No worker. |
+| `POST` | `/monitors/run-due` | Runs every monitor whose interval elapsed. Safe to call from cron alongside the in-process ticker. |
 | `GET` | `/alerts` | Unacknowledged changes across every case. `?caseId=`, `?includeAcknowledged=true`. |
 | `POST` | `/alerts/acknowledge` | Records who cleared what. |
 | `POST` | `/exposure/:sourceId` | Scoped. `hibp`, `dehashed`. Requires `caseId` + `confirm: true`. |
@@ -521,12 +521,40 @@ Monitored queries go through `executeUnscopedSource` like any other, so they
 land in the audit log identically. A recurring lookup is not a lesser event
 than a one-off.
 
-### No background worker
+### Scheduling: a timer, not a queue
 
-The job-queue defer criterion is still unmet, and `POST /monitors/run-due` is
-the seam rather than a pretence otherwise: point cron, a scheduled job, or an
-external orchestrator at it. Calling it more often than the intervals is
-harmless — nothing that is not due will run.
+Without something calling the sweep, a standing watch only runs when a human
+presses a button, which makes "standing watch" a promise nothing keeps. There
+are two ways to drive it, and they are interchangeable:
+
+```bash
+# in-process ticker — off unless you set it
+SCOUT_MONITOR_TICK_SECONDS=300
+
+# or point anything external at the same sweep
+curl -XPOST $SCOUT_API/monitors/run-due
+```
+
+The ticker is a `setInterval`, and the README will not dress it up as more than
+that: no retries, no backoff, no persistence across a restart, no distribution.
+The Redis-and-a-job-queue defer criterion is **still unmet**, and building one
+on speculation is the kind of infrastructure that exists to look finished.
+
+What it does have are the two properties that make it safe to leave running:
+
+- **Sweeps never overlap.** A tick arriving while the previous sweep is still
+  going is skipped and counted, not queued behind it. A scheduler permanently
+  behind shows up as `monitor.tick.skipped` rather than quietly compounding.
+- **Every monitor is claimed before it runs.** The claim is a conditional
+  update — `lastRunAt` is stamped only if it still holds the value that made
+  the monitor due — so the ticker, an external cron, and a second API replica
+  can all point at one database without double-running a monitor. Stamping
+  before the work means a process that dies mid-run leaves the monitor waiting
+  an interval rather than being picked up again immediately. A missed run is a
+  delay; a double run is a duplicated upstream call and a second baseline.
+
+Calling `/monitors/run-due` more often than the intervals is therefore
+harmless, and so is enabling the ticker on more than one replica.
 
 ## Reporting
 
@@ -575,7 +603,7 @@ the tool, and when.
 ## Tests
 
 ```bash
-pnpm test        # 340 tests
+pnpm test        # 347 tests
 ```
 
 - `packages/scope` (35) — the gate, including lookalike domains, `@`-smuggling,
@@ -586,13 +614,13 @@ pnpm test        # 340 tests
   BigInt JSON safety.
 - `packages/graph` (29) — extraction, exact-identity resolution, the
   suggested/automatic boundary, and summary provenance validation.
-- `apps/api` (237) — the Phase 1, 3 and 4 exit gates end to end, upstream
+- `apps/api` (244) — the Phase 1, 3 and 4 exit gates end to end, upstream
   normalizers against fixture payloads, cache and rate-limiter behaviour, plus
   a red-team block: scope-shaped fields smuggled into request bodies, lookalike
   domains, nonexistent cases, empty scope, sweeping a scoped source, and
   reaching a per-kind gated source through the ungated path.
 
-`apps/api/src/monitors.test.ts` (23) carries the monitoring restriction as its
+`apps/api/src/monitors.test.ts` (30) carries the monitoring restriction as its
 load-bearing assertion: a parameterized case refuses to create a monitor on
 each of `hibp`, `dehashed`, `hunter-io` and `whatsmyname`, and a pair of cases
 pins the per-kind boundary — Intelligence X accepted for a domain, refused for

@@ -473,8 +473,13 @@ changed rather than around totals, `GET /cases/:id/timeline` exposes the case
 chronology with its refusals intact, and graph entities offer pivots that fill
 the next form and run nothing.
 
-The job-queue defer criterion is **still unmet** and was not overridden:
-`POST /monitors/run-due` is a seam for an existing scheduler, not a worker.
+The job-queue defer criterion is **still unmet** and was not overridden. What
+ships is a `setInterval` behind `SCOUT_MONITOR_TICK_SECONDS`, off by default,
+alongside the `POST /monitors/run-due` seam for an external scheduler — no
+retries, no backoff, no persistence, no distribution. It is safe to run either
+or both because sweeps never overlap and every monitor is claimed with a
+conditional update before it runs, which is the smallest thing that makes a
+standing watch actually stand without inventing a queue nobody has load for.
 
 Critical path to a genuinely useful internal tool is **1 → 2 → 3**: cases,
 a dashboard, and the infrastructure tier. That's a working OSINT workstation.

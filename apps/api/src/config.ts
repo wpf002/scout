@@ -29,6 +29,23 @@ const configSchema = z.object({
     .enum(["true", "false"])
     .optional()
     .transform((value) => value === "true"),
+  /**
+   * How often the in-process ticker sweeps for due monitors, in seconds.
+   * Unset means no ticker: a process that quietly starts making outbound
+   * requests on a timer should be something you turned on. Monitor intervals
+   * are hourly at the fastest, so a tick far below 60s only adds database
+   * round-trips.
+   *
+   * This is a timer, not a job queue — see `monitor/scheduler.ts`. Running it
+   * alongside an external cron, or on more than one replica, is safe: monitors
+   * are claimed before they run.
+   */
+  SCOUT_MONITOR_TICK_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(15)
+    .max(86_400)
+    .optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
