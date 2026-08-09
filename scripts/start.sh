@@ -63,11 +63,22 @@ if [ ! -d node_modules ]; then
 fi
 
 # ── database ───────────────────────────────────────────────────────────────
+# `prisma db execute --stdin` needs --url or --schema; without one it exits 1
+# with a usage error, which a `>/dev/null 2>&1` probe reads as "unreachable".
+# It therefore reported every healthy database as down and shelled out to start
+# a cluster that was already running.
+db_reachable() {
+  pnpm --filter @scout/db exec prisma db execute \
+    --url "$DATABASE_URL" --stdin <<<"SELECT 1;" >/dev/null 2>&1
+}
+
 step "Checking the database"
-if ! pnpm --filter @scout/db exec prisma db execute --stdin <<<"SELECT 1;" \
-  >/dev/null 2>&1; then
+if db_reachable; then
+  printf '    reachable\n'
+else
   warn "Not reachable — starting a local cluster"
   "$ROOT/scripts/dev-db.sh"
+  db_reachable || die "Still cannot reach $DATABASE_URL after starting Postgres."
 fi
 
 pnpm --filter @scout/db exec prisma generate >/dev/null 2>&1
@@ -76,16 +87,19 @@ step "Applying migrations"
 pnpm --filter @scout/db exec prisma migrate deploy 2>&1 \
   | grep -E "Applying|already in sync|No pending|successfully applied" || true
 
-# Seed only an empty database. Re-seeding one that already has work in it
-# would be a surprise, and a bad one.
-CASES="$(pnpm --filter @scout/db exec prisma db execute --stdin \
-  <<<'SELECT count(*) FROM "Case";' >/dev/null 2>&1 && echo probe || echo skip)"
-if [ "$CASES" = "probe" ]; then
-  COUNT="$(psql "${DATABASE_URL%%\?*}" -tAc 'SELECT count(*) FROM "Case";' 2>/dev/null || echo "")"
-  if [ "$COUNT" = "0" ]; then
-    step "Seeding a demo case (database is empty)"
-    pnpm --filter @scout/db run seed >/dev/null
-  fi
+# Seed only an empty database. Re-seeding one that already has work in it would
+# be a surprise, and a bad one. An unreadable count means "do not seed" rather
+# than "seed anyway" for the same reason.
+step "Checking for existing cases"
+COUNT="$(pnpm --filter @scout/db exec prisma db execute --url "$DATABASE_URL" \
+  --stdin <<<'SELECT count(*) FROM "Case";' >/dev/null 2>&1 \
+  && psql "${DATABASE_URL%%\?*}" -tAc 'SELECT count(*) FROM "Case";' 2>/dev/null \
+  | tr -d '[:space:]')"
+if [ "$COUNT" = "0" ]; then
+  step "Seeding a demo case (database is empty)"
+  pnpm --filter @scout/db run seed >/dev/null
+else
+  printf '    %s case(s) already here; not seeding\n' "${COUNT:-?}"
 fi
 
 # ── servers ────────────────────────────────────────────────────────────────

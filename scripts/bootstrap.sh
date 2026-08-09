@@ -24,8 +24,10 @@ if [ -z "${DATABASE_URL:-}" ]; then
 fi
 
 echo "==> Checking database connectivity"
-if ! pnpm --filter @scout/db exec prisma db execute --stdin <<<"SELECT 1;" \
-  >/dev/null 2>&1; then
+# --url is required: without it `prisma db execute` exits 1 on a usage error,
+# which this probe would read as "database down" for every healthy database.
+if ! pnpm --filter @scout/db exec prisma db execute \
+  --url "$DATABASE_URL" --stdin <<<"SELECT 1;" >/dev/null 2>&1; then
   echo "    Not reachable. Starting a local cluster."
   "$ROOT/scripts/dev-db.sh"
 fi
