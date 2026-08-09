@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import type { CaseRecord } from "@/lib/types";
+import { Loading } from "@/components/Loading";
 
 interface ScopeDraft {
   kind: "domain" | "identifier";
@@ -206,7 +207,7 @@ export default function CasesPage() {
         <div>
           <div className="card">
             <h2>Open cases</h2>
-            {cases === null && <div className="empty">Loading…</div>}
+            {cases === null && <Loading what="the case list" />}
             {cases !== null && cases.length === 0 && (
               <div className="empty">
                 No cases yet. Create one to get started.

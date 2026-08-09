@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { CaseRecord, TimelineEntry } from "@/lib/types";
+import { Loading } from "@/components/Loading";
 
 type Filter = "all" | "query" | "finding" | "event" | "denied";
 
@@ -88,7 +89,7 @@ export function TimelineBoard({ record }: { record: CaseRecord }) {
         ))}
       </div>
 
-      {entries === null && <div className="empty">Loading…</div>}
+      {entries === null && <Loading what="the timeline" />}
 
       {entries !== null && visible.length === 0 && (
         <div className="empty">Nothing recorded under this filter yet.</div>

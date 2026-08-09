@@ -24,6 +24,7 @@ import type {
   SubjectKind,
   SubjectRecord,
 } from "@/lib/types";
+import { Loading } from "@/components/Loading";
 
 /**
  * The workspace tabs.
@@ -131,7 +132,7 @@ export default function CaseWorkspace() {
     );
   }
 
-  if (record === null) return <div className="empty">Loading case…</div>;
+  if (record === null) return <Loading what="this case" />;
 
   const badgeFor = (id: TabId): number | null => {
     if (id === "findings") return findings.length > 0 ? findings.length : null;

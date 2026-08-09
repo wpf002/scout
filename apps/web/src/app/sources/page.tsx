@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { TIER_BLURB, TIER_ORDER } from "@/lib/types";
 import type { SourceSummary } from "@/lib/types";
+import { Loading } from "@/components/Loading";
 
 export default function SourcesPage() {
   const [sources, setSources] = useState<SourceSummary[] | null>(null);
@@ -36,7 +37,7 @@ export default function SourcesPage() {
       </div>
 
       {error !== null && <div className="error">{error}</div>}
-      {sources === null && <div className="empty">Loading…</div>}
+      {sources === null && <Loading what="the source registry" />}
 
       {sources !== null &&
         TIER_ORDER.map((tier, index) => {

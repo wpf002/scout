@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { AuditView } from "@/lib/types";
+import { Loading } from "@/components/Loading";
 
 const OUTCOME_CLASS: Record<string, string> = {
   ALLOWED: "ok",
@@ -22,7 +23,7 @@ export function AuditPanel({ audit }: { audit: AuditView | null }) {
     return (
       <div className="card">
         <h2>Audit trail</h2>
-        <div className="empty">Loading…</div>
+        <Loading what="the audit log" />
       </div>
     );
   }

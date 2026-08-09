@@ -29,6 +29,9 @@ import type {
  */
 const BASE = `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api`;
 
+/** Long enough for a slow upstream sweep, short enough to not look like a hang. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 const TOKEN_KEY = "scout.operatorToken";
 
 /**
@@ -94,13 +97,23 @@ async function request<T>(
       headers,
       body: init?.body === undefined ? undefined : JSON.stringify(init.body),
       cache: "no-store",
+      // A server that accepts the connection and then goes quiet would
+      // otherwise leave the request pending forever, and the UI showing
+      // "Loading…" forever with it. A visible failure beats a spinner that
+      // never resolves — at least the failure says what to do.
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-  } catch {
+  } catch (caught) {
+    const timedOut =
+      caught instanceof DOMException && caught.name === "TimeoutError";
     throw new ApiError(
       0,
-      "unreachable",
-      "Cannot reach the Scout API. Start it with `pnpm --filter @scout/api dev`, " +
-        "or run `./scripts/start.sh` to bring up everything at once.",
+      timedOut ? "timeout" : "unreachable",
+      timedOut
+        ? `The Scout API did not answer within ${REQUEST_TIMEOUT_MS / 1000}s. ` +
+          "It is reachable but not responding — check its log."
+        : "Cannot reach the Scout API. Start it with `pnpm start`, which runs " +
+          "both servers and verifies them before reporting success.",
     );
   }
 

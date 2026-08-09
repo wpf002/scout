@@ -63,6 +63,60 @@ async function main(): Promise<void> {
     },
   });
 
+  /**
+   * Findings, so the case is not an empty room.
+   *
+   * A seed that creates a case with nothing in it leaves Findings, Graph and
+   * Timeline all blank on first run, which reads as broken rather than as new.
+   * Two sources report the same four hostnames, because corroboration is the
+   * thing the graph exists to show and one source cannot demonstrate it.
+   */
+  const hosts = ["www", "mail", "vpn", "api"];
+  const reporters = [
+    { sourceId: "crtsh", note: "certificate transparency" },
+    { sourceId: "securitytrails", note: "historical DNS" },
+  ];
+
+  await prisma.finding.createMany({
+    data: hosts.flatMap((host, index) =>
+      reporters.map((reporter) => ({
+        caseId: demo.id,
+        sourceId: reporter.sourceId,
+        tier: "INFRA" as const,
+        title: `Subdomain ${host}.example.com`,
+        summary: `${host}.example.com, via ${reporter.note}.`,
+        data: { kind: "subdomain", hostname: `${host}.example.com` },
+        queryTerm: "example.com",
+        queryKind: "DOMAIN" as const,
+        observedAt: new Date(Date.UTC(2026, 7, 2 + index, 10, index * 7)),
+        savedBy: "seed",
+      })),
+    ),
+  });
+
+  /**
+   * One refusal on the record.
+   *
+   * The denial is the part that proves the gate ran, so a demonstration case
+   * should not open with a spotless log. This row is what the Audit and
+   * Timeline tabs are for.
+   */
+  await prisma.queryLog.create({
+    data: {
+      caseId: demo.id,
+      sourceId: "hibp",
+      tier: "EXPOSURE",
+      requiresScope: true,
+      phase: "EXECUTE",
+      outcome: "DENIED",
+      reason: "out-of-scope",
+      subjectKind: "EMAIL",
+      subjectValue: "someone@unrelated.net",
+      authorizationRef: demo.authorizationRef,
+      operator: "seed",
+    },
+  });
+
   console.log(`Seeded case ${demo.id} (${demo.name})`);
   console.log(`  scope entries: ${demo.scopeEntries.length}`);
   console.log(`  subjects:      ${demo.subjects.length}`);

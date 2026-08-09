@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import type { Alert } from "@/lib/types";
+import { Loading } from "@/components/Loading";
 
 /**
  * The alert feed.
@@ -104,7 +105,7 @@ export function AlertFeed({
 
       {error !== null && <div className="error">{error}</div>}
 
-      {alerts === null && <div className="empty">Loading…</div>}
+      {alerts === null && <Loading what="the alert feed" />}
 
       {alerts !== null && alerts.length === 0 && error === null && (
         <div className="empty">

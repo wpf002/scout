@@ -9,6 +9,7 @@ import type {
   ResolvedEntity,
   SubjectKind,
 } from "@/lib/types";
+import { Loading } from "@/components/Loading";
 
 /**
  * Which entities can become the next query.
@@ -202,7 +203,7 @@ export function GraphBoard({
       <div className="card">
         <h2>Entity graph</h2>
         {error === null ? (
-          <div className="empty">Loading…</div>
+          <Loading what="the entity graph" />
         ) : (
           <div className="error">{error}</div>
         )}

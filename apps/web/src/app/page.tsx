@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import { AlertFeed } from "@/components/AlertFeed";
 import type { Alert, CaseRecord } from "@/lib/types";
+import { Loading } from "@/components/Loading";
 
 interface Health {
   status: string;
@@ -126,7 +127,7 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          {cases === null && <div className="empty">Loading…</div>}
+          {cases === null && <Loading what="the case list" />}
 
           {cases !== null && active.length === 0 && (
             <div className="empty">
