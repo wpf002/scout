@@ -52,8 +52,15 @@ const PERSON_IDENTIFYING: readonly SubjectKind[] = [
  * designations rather than private facts about the person, which is what
  * separates it from the exposure and people tiers. This one is expected to
  * stay unscoped.
+ *
+ * `aleph` — OCCRP's corpus of published leaks, corporate registries and court
+ * filings, which is searched by name by the journalists it was built for.
+ * Gating name search would make it useless for its actual purpose, and what it
+ * returns is already-published record material rather than private facts. Its
+ * `email` selector IS gated, via scopedKinds — searching an address is a
+ * lookup about one person, not research against a corpus.
  */
-const REVIEWED_UNSCOPED_PERSON_SOURCES = ["opensanctions"];
+const REVIEWED_UNSCOPED_PERSON_SOURCES = ["opensanctions", "aleph"];
 
 describe("invariant 1 — the scope gate is absolute", () => {
   it("pins the set of person-facing sources", () => {
@@ -185,9 +192,14 @@ describe("invariant 2 — no blind fan-out", () => {
     }
   });
 
-  it("only batch-executes infrastructure-tier sources", () => {
+  it("only batch-executes non-person tiers", () => {
+    // The guarantee that matters is the per-kind gate asserted below — a tier
+    // label is a UI grouping, not a safety property. This check stays as a
+    // coarse tripwire: the sweep may carry infrastructure and utility sources
+    // (hosts, certificates, archives), and nothing from the exposure, people
+    // or datasets tiers, where person-facing sources live.
     for (const adapter of INFRA_ADAPTERS) {
-      expect(adapter.source.tier).toBe("infra");
+      expect(["infra", "utils"]).toContain(adapter.source.tier);
     }
   });
 
@@ -236,7 +248,7 @@ describe("invariant 6 — inert without keys, never guessed", () => {
     const keyless = SOURCES.filter(
       (s) => s.mode === "api" && s.keyEnv === null,
     ).map((s) => s.id);
-    expect(keyless).toEqual(["crtsh"]);
+    expect(keyless.sort()).toEqual(["crtsh", "wayback-machine"]);
   });
 
   it("routes every built adapter to a source that exists in the registry", () => {

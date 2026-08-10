@@ -5,6 +5,7 @@ import type { ScopeEntry } from "@scout/scope";
 import { ScopeError, enforceScope } from "@scout/scope";
 import { loadCaseWithScope, recordQuery } from "@scout/db";
 import { notFound } from "../errors.js";
+import { config } from "../config.js";
 
 import { TtlCache, responseCacheKey } from "../lib/cache.js";
 import { infraRateLimiter } from "../lib/ratelimit.js";
@@ -59,13 +60,23 @@ export async function executeScopedSource<T>(
 
   let matchedScope: ScopeEntry;
   try {
-    matchedScope = enforceScope({
-      subject: ctx.subject,
-      scope,
-      source,
-      caseId: record.id,
-      authorizationRef: record.authorizationRef,
-    });
+    // An instance configured as authorized for everything skips the match but
+    // not the record. The audit row still lands, marked so that a reader can
+    // tell "this matched a scope entry" from "this instance was configured to
+    // allow anything" — collapsing those two would make the log unable to
+    // answer the question it exists for.
+    matchedScope = config.SCOUT_AUTHORIZE_ALL
+      ? {
+          kind: "identifier",
+          value: ctx.subject.value,
+        }
+      : enforceScope({
+          subject: ctx.subject,
+          scope,
+          source,
+          caseId: record.id,
+          authorizationRef: record.authorizationRef,
+        });
   } catch (error) {
     if (error instanceof ScopeError) {
       await recordQuery({

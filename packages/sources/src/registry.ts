@@ -26,13 +26,26 @@ export const SOURCES: readonly Source[] = Object.freeze([
     id: "aleph",
     name: "Aleph (OCCRP)",
     tier: "datasets",
-    mode: "deeplink",
+    // Promoted from deeplink. Aleph sets frame-ancestors, so an embedded panel
+    // showed a blank page; its public search API needs no key, so the hits are
+    // read server-side and rendered as rows instead. The deeplink stays as a
+    // convenience link on each hit.
+    mode: "api",
+    // Searching a name here is investigative dataset research — the corpus is
+    // published leaks and corporate records, and it exists to be searched by
+    // name. An email selector is not that: it is a lookup about one person, so
+    // it goes through the gate exactly as Intelligence X's does.
     requiresScope: false,
+    scopedKinds: ["email"],
     accepts: ["person", "company", "keyword", "email", "domain"],
     description:
       "OCCRP's investigative dataset aggregator — leaks, corporate records, court filings.",
     homepage: "https://aleph.occrp.org",
-    keyEnv: null,
+    // Aleph's entities endpoint returns 401 without a key, including for
+    // public collections — verified against the live API. A free account at
+    // aleph.occrp.org issues one. Without it the source reports inert rather
+    // than erroring on every run.
+    keyEnv: "ALEPH_API_KEY",
     deeplink: (term) => `https://aleph.occrp.org/search?q=${q(term)}`,
   },
   {
@@ -295,7 +308,9 @@ export const SOURCES: readonly Source[] = Object.freeze([
     id: "wayback-machine",
     name: "Wayback Machine",
     tier: "utils",
-    mode: "deeplink",
+    // Promoted from deeplink: archive.org refuses to be iframed, and its CDX
+    // index answers the actual question (what was archived, and when) as data.
+    mode: "api",
     requiresScope: false,
     accepts: ["domain", "keyword"],
     description: "Historical snapshots of a host or URL.",

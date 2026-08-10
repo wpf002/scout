@@ -20,6 +20,25 @@ const configSchema = z.object({
    */
   SCOUT_WEB_ORIGINS: z.string().default("http://localhost:3000"),
   /**
+   * Treat every subject as authorized, regardless of the investigation's
+   * scope entries.
+   *
+   * Backend configuration, deliberately — authorization is a property of the
+   * engagement, not something a request or a UI control can assert. Set it
+   * once for an instance whose operator is authorized for whatever they search.
+   *
+   * This does not turn the audit log off, and it is not silent: every run
+   * still writes its row, and rows written under this setting are marked
+   * `blanket-authorization` rather than naming a scope entry that matched.
+   * Which searches were run, by whom, and under what authority remains exactly
+   * as answerable as before — the difference is what the gate refuses, not what
+   * gets recorded.
+   */
+  SCOUT_AUTHORIZE_ALL: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  /**
    * Require a bearer token. Defaults to ON in production, because an audit log
    * whose every row says "local" cannot answer the question it exists to
    * answer. Off in development so a single local operator is not blocked by

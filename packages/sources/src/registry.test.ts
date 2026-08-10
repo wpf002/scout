@@ -83,7 +83,7 @@ describe("mode invariants", () => {
     const dual = SOURCES.filter(
       (s) => s.mode === "api" && typeof s.deeplink === "function",
     ).map((s) => s.id);
-    expect(dual).toEqual(["crtsh"]);
+    expect(dual.sort()).toEqual(["aleph", "crtsh", "wayback-machine"]);
   });
 
   it("URL-encodes the term so it cannot break out of the deeplink", () => {
@@ -96,9 +96,10 @@ describe("mode invariants", () => {
     const keyless = SOURCES.filter(
       (s) => s.mode === "api" && s.keyEnv === null,
     ).map((s) => s.id);
-    // crt.sh is genuinely free and unauthenticated. Anything else claiming to
-    // be a keyless API source needs justifying.
-    expect(keyless).toEqual(["crtsh"]);
+    // Both are genuinely free and unauthenticated: crt.sh and the Wayback CDX
+    // index. Anything else claiming to be a keyless API source needs
+    // justifying — Aleph looked keyless and is not.
+    expect(keyless.sort()).toEqual(["crtsh", "wayback-machine"]);
 
     for (const source of SOURCES) {
       if (source.mode === "api" && !keyless.includes(source.id)) {
