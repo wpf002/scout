@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "./scripts/start.sh",
+    "autostart": "./scripts/install-autostart.sh",
     "demo": "pnpm --filter @scout/web exec node demo/build.mjs",
     "build": "turbo run build",
     "dev": "turbo run dev",

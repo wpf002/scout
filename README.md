@@ -60,6 +60,29 @@ compile-error page, and the API reachable **through** the `/api` proxy — the
 path the browser actually uses. If any of them fails the script tails the
 relevant log, leaves nothing running, and exits non-zero.
 
+### Never typing it again
+
+```bash
+pnpm autostart
+```
+
+Installs Scout as a login service — a LaunchAgent on macOS, a systemd unit on
+Linux — so it comes up when you log in, comes back if it stops, and survives a
+reboot. `pnpm autostart --status` says whether it is installed and answering,
+`--print` shows the service file it would write without installing anything,
+and `--uninstall` removes it.
+
+The service runs the same `scripts/start.sh` you would run by hand. A service
+that started Scout a *different* way would drift from the one people actually
+test, and the drift would only show up the day something broke.
+
+Two things it resolves rather than discovers halfway through: binaries are
+resolved to absolute paths at install time, because a login service starts with
+almost no `PATH`; and on Linux it checks `/run/systemd/system` before touching
+`systemctl`, since systemd is often *installed* somewhere it does not boot —
+containers especially — where every call fails with a message naming neither
+the cause nor the fix.
+
 It then **stays** started. Starting a dev server is not the same as keeping it
 running: one can be killed out from under you — by an OOM reaper, a
 process-group teardown, a supervisor that owns the terminal — and when it
