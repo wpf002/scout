@@ -1036,3 +1036,106 @@ a:hover {
   color: var(--text-faint);
   word-break: break-word;
 }
+
+/* ── Watches and alerts ───────────────────────────────────────────────── */
+
+.watch {
+  height: 34px;
+  padding: 0 16px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.watch:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.watch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/*
+ * Alerts sit above everything, including the insights. A change found by a
+ * standing watch is the only thing on this page the operator did not just ask
+ * for, which makes it the one thing worth interrupting them with.
+ */
+.alerts {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  background: rgba(224, 163, 60, 0.07);
+  border: 1px solid rgba(224, 163, 60, 0.35);
+  border-radius: 4px;
+}
+
+.alerts-head {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--warn);
+}
+
+.alerts-list {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.watches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.watches-head {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.watch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 2px 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.watch-chip button {
+  padding: 0 2px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.watch-chip button:hover {
+  color: var(--deny);
+}

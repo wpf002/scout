@@ -10,6 +10,7 @@ import {
   type RunDiff,
   type RunResultRow,
 } from "@/lib/api";
+import type { Alert, MonitorRecord } from "@/lib/types";
 import type { CaseRecord, SubjectKind } from "@/lib/types";
 import { flattenObservations, groupRank, type ResultRow } from "@/lib/flatten";
 import { buildGraph, TYPE_COLOR } from "@/lib/graph";
@@ -91,6 +92,9 @@ export default function Page() {
   const [selected, setSelected] = useState<ResultRow | null>(null);
   const [view, setView] = useState<"table" | "graph">("table");
   const [diff, setDiff] = useState<RunDiff | null>(null);
+  const [monitors, setMonitors] = useState<MonitorRecord[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [watching, setWatching] = useState(false);
 
   useEffect(() => {
     api
@@ -101,6 +105,20 @@ export default function Page() {
       })
       .catch(() => setCases([]));
   }, []);
+
+  const refreshWatches = useCallback(async () => {
+    if (caseId === "") return;
+    const [loadedMonitors, loadedAlerts] = await Promise.all([
+      api.listMonitors(caseId).catch(() => ({ monitors: [] })),
+      api.alerts(caseId).catch(() => ({ alerts: [] })),
+    ]);
+    setMonitors(loadedMonitors.monitors);
+    setAlerts(loadedAlerts.alerts);
+  }, [caseId]);
+
+  useEffect(() => {
+    void refreshWatches();
+  }, [refreshWatches]);
 
   useEffect(() => {
     const term = indicator.trim();
@@ -262,6 +280,54 @@ export default function Page() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  /**
+   * Put this subject under a standing watch.
+   *
+   * Only the sources that actually ran are offered to the monitor. Watching a
+   * source that reported "needs a key" would produce a schedule that can never
+   * find anything, and the API refuses any source gated for this subject kind
+   * anyway — a person on a timer is standing surveillance, which is the one
+   * thing this feature will not do.
+   */
+  const watchThis = async () => {
+    if (result === null || caseId === "" || watching) return;
+    const runnable = resultRows
+      .filter((r) => r.status === "ok" || r.status === "empty")
+      .filter((r) => !r.requiresScope)
+      .map((r) => r.sourceId);
+
+    if (runnable.length === 0) return;
+
+    setWatching(true);
+    try {
+      await api.createMonitor(caseId, {
+        name: result.subject.value,
+        subject: result.subject,
+        sourceIds: runnable,
+        intervalMinutes: 1440,
+      });
+      await refreshWatches();
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError ? caught.message : "Could not create the watch.",
+      );
+    } finally {
+      setWatching(false);
+    }
+  };
+
+  const dropWatch = async (monitorId: string) => {
+    if (caseId === "") return;
+    await api.deleteMonitor(caseId, monitorId).catch(() => undefined);
+    await refreshWatches();
+  };
+
+  const clearAlerts = async () => {
+    if (alerts.length === 0) return;
+    await api.acknowledgeAlerts(alerts.map((a) => a.id)).catch(() => undefined);
+    await refreshWatches();
+  };
+
   /** The case as a client-ready report. The builder already existed. */
   const openReport = (format: "html" | "docx") => {
     if (caseId === "") return;
@@ -356,6 +422,16 @@ export default function Page() {
         >
           {running ? "Searching" : "Search"}
         </button>
+        {result !== null && !running ? (
+          <button
+            className="watch"
+            onClick={() => void watchThis()}
+            disabled={watching}
+            title="Re-run this search daily and alert on anything new"
+          >
+            {watching ? "Watching" : "Watch"}
+          </button>
+        ) : null}
       </section>
 
       {detection !== null &&
@@ -428,6 +504,44 @@ export default function Page() {
             {[...diff.added.values.slice(0, 6)].join(", ")}
             {diff.added.count > 6 ? " …" : ""}
           </span>
+        </div>
+      ) : null}
+
+      {alerts.length > 0 ? (
+        <div className="alerts">
+          <span className="alerts-head">
+            {alerts.length} Change{alerts.length === 1 ? "" : "s"} Detected
+          </span>
+          <span className="alerts-list">
+            {alerts
+              .slice(0, 5)
+              .map(
+                (a) =>
+                  `${a.changeType === "ADDED" ? "+" : "−"} ${a.observationKey}`,
+              )
+              .join(" · ")}
+            {alerts.length > 5 ? " …" : ""}
+          </span>
+          <button className="link" onClick={() => void clearAlerts()}>
+            Acknowledge
+          </button>
+        </div>
+      ) : null}
+
+      {monitors.length > 0 ? (
+        <div className="watches">
+          <span className="watches-head">Watching</span>
+          {monitors.map((monitor) => (
+            <span key={monitor.id} className="watch-chip">
+              {monitor.subjectValue}
+              <button
+                onClick={() => void dropWatch(monitor.id)}
+                title="Stop watching"
+              >
+                ×
+              </button>
+            </span>
+          ))}
         </div>
       ) : null}
 
