@@ -73,15 +73,34 @@ else
     -l '$PGDATA/server.log' -w start" >/dev/null
 fi
 
+# The `scout` role, which is the one `.env.example` actually connects as.
+#
+# This cluster is initdb'd with a `postgres` superuser and nothing else, so for
+# a long time the shipped DATABASE_URL — `scout:scout@…` — pointed at a role
+# that did not exist. `start.sh` would bring the cluster up, announce it, and
+# then fail its own reachability check against it. Creating the role here keeps
+# the default config working on a machine that had no Postgres five minutes ago,
+# which is the entire point of this script.
+if ! as_pg "'$PGBIN/psql' -h 127.0.0.1 -p $PGPORT -U postgres -Atqc \
+  \"SELECT 1 FROM pg_roles WHERE rolname='scout'\"" | grep -q 1; then
+  as_pg "'$PGBIN/psql' -h 127.0.0.1 -p $PGPORT -U postgres -qc \
+    \"CREATE ROLE scout LOGIN PASSWORD 'scout' CREATEDB\"" >/dev/null
+  echo "==> Created role 'scout'"
+fi
+
 if ! as_pg "'$PGBIN/psql' -h 127.0.0.1 -p $PGPORT -U postgres -Atqc \
   \"SELECT 1 FROM pg_database WHERE datname='scout'\"" | grep -q 1; then
-  as_pg "'$PGBIN/createdb' -h 127.0.0.1 -p $PGPORT -U postgres scout"
+  as_pg "'$PGBIN/createdb' -h 127.0.0.1 -p $PGPORT -U postgres -O scout scout"
   echo "==> Created database 'scout'"
 fi
 
+# Migrations create tables, and Prisma needs to own the schema to do it.
+as_pg "'$PGBIN/psql' -h 127.0.0.1 -p $PGPORT -U postgres -d scout -qc \
+  'ALTER SCHEMA public OWNER TO scout'" >/dev/null
+
 echo
 echo "Postgres up. Set:"
-echo "  DATABASE_URL=postgresql://postgres@127.0.0.1:$PGPORT/scout?schema=public"
+echo "  DATABASE_URL=postgresql://scout:scout@127.0.0.1:$PGPORT/scout?schema=public"
 echo
 echo "Stop it with:"
 echo "  ${SUDO:-}$PGBIN/pg_ctl -D $PGDATA stop"

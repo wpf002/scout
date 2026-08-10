@@ -132,6 +132,22 @@ if [ ! -d node_modules ]; then
   pnpm install
 fi
 
+# ── workspace packages ─────────────────────────────────────────────────────
+# The API imports `@scout/*` by package name, and each of those resolves to its
+# `dist/`. Nothing builds them implicitly: `tsx watch` compiles the API's own
+# sources and follows the workspace links straight into directories that do not
+# exist on a fresh clone. The failure is an ERR_MODULE_NOT_FOUND naming a path
+# under `node_modules`, which points nowhere near "run a build".
+#
+# The web app is deliberately excluded — `next build` writes the production
+# output that `next dev` then refuses to start on top of (see BUILD_ID below).
+if [ ! -f packages/scope/dist/index.js ]; then
+  step "Building workspace packages"
+  pnpm exec turbo run build \
+    --filter=@scout/sources --filter=@scout/scope \
+    --filter=@scout/db --filter=@scout/graph >/dev/null
+fi
+
 # ── database ───────────────────────────────────────────────────────────────
 # `prisma db execute --stdin` needs --url or --schema; without one it exits 1
 # with a usage error, which a `>/dev/null 2>&1` probe reads as "unreachable".
@@ -236,10 +252,20 @@ ready() { curl -fsS -o /dev/null --max-time 3 "$1" 2>/dev/null; }
 #
 #   1. the API's own health endpoint is up
 #   2. the dashboard serves its shell — not a 200 from a compile-error page
-#   3. the API is reachable *through* the dashboard's /api proxy, which is the
-#      path the browser actually uses
+#   3. the API is reachable *through* the dashboard's /api proxy
+#   4. the API answers at the address the *client bundle* was built to call,
+#      which is not necessarily (3)
 #
 # Checking only (1) and (2) is how a broken proxy ships as "running".
+#
+# (4) is separate from (3) because the browser does not use the proxy path
+# unconditionally — it uses `NEXT_PUBLIC_API_URL + /api`, and only falls back to
+# the proxy when that is empty. Set it to the API's own origin and every client
+# call becomes `:3001/api/…` against an API that serves `/…`; the proxy check
+# still passes, because it curls the proxy directly and never touches the base
+# URL the client was actually compiled with. That combination shipped a
+# dashboard where every panel read "unreachable" underneath this banner
+# announcing success.
 api_ok() { ready "http://localhost:$API_PORT/health"; }
 
 web_ok() {
@@ -251,7 +277,16 @@ proxy_ok() {
     | grep -q '"status":"ok"'
 }
 
-verify() { api_ok && web_ok && proxy_ok; }
+# Exactly what the browser will request: the same base the client bundle uses,
+# with the same `/api` prefix appended.
+client_ok() {
+  local base="${NEXT_PUBLIC_API_URL:-}"
+  [ -n "$base" ] || base="http://localhost:$WEB_PORT"
+  curl -fsS --max-time 5 "${base%/}/api/health" 2>/dev/null \
+    | grep -q '"status":"ok"'
+}
+
+verify() { api_ok && web_ok && proxy_ok && client_ok; }
 
 await() {
   for _ in $(seq 1 "$1"); do
@@ -287,6 +322,16 @@ fi
 
 if [ "${UP:-0}" != "1" ]; then
   printf '\n'
+  # A misconfigured client base is not a crash and leaves nothing in either log,
+  # so name it directly rather than printing two healthy logs and giving up.
+  if api_ok && web_ok && proxy_ok && ! client_ok; then
+    warn "The servers are fine; NEXT_PUBLIC_API_URL is not."
+    printf '  It is set to "%s", so the dashboard calls %s/api/… —\n' \
+      "$NEXT_PUBLIC_API_URL" "${NEXT_PUBLIC_API_URL%/}"
+    printf '  which does not answer. Clear it in .env to use the built-in\n'
+    printf '  proxy, which is already working.\n'
+    die "Scout did not come up. Nothing was left running."
+  fi
   case "${RC:-1}" in
     2) warn "The API process exited. Its log:"; tail -30 "$API_LOG" ;;
     3) warn "The dashboard process exited. Its log:"; tail -30 "$WEB_LOG" ;;
@@ -307,6 +352,7 @@ printf '\n'
 printf '  Open that URL. Include the port — the dashboard is not on port 80,\n'
 printf '  and it proxies the API itself, so this is the only address you need.\n\n'
 printf '  Checked   dashboard shell served · API healthy · /api proxy answering\n'
+printf '            · API answering at the address the dashboard calls\n'
 printf '  API       http://localhost:%s   (proxied at /api)\n' "$API_PORT"
 printf '  Sources   %s of 19 keyed; the rest report "inert" rather than guessing\n' "${KEYED:-?}"
 printf '  Logs      %s\n            %s\n' "$API_LOG" "$WEB_LOG"
