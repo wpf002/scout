@@ -9,7 +9,6 @@
   ],
   "globalPassThroughEnv": [
     "HIBP_API_KEY",
-    "DEHASHED_API_KEY",
     "HUNTER_API_KEY",
     "WHATSMYNAME_API_KEY",
     "SHODAN_API_KEY",

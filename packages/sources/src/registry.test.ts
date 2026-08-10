@@ -10,8 +10,8 @@ import {
 import { TIERS } from "./types.js";
 
 describe("registry shape", () => {
-  it("holds 26 sources across 6 tiers", () => {
-    expect(SOURCES).toHaveLength(26);
+  it("holds 25 sources across 6 tiers", () => {
+    expect(SOURCES).toHaveLength(25);
     expect(new Set(SOURCES.map((s) => s.tier)).size).toBe(TIERS.length);
   });
 
@@ -42,7 +42,6 @@ describe("scoped sources are exactly the person-facing set", () => {
   // purpose, alongside an adapter that calls enforceScope().
   it("matches the locked set", () => {
     expect(scopedSources().map((s) => s.id).sort()).toEqual([
-      "dehashed",
       "hibp",
       "hunter-io",
       "maigret",

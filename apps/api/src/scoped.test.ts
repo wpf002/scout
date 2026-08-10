@@ -23,73 +23,11 @@ import {
 import type { FastifyInstance } from "fastify";
 import { prisma } from "@scout/db";
 import { SCOPED_ADAPTERS } from "./adapters/scoped/index.js";
-import { normalizeDehashed } from "./adapters/scoped/dehashed.js";
 import { isHit, siteLimit } from "./adapters/scoped/whatsmyname.js";
 import { normalizeHibp } from "./adapters/hibp.js";
 import { normalizeHunterDomain } from "./adapters/scoped/hunter.js";
 
 // ── pure normalizers (no database, no network) ───────────────────────────
-describe("DeHashed redacts credential material by default", () => {
-  const payload = {
-    entries: [
-      {
-        email: "bob@example.com",
-        username: "bob",
-        password: "hunter2",
-        hashed_password: "$2y$10$abc",
-        name: "Bob Example",
-        phone: null,
-        ip_address: null,
-        database_name: "ExampleBreach",
-      },
-    ],
-  };
-
-  it("reports that a credential exists without carrying it", () => {
-    const [record] = normalizeDehashed(payload, { includeMaterial: false });
-    expect(record?.hasPassword).toBe(true);
-    expect(record?.hasHashedPassword).toBe(true);
-    // The finding is that a credential exists in a named breach. The value
-    // itself would turn the case database into a credential store.
-    expect(record?.password).toBeNull();
-    expect(record?.hashedPassword).toBeNull();
-    expect(record?.databaseName).toBe("ExampleBreach");
-  });
-
-  it("includes the material only under the explicit opt-in", () => {
-    const [record] = normalizeDehashed(payload, { includeMaterial: true });
-    expect(record?.password).toBe("hunter2");
-  });
-
-  it("does not claim a credential exists when the field is empty", () => {
-    const [record] = normalizeDehashed(
-      {
-        entries: [
-          {
-            email: "a@example.com",
-            username: null,
-            password: "",
-            hashed_password: null,
-            name: null,
-            phone: null,
-            ip_address: null,
-            database_name: "X",
-          },
-        ],
-      },
-      { includeMaterial: true },
-    );
-    expect(record?.hasPassword).toBe(false);
-    expect(record?.password).toBeNull();
-  });
-
-  it("handles a null entries list", () => {
-    expect(normalizeDehashed({ entries: null }, { includeMaterial: false })).toEqual(
-      [],
-    );
-  });
-});
-
 describe("WhatsMyName hit detection", () => {
   const site = {
     name: "ExampleSite",
@@ -191,22 +129,6 @@ function stubFetch() {
         },
       ]);
     }
-    if (url.startsWith("https://api.dehashed.com/")) {
-      return json({
-        entries: [
-          {
-            email: "bob@example.com",
-            username: "bob",
-            password: "hunter2",
-            hashed_password: null,
-            name: null,
-            phone: null,
-            ip_address: null,
-            database_name: "ExampleBreach",
-          },
-        ],
-      });
-    }
     if (url.startsWith("https://api.hunter.io/")) {
       return json({
         data: {
@@ -228,7 +150,6 @@ const AUTH_REF = `SCOPED-${Date.now()}`;
 /** Every scoped route, with a subject kind each one accepts. */
 const SCOPED_ROUTES = [
   { path: "/exposure/hibp", kind: "email" as const },
-  { path: "/exposure/dehashed", kind: "email" as const },
   { path: "/people/hunter-io", kind: "domain" as const },
   { path: "/people/whatsmyname", kind: "username" as const },
 ];
@@ -236,11 +157,9 @@ const SCOPED_ROUTES = [
 run("Scout scoped tier — Phase 5", () => {
   beforeAll(async () => {
     process.env["HIBP_API_KEY"] = "k-hibp";
-    process.env["DEHASHED_API_KEY"] = "k-dehashed";
     process.env["HUNTER_API_KEY"] = "k-hunter";
     // WhatsMyName stays off, so it exercises the inert path.
     delete process.env["WHATSMYNAME_ENABLED"];
-    delete process.env["SCOUT_ALLOW_CREDENTIAL_MATERIAL"];
 
     const { buildServer } = await import("./server.js");
     app = await buildServer();
@@ -269,7 +188,7 @@ run("Scout scoped tier — Phase 5", () => {
   afterAll(async () => {
     await app?.close();
     await prisma.$disconnect();
-    for (const key of ["HIBP_API_KEY", "DEHASHED_API_KEY", "HUNTER_API_KEY"]) {
+    for (const key of ["HIBP_API_KEY", "HUNTER_API_KEY"]) {
       delete process.env[key];
     }
   });
@@ -289,26 +208,6 @@ run("Scout scoped tier — Phase 5", () => {
       expect(response.json().observations[0].name).toBe("ExampleBreach");
     });
 
-    it("returns redacted credential records from DeHashed", async () => {
-      const response = await app.inject({
-        method: "POST",
-        url: "/exposure/dehashed",
-        payload: {
-          caseId,
-          confirm: true,
-          subject: { kind: "email", value: "bob@example.com" },
-        },
-      });
-      expect(response.statusCode).toBe(200);
-
-      const body = response.json();
-      expect(body.credentialMaterialIncluded).toBe(false);
-      const record = body.observations[0];
-      expect(record.hasPassword).toBe(true);
-      expect(record.password).toBeNull();
-      // The whole response must not carry the secret anywhere.
-      expect(JSON.stringify(body)).not.toContain("hunter2");
-    });
 
     it("returns an email pattern from Hunter", async () => {
       const response = await app.inject({
@@ -443,7 +342,7 @@ run("Scout scoped tier — Phase 5", () => {
     it("ignores scope-shaped fields smuggled into the body", async () => {
       const response = await app.inject({
         method: "POST",
-        url: "/exposure/dehashed",
+        url: "/exposure/hibp",
         payload: {
           caseId,
           confirm: true,

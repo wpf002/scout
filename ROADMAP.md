@@ -38,7 +38,6 @@ of the invariants stand, because none of them cost anything at the surface:
 | Intelligence X | API | Built, needs `INTELX_API_KEY` |
 | OpenSanctions | API | Built, needs `OPENSANCTIONS_API_KEY` |
 | HIBP | API | Built, needs `HIBP_API_KEY` |
-| DeHashed | API | Built, needs `DEHASHED_API_KEY` |
 | Hunter.io | API | Built, needs `HUNTER_API_KEY` |
 | WhatsMyName | API | Built, needs `WHATSMYNAME_ENABLED` |
 | theHarvester | CLI | Built and verified against a live run |

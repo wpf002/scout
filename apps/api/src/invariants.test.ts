@@ -59,7 +59,6 @@ const REVIEWED_UNSCOPED_PERSON_SOURCES = ["opensanctions"];
 describe("invariant 1 — the scope gate is absolute", () => {
   it("pins the set of person-facing sources", () => {
     expect(scopedSources().map((s) => s.id).sort()).toEqual([
-      "dehashed",
       "hibp",
       "hunter-io",
       "maigret",

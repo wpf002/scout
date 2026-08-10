@@ -1,7 +1,6 @@
 import type { Source, Subject } from "@scout/sources";
 import { requiresScopeFor } from "@scout/sources";
 import { fetchHibp, hibpSource } from "../hibp.js";
-import { dehashedSource, fetchDehashed } from "./dehashed.js";
 import { fetchHunter, hunterSource } from "./hunter.js";
 import { fetchWhatsMyName, whatsMyNameSource } from "./whatsmyname.js";
 import {
@@ -31,7 +30,6 @@ export interface ScopedAdapter {
  */
 export const SCOPED_ADAPTERS: readonly ScopedAdapter[] = Object.freeze([
   { source: hibpSource, run: fetchHibp },
-  { source: dehashedSource, run: fetchDehashed },
   { source: hunterSource, run: fetchHunter },
   { source: whatsMyNameSource, run: fetchWhatsMyName },
   { source: sherlockSource, run: fetchSherlock },

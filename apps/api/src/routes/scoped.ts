@@ -7,7 +7,6 @@ import {
   getScopedAdapter,
 } from "../adapters/scoped/index.js";
 import { executeScopedSource } from "../adapters/base.js";
-import { credentialMaterialAllowed } from "../adapters/scoped/dehashed.js";
 import { badRequest, notFound } from "../errors.js";
 import { operatorOf } from "../auth.js";
 
@@ -75,11 +74,6 @@ export async function registerScopedRoutes(
           ...result,
           observations,
           totals: { observations: observations.length },
-          // Surfaced so an investigator can tell a redacted result from an
-          // empty one, rather than assuming no credential material existed.
-          ...(adapter.source.id === "dehashed"
-            ? { credentialMaterialIncluded: credentialMaterialAllowed() }
-            : {}),
         });
       },
     );

@@ -1,7 +1,7 @@
 /**
  * Keeping credential material out of deliverables.
  *
- * Scout redacts DeHashed passwords at the adapter unless an operator opts in
+ * Scout redacts credential material at the adapter unless an operator opts in
  * (`SCOUT_ALLOW_CREDENTIAL_MATERIAL`). When they do, the material lands in
  * `Finding.data` — which reports never render — but nothing stops an
  * investigator typing it into a finding title or a case note by hand, and

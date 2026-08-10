@@ -243,20 +243,6 @@ export const SOURCES: readonly Source[] = Object.freeze([
     keyEnv: "HIBP_API_KEY",
   },
   {
-    id: "dehashed",
-    name: "DeHashed",
-    tier: "exposure",
-    mode: "api",
-    requiresScope: true,
-    accepts: ["email", "username", "domain", "ip"],
-    description:
-      "Breach record puller. Scope-gated: returns credential records.",
-    homepage: "https://dehashed.com",
-    keyEnv: "DEHASHED_API_KEY",
-  },
-
-  // ── people (scoped) ─────────────────────────────────────────────────────
-  {
     id: "hunter-io",
     name: "Hunter.io",
     tier: "people",

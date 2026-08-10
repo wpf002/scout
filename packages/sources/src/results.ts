@@ -57,7 +57,7 @@ export function makeProvenance(
 }
 
 /**
- * A breach exposure record. HIBP is the worked example; DeHashed normalizes
+ * A breach exposure record. HIBP is the worked example; other breach sources normalize
  * into the same shape in Phase 5.
  *
  * `pwnCount` is a bigint: the largest known breaches exceed a signed 32-bit
