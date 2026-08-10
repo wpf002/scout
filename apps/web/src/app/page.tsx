@@ -342,8 +342,13 @@ export default function Page() {
             <div className="rail-head">
               <h2>Sources</h2>
               <span>
-                {result.summary.withResults} of{" "}
-                {result.summary.sourcesConsidered}
+                {/*
+                  Counted from the rows in hand, not from the summary — the
+                  summary only arrives when the run ends, so this read "0 of 17"
+                  for the entire search while sources were plainly reporting.
+                */}
+                {resultRows.filter((r) => r.status === "ok").length} of{" "}
+                {expected > 0 ? expected : result.summary.sourcesConsidered}
               </span>
             </div>
             <ul>

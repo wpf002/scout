@@ -34,10 +34,11 @@ export interface ResultRow {
 const GROUP_ORDER = [
   "Registration",
   "DNS Records",
+  "Organization",
+  "Emails",
   "Hosts",
   "Subdomains",
   "Certificates",
-  "Emails",
   "Profiles",
   "Breaches",
   "Credentials",
@@ -84,6 +85,68 @@ const detailOf = (...parts: (string | null)[]): string =>
 /** Dates render as days. The clock time on a certificate is never the point. */
 const day = (value: string | null): string | null =>
   value === null ? null : (value.split("T")[0] ?? value);
+
+/**
+ * Some observations are containers.
+ *
+ * Hunter returns one `email-pattern` carrying the organisation, the address
+ * pattern, and every mailbox it found with the person's name and job title.
+ * Rendered as a single row that was one line reading "betterman.com" while ten
+ * named people sat inside it, unreadable. A container has to be unpacked into
+ * the rows it actually represents.
+ */
+function expand(observation: Observation, sourceName: string): DraftRow[] {
+  if (observation.kind !== "email-pattern") return [];
+
+  const rows: DraftRow[] = [];
+  const base = { source: sourceName, firstSeen: null, lastSeen: null, extra: null };
+  const organization = str(observation.organization);
+  const pattern = str(observation.pattern);
+  const domain = str(observation.domain);
+
+  const emails = Array.isArray(observation.emails) ? observation.emails : [];
+  for (const raw of emails) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const entry = raw as Observation;
+    const address = str(entry.value) ?? str(entry.email);
+    if (address === null) continue;
+
+    const first = str(entry.firstName);
+    const last = str(entry.lastName);
+    const person = [first, last].filter((p) => p !== null).join(" ").trim();
+    const confidence = num(entry.confidence);
+
+    rows.push({
+      ...base,
+      type: "Emails",
+      value: address.toLowerCase(),
+      detail: detailOf(
+        person.length > 0 ? person : null,
+        str(entry.position),
+        str(entry.type),
+        confidence === null ? null : `${confidence}% confidence`,
+      ),
+      url: null,
+    });
+  }
+
+  // The pattern itself is a finding — it predicts addresses that were not
+  // enumerated — so it stays, alongside the mailboxes rather than instead.
+  if (pattern !== null || organization !== null) {
+    rows.push({
+      ...base,
+      type: "Organization",
+      value: organization ?? domain ?? "Unknown",
+      detail: detailOf(
+        pattern === null ? null : `Address pattern ${pattern}`,
+        emails.length > 0 ? `${emails.length} mailboxes` : null,
+      ),
+      url: null,
+    });
+  }
+
+  return rows;
+}
 
 function draftFor(
   observation: Observation,
@@ -287,6 +350,12 @@ export function flattenObservations(results: RunResultRow[]): ResultRow[] {
     for (const raw of result.data) {
       if (typeof raw !== "object" || raw === null) continue;
       const observation = raw as Observation;
+
+      const expanded = expand(observation, result.name);
+      if (expanded.length > 0) {
+        drafts.push(...expanded);
+        continue;
+      }
 
       const draft = draftFor(observation, result.name);
       if (draft !== null) {

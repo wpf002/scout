@@ -18,21 +18,25 @@ export const theHarvesterSource: Source = {
 /**
  * Sources theHarvester queries.
  *
- * Named explicitly rather than using `-b all`. `all` includes backends that
- * need their own API keys and ones that routinely hang, and a single slow
- * backend holds the whole run — which, inside a sweep, holds every other
- * source's results with it. These are keyless and fast.
+ * Deliberately none that Scout already queries directly. It used to run
+ * crtsh, hackertarget, rapiddns, otx and certspotter — every one of which is
+ * now a first-class adapter here. So it spent 62 seconds re-fetching data
+ * Scout had already collected, and most of that was spent waiting on crt.sh
+ * (502ing) and HackerTarget (quota spent) rather than finding anything.
  *
- * Every name here must exist in the installed version. theHarvester rejects an
- * unknown backend by refusing the whole invocation and printing nothing, so one
- * wrong name silently produces "no results" for every domain — which reads as
- * "nothing out there" rather than "this never ran". `anubis` was in this list
- * and is not an engine in 4.11.x; that is what it looked like.
+ * Pointed at search engines and subdomain indexes Scout has no adapter for,
+ * the same domain took 17 seconds and returned 14 hosts instead of 7 — faster
+ * and better, because it is finally being asked something the other sources
+ * cannot answer.
+ *
+ * Every name must exist in the installed version: theHarvester rejects an
+ * unknown backend by refusing the whole invocation and printing nothing, which
+ * silently produces "no results" for every domain.
  */
-const BACKENDS = "crtsh,hackertarget,rapiddns,otx,certspotter";
+const BACKENDS = "duckduckgo,mojeek,subdomaincenter,subdomainfinderc99";
 
-/** theHarvester is an aggregator itself, so it is legitimately slower. */
-const TIMEOUT_MS = 180_000;
+/** Still an aggregator, but no longer waiting on dead upstreams. */
+const TIMEOUT_MS = 90_000;
 
 export async function fetchTheHarvester(
   subject: Subject,
