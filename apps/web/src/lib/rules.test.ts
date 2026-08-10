@@ -253,3 +253,90 @@ describe("reputation", () => {
     expect(insights).toEqual([]);
   });
 });
+
+describe("rules read against real data", () => {
+  it("catches non-production names that are not whole words", () => {
+    // The word-boundary version matched `staging` and missed `hubstg`,
+    // `hubdev` and `training1` on the same live domain.
+    const insights = analyze(
+      [
+        row({ value: "hubdev.betterman.com" }),
+        row({ value: "hubstg.betterman.com" }),
+        row({ value: "www.betterman.com" }),
+      ],
+      "betterman.com",
+    );
+    const found = insights.find((i) => i.id === "non-prod");
+
+    expect(found?.evidence).toContain("hubdev.betterman.com");
+    expect(found?.evidence).not.toContain("www.betterman.com");
+  });
+
+  it("counts hosts with expiring certificates, not issuances", () => {
+    // Three certificates for one host is one certificate problem.
+    const certs = [15, 22, 27].map((days) =>
+      row({
+        type: "Certificates",
+        value: "store.example.com",
+        evidence: [
+          { source: "crt.sh", observation: { notAfter: daysFromNow(days) } },
+        ],
+      }),
+    );
+    const found = analyze(certs, "x").find((i) => i.id === "expiring-certs");
+
+    expect(found?.title).toContain("1 host");
+    expect(found?.evidence).toHaveLength(1);
+  });
+
+  it("reports a DMARC monitor-only policy without calling it a failure", () => {
+    const insights = analyze(
+      [
+        row({
+          type: "DNS Records",
+          value: "TXT  v=DMARC1; p=none; rua=mailto:;",
+        }),
+      ],
+      "x",
+    );
+    const found = insights.find((i) => i.id === "dmarc-none");
+
+    expect(found).toBeDefined();
+    // It is the correct first step of a rollout, and saying otherwise would be
+    // the tool inventing a finding.
+    expect(found?.detail).toMatch(/first step|only matters/i);
+  });
+
+  it("reports missing SPF and DMARC only when DNS was actually read", () => {
+    // No DNS records means the lookup did not run, which is not the same as a
+    // domain publishing nothing.
+    expect(analyze([row({ value: "a.example.com" })], "x")).toEqual([]);
+
+    const withDns = analyze(
+      [row({ type: "DNS Records", value: "A  1.2.3.4" })],
+      "x",
+    );
+    expect(withDns.map((i) => i.id)).toContain("no-spf");
+    expect(withDns.map((i) => i.id)).toContain("no-dmarc");
+  });
+
+  it("raises infostealer archives above generic dataset volume", () => {
+    // Found on a live run and buried under "49 dataset hits" — the filenames
+    // are browser credential stores.
+    const hits = [
+      row({ type: "Dataset Hits", value: "(9232).rar/Chrome/Profile 2/Passwords.txt" }),
+      row({ type: "Dataset Hits", value: "[CO]_ki8b.rar/passwords.txt" }),
+      ...Array.from({ length: 12 }, (_, i) =>
+        row({ type: "Dataset Hits", value: `ordinary-page-${i}.html` }),
+      ),
+    ];
+    const insights = analyze(hits, "x");
+    const stealer = insights.find((i) => i.id === "stealer-logs");
+
+    expect(stealer?.severity).toBe("high");
+    // And it does not claim the credentials are confirmed inside.
+    expect(stealer?.detail).toMatch(/not proof/i);
+    // The generic rule no longer double-counts them.
+    expect(insights.find((i) => i.id === "dataset-volume")?.title).toContain("12");
+  });
+});

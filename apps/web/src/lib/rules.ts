@@ -42,8 +42,17 @@ const SENSITIVE_PORTS = new Map<number, string>([
   [27017, "MongoDB"],
 ]);
 
-/** Hostname markers for environments not usually meant to be found. */
-const NON_PROD = /\b(dev|test|stag|staging|uat|qa|preprod|sandbox|internal|admin|vpn|jenkins|gitlab|jira|grafana|kibana)\b/;
+/**
+ * Hostname markers for environments not usually meant to be found.
+ *
+ * Deliberately unanchored. The word-boundary version matched `staging` and
+ * missed `hubstg`, `hubdev` and `training1` on the same domain — real
+ * non-production hosts, and exactly the ones an operator would want flagged.
+ * `qa` and `uat` keep their boundaries because unanchored they would match
+ * inside ordinary words.
+ */
+const NON_PROD =
+  /(dev|test|stag|uat\b|\bqa\b|preprod|sandbox|internal|admin|vpn|jenkins|gitlab|jira|grafana|kibana|demo|beta)/;
 
 const observationsOf = (row: ResultRow): Record<string, unknown>[] =>
   row.evidence
@@ -166,8 +175,8 @@ export function analyze(rows: ResultRow[], subject: string): Insight[] {
 
   // ── Expired certificates ─────────────────────────────────────────────────
   const now = Date.now();
-  const expired: string[] = [];
-  const expiringSoon: string[] = [];
+  const expiredBy = new Map<string, number>();
+  const soonBy = new Map<string, number>();
 
   for (const row of by("Certificates")) {
     for (const observation of observationsOf(row)) {
@@ -176,30 +185,45 @@ export function analyze(rows: ResultRow[], subject: string): Insight[] {
       const at = Date.parse(notAfter);
       if (Number.isNaN(at)) continue;
 
+      // Keyed by host, not by issuance. A host with three certificates in the
+      // logs is one certificate problem, and counting issuances turned "one
+      // host expiring" into "three certificates expiring".
       const days = Math.round((at - now) / 86_400_000);
-      if (days < 0) expired.push(`${row.value} (${Math.abs(days)}d ago)`);
-      else if (days <= 30) expiringSoon.push(`${row.value} (${days}d)`);
+      if (days < 0) {
+        const seen = expiredBy.get(row.value);
+        if (seen === undefined || days < seen) expiredBy.set(row.value, days);
+      } else if (days <= 30) {
+        const seen = soonBy.get(row.value);
+        if (seen === undefined || days < seen) soonBy.set(row.value, days);
+      }
     }
   }
+
+  const expired = [...expiredBy.entries()].map(
+    ([host, days]) => `${host} (${Math.abs(days)}d ago)`,
+  );
+  const expiringSoon = [...soonBy.entries()].map(
+    ([host, days]) => `${host} (${days}d)`,
+  );
 
   if (expired.length > 0) {
     insights.push({
       id: "expired-certs",
       severity: "medium",
-      title: `${new Set(expired).size} expired certificate${new Set(expired).size === 1 ? "" : "s"}`,
+      title: `${expired.length} host${expired.length === 1 ? "" : "s"} with an expired certificate`,
       detail:
         "Certificate Transparency shows these past their validity. A log entry " +
         "is not proof the certificate is still being served.",
-      evidence: [...new Set(expired)].slice(0, 8),
+      evidence: expired.slice(0, 8),
     });
   }
   if (expiringSoon.length > 0) {
     insights.push({
       id: "expiring-certs",
       severity: "low",
-      title: `${new Set(expiringSoon).size} certificate${new Set(expiringSoon).size === 1 ? "" : "s"} expiring within 30 days`,
+      title: `${expiringSoon.length} host${expiringSoon.length === 1 ? "" : "s"} with a certificate expiring within 30 days`,
       detail: "Renewal due, or already renewed and not yet reflected in the logs.",
-      evidence: [...new Set(expiringSoon)].slice(0, 8),
+      evidence: expiringSoon.slice(0, 8),
     });
   }
 
@@ -220,7 +244,140 @@ export function analyze(rows: ResultRow[], subject: string): Insight[] {
     });
   }
 
-  // ── People ───────────────────────────────────────────────────────────────
+  // ── Email authentication ─────────────────────────────────────────────────
+  //
+  // The most checkable finding on this page, and the one most often missing.
+  // SPF and DMARC are published in DNS, so a domain either has them or does
+  // not — no inference, no false positive.
+  const txt = by("DNS Records")
+    .filter((row) => row.value.startsWith("TXT"))
+    .map((row) => row.value.replace(/^TXT\s+/, "").trim());
+
+  const hasDns = by("DNS Records").length > 0;
+  const spf = txt.find((record) => /^v=spf1/i.test(record));
+  const dmarc = txt.find((record) => /^v=DMARC1/i.test(record));
+
+  if (hasDns && spf === undefined) {
+    insights.push({
+      id: "no-spf",
+      severity: "medium",
+      title: "No SPF record",
+      detail:
+        "Nothing published saying which servers may send mail as this domain, " +
+        "so a receiving server has no sender policy to check against.",
+      evidence: [subject],
+    });
+  }
+
+  if (hasDns && dmarc === undefined) {
+    insights.push({
+      id: "no-dmarc",
+      severity: "medium",
+      title: "No DMARC record",
+      detail:
+        "No published policy for what to do with mail that fails authentication, " +
+        "and no reporting address to learn that it is happening.",
+      evidence: [subject],
+    });
+  }
+
+  if (dmarc !== undefined && /p\s*=\s*none/i.test(dmarc)) {
+    insights.push({
+      id: "dmarc-none",
+      severity: "medium",
+      title: "DMARC is set to monitor only",
+      detail:
+        "The policy is `p=none`, so failing mail is still delivered. That is the " +
+        "correct first step of a rollout and a common place to stall — it only " +
+        "matters if it was meant to have moved on.",
+      evidence: [dmarc.slice(0, 120)],
+    });
+  }
+
+  if (spf !== undefined && /~all/.test(spf)) {
+    insights.push({
+      id: "spf-softfail",
+      severity: "low",
+      title: "SPF ends in softfail",
+      detail:
+        "`~all` asks receivers to accept unauthorised mail and mark it. `-all` " +
+        "asks them to reject it. Often deliberate during a migration.",
+      evidence: [spf.slice(0, 120)],
+    });
+  }
+
+  // ── Registration expiry ──────────────────────────────────────────────────
+  for (const row of by("Registration")) {
+    for (const observation of observationsOf(row)) {
+      const expires = observation["expires"];
+      if (typeof expires !== "string") continue;
+      const at = Date.parse(expires);
+      if (Number.isNaN(at)) continue;
+
+      const days = Math.round((at - now) / 86_400_000);
+      if (days > 60) continue;
+
+      insights.push({
+        id: "domain-expiring",
+        severity: days < 0 ? "high" : "medium",
+        title:
+          days < 0
+            ? `Domain registration expired ${Math.abs(days)} days ago`
+            : `Domain registration expires in ${days} days`,
+        detail:
+          days < 0
+            ? "An expired registration can be re-registered by anyone, which hands " +
+              "over the mail and the certificates with it."
+            : "Renewal window. Worth confirming auto-renew is on.",
+        evidence: [`${row.value} — ${expires.slice(0, 10)}`],
+      });
+    }
+  }
+
+  // ── Credential-bearing leaks ─────────────────────────────────────────────
+  //
+  // Infostealer logs have a recognisable shape: an archive containing
+  // Passwords.txt, a browser profile directory, autofill or cookie dumps. A
+  // generic "49 dataset hits" note buried this behind volume, when it is the
+  // single most consequential thing a run can surface — malware on somebody's
+  // machine harvested credentials and the archive index references this domain.
+  const STEALER =
+    /(passwords?\.txt|\/Passwords|autofill|cookies?\.txt|Chrome\/Profile|Opera_|Login Data|credentials?\.txt)/i;
+
+  const stealerHits = by("Dataset Hits").filter((row) => STEALER.test(row.value));
+
+  if (stealerHits.length > 0) {
+    insights.push({
+      id: "stealer-logs",
+      severity: "high",
+      title: `${stealerHits.length} hit${stealerHits.length === 1 ? "" : "s"} in credential-dump archives`,
+      detail:
+        "These filenames are the signature of infostealer output — browser " +
+        "password stores, autofill and cookie dumps. An index entry naming this " +
+        "domain is not proof its credentials are inside; it is the strongest " +
+        "reason on this page to go and look.",
+      evidence: stealerHits.slice(0, 6).map((row) => row.value),
+    });
+  }
+
+  // ── Dataset and leak exposure ────────────────────────────────────────────
+  const datasetHits = by("Dataset Hits").filter(
+    (row) => !STEALER.test(row.value),
+  );
+  if (datasetHits.length >= 10) {
+    insights.push({
+      id: "dataset-volume",
+      severity: "medium",
+      title: `${datasetHits.length} dataset and leak hits`,
+      detail:
+        "Appears across archived pastes, leaks and dumps. Volume alone is not a " +
+        "breach — much of this is ordinary web content the archive happened to " +
+        "keep — but it is where a leak would show up.",
+      evidence: datasetHits.slice(0, 5).map((row) => row.value),
+    });
+  }
+
+  // ── People ───────────────────────────────────────────────────────────
   const named = by("Emails").filter((row) => /·/.test(row.detail) && !/Unattributed|Shared/.test(row.detail));
   if (named.length > 0) {
     insights.push({
