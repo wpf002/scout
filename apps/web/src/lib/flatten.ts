@@ -124,6 +124,16 @@ function expand(observation: Observation, sourceName: string): DraftRow[] {
     const person = [first, last].filter((p) => p !== null).join(" ").trim();
     const confidence = num(entry.confidence);
 
+    // `personal` and `generic` are Hunter's vocabulary, not a reader's. An
+    // unattributed mailbox is worth naming as such — it is a different thing
+    // from one belonging to a named person.
+    const mailbox =
+      str(entry.type) === "generic"
+        ? "Shared mailbox"
+        : person.length > 0
+          ? null
+          : "Unattributed";
+
     rows.push({
       ...base,
       type: "Emails",
@@ -131,8 +141,8 @@ function expand(observation: Observation, sourceName: string): DraftRow[] {
       detail: detailOf(
         person.length > 0 ? person : null,
         str(entry.position),
-        str(entry.type),
-        confidence === null ? null : `${confidence}% confidence`,
+        mailbox,
+        confidence === null ? null : `${confidence}% match`,
       ),
       url: null,
     });

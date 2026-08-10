@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import type { CaseRecord, SubjectKind } from "@/lib/types";
 import { flattenObservations, groupRank, type ResultRow } from "@/lib/flatten";
+import { buildGraph, TYPE_COLOR } from "@/lib/graph";
 
 /** Plain names for the subject kinds. "hash" means nothing to most people. */
 const KIND_LABEL: Record<SubjectKind, string> = {
@@ -86,6 +87,7 @@ export default function Page() {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [pages, setPages] = useState<Record<string, number>>({});
   const [selected, setSelected] = useState<ResultRow | null>(null);
+  const [view, setView] = useState<"table" | "graph">("table");
 
   useEffect(() => {
     api
@@ -222,6 +224,11 @@ export default function Page() {
         a.name.localeCompare(b.name),
     );
   }, [resultRows]);
+
+  const graph = useMemo(
+    () => buildGraph(visibleRows, result?.subject.value ?? ""),
+    [visibleRows, result],
+  );
 
   const isOpen = (type: string) => open[type] ?? OPEN_BY_DEFAULT.has(type);
 
@@ -448,6 +455,20 @@ export default function Page() {
                 spellCheck={false}
               />
               <span className="count">{visibleRows.length}</span>
+              <div className="views">
+                <button
+                  className={view === "table" ? "on" : undefined}
+                  onClick={() => setView("table")}
+                >
+                  Table
+                </button>
+                <button
+                  className={view === "graph" ? "on" : undefined}
+                  onClick={() => setView("graph")}
+                >
+                  Graph
+                </button>
+              </div>
               <button
                 className="export"
                 onClick={exportJson}
@@ -459,6 +480,65 @@ export default function Page() {
 
             {rows.length === 0 ? (
               <p className="empty">Nothing found for {result.subject.value}.</p>
+            ) : view === "graph" ? (
+              <div className="graph">
+                <svg
+                  viewBox={`0 0 ${graph.width} ${graph.height}`}
+                  role="img"
+                  aria-label="Entity graph"
+                >
+                  {graph.edges.map((edge, index) => {
+                    const from = graph.nodes.find((n) => n.id === edge.from);
+                    const to = graph.nodes.find((n) => n.id === edge.to);
+                    if (from === undefined || to === undefined) return null;
+                    return (
+                      <line
+                        key={`${edge.from}-${edge.to}-${index}`}
+                        x1={from.x}
+                        y1={from.y}
+                        x2={to.x}
+                        y2={to.y}
+                        className={
+                          edge.from === "subject" ? "edge" : "edge strong"
+                        }
+                      >
+                        <title>{edge.reason}</title>
+                      </line>
+                    );
+                  })}
+
+                  {graph.nodes.map((node) => (
+                    <g
+                      key={node.id}
+                      className={`node${selected?.value === node.label ? " picked" : ""}`}
+                      onClick={() => setSelected(node.row)}
+                    >
+                      <circle
+                        cx={node.x}
+                        cy={node.y}
+                        r={node.radius}
+                        fill={TYPE_COLOR[node.type] ?? "var(--text-faint)"}
+                      />
+                      <text x={node.x} y={node.y - node.radius - 5}>
+                        {node.label.length > 26
+                          ? `${node.label.slice(0, 25)}…`
+                          : node.label}
+                      </text>
+                      <title>{`${node.type} · ${node.label}`}</title>
+                    </g>
+                  ))}
+                </svg>
+
+                {graph.omitted.length > 0 ? (
+                  <p className="graph-note">
+                    Showing the most-corroborated of each type. Not drawn:{" "}
+                    {graph.omitted
+                      .map((o) => `${o.count} ${o.type.toLowerCase()}`)
+                      .join(", ")}
+                    . All of it is in the table.
+                  </p>
+                ) : null}
+              </div>
             ) : (
               grouped.map(([type, list]) => {
                 const expanded = isOpen(type);
