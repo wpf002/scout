@@ -957,3 +957,82 @@ a:hover {
   font-size: 11px;
   color: var(--text-faint);
 }
+
+/* ── Insights ─────────────────────────────────────────────────────────── */
+
+/*
+ * Above the table on purpose. 800 observations is data entry, not analysis;
+ * the things that matter are the things easiest to miss in a long list.
+ */
+.insights {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+
+.insights h2 {
+  margin: 0 0 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.insights ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.insights li {
+  display: flex;
+  gap: 9px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+.insights li:first-child {
+  border-top: none;
+}
+
+.sev {
+  width: 3px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--text-faint);
+}
+
+.sev-high .sev {
+  background: var(--deny);
+}
+
+.sev-medium .sev {
+  background: var(--warn);
+}
+
+.sev-low .sev {
+  background: var(--text-faint);
+}
+
+.insight-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.insight-detail {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.insight-evidence {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  word-break: break-word;
+}

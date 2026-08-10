@@ -13,6 +13,7 @@ import {
 import type { CaseRecord, SubjectKind } from "@/lib/types";
 import { flattenObservations, groupRank, type ResultRow } from "@/lib/flatten";
 import { buildGraph, TYPE_COLOR } from "@/lib/graph";
+import { analyze } from "@/lib/rules";
 
 /** Plain names for the subject kinds. "hash" means nothing to most people. */
 const KIND_LABEL: Record<SubjectKind, string> = {
@@ -235,6 +236,11 @@ export default function Page() {
     );
   }, [resultRows]);
 
+  const insights = useMemo(
+    () => (result === null ? [] : analyze(rows, result.subject.value)),
+    [rows, result],
+  );
+
   const graph = useMemo(
     () => buildGraph(visibleRows, result?.subject.value ?? ""),
     [visibleRows, result],
@@ -254,6 +260,12 @@ export default function Page() {
     setKind("");
     setSelected(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /** The case as a client-ready report. The builder already existed. */
+  const openReport = (format: "html" | "docx") => {
+    if (caseId === "") return;
+    window.open(`/api/cases/${caseId}/report?format=${format}`, "_blank");
   };
 
   /** Everything on screen, as JSON, for a case file or another tool. */
@@ -419,6 +431,26 @@ export default function Page() {
         </div>
       ) : null}
 
+      {insights.length > 0 ? (
+        <section className="insights">
+          <h2>What Stands Out</h2>
+          <ul>
+            {insights.map((insight) => (
+              <li key={insight.id} className={`sev-${insight.severity}`}>
+                <span className="sev" />
+                <div>
+                  <p className="insight-title">{insight.title}</p>
+                  <p className="insight-detail">{insight.detail}</p>
+                  <p className="insight-evidence">
+                    {insight.evidence.join(" · ")}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {result === null ? null : (
         <div className={`split${selected !== null ? " with-detail" : ""}`}>
           <aside className="rail">
@@ -501,7 +533,21 @@ export default function Page() {
                 onClick={exportJson}
                 disabled={rows.length === 0}
               >
-                Export
+                JSON
+              </button>
+              <button
+                className="export"
+                onClick={() => openReport("html")}
+                disabled={caseId === ""}
+              >
+                Report
+              </button>
+              <button
+                className="export"
+                onClick={() => openReport("docx")}
+                disabled={caseId === ""}
+              >
+                Word
               </button>
             </div>
 
