@@ -616,3 +616,160 @@ a:hover {
 .rail li.pending .s-name {
   color: var(--text-faint);
 }
+
+/* ── Detail pane ──────────────────────────────────────────────────────── */
+
+.split.with-detail {
+  grid-template-columns: 210px minmax(0, 1fr) 330px;
+}
+
+@media (max-width: 1200px) {
+  .split.with-detail {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+  .detail {
+    display: none;
+  }
+}
+
+.detail {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-head h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.detail-head .link {
+  margin-left: auto;
+}
+
+.detail-body {
+  padding: 12px 10px;
+}
+
+.detail-value {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.detail-sub {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 4px;
+}
+
+.detail-actions button,
+.detail-actions a,
+.export {
+  padding: 4px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.detail-actions button:hover,
+.detail-actions a:hover,
+.export:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.export {
+  margin-left: 10px;
+}
+
+.export:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.detail h3 {
+  margin: 16px 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.detail-sources {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.detail details {
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.detail summary {
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.detail pre {
+  margin: 0;
+  padding: 8px;
+  overflow-x: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-inset);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.s-time {
+  margin-left: auto;
+  padding-right: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.group tbody tr {
+  cursor: pointer;
+}
+
+.group tr.picked td {
+  background: rgba(255, 255, 255, 0.05);
+}

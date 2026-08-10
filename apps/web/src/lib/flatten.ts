@@ -28,6 +28,12 @@ export interface ResultRow {
   /** How many raw observations collapsed into this row. */
   occurrences: number;
   url: string | null;
+  /**
+   * Every raw observation that merged into this row, with the source that
+   * reported it. The table shows a summary; the detail pane shows this, so
+   * nothing an adapter collected is unreachable from the surface.
+   */
+  evidence: { source: string; observation: unknown }[];
 }
 
 /** Group display order. Anything unlisted sorts after these, alphabetically. */
@@ -59,8 +65,9 @@ interface Observation {
 }
 
 /** A row before merging, carrying the raw dates so windows can be widened. */
-interface DraftRow extends Omit<ResultRow, "sources" | "occurrences"> {
+interface DraftRow extends Omit<ResultRow, "sources" | "occurrences" | "evidence"> {
   source: string;
+  raw?: unknown;
   firstSeen: string | null;
   lastSeen: string | null;
   extra: string | null;
@@ -181,10 +188,22 @@ function draftFor(
         type: "Hosts",
         value: ip,
         detail: detailOf(
-          ports.length > 0 ? `Ports ${ports.join(", ")}` : null,
+          // Services first: `443/HTTPS` says more than `443`.
+          list(observation.services).length > 0
+            ? list(observation.services).join(", ")
+            : ports.length > 0
+              ? `Ports ${ports.join(", ")}`
+              : null,
+          list(observation.vulns).length > 0
+            ? `${list(observation.vulns).length} CVEs: ${list(observation.vulns).slice(0, 3).join(", ")}`
+            : null,
+          list(observation.software).slice(0, 3).join(", ") || null,
+          list(observation.tags).join(", ") || null,
           str(observation.org),
           str(observation.asn),
-          str(observation.country),
+          [str(observation.location), str(observation.country)]
+            .filter((p) => p !== null)
+            .join(", ") || null,
         ),
         extra: list(observation.hostnames).slice(0, 2).join(", ") || null,
         lastSeen: str(observation.lastSeen),
@@ -359,11 +378,12 @@ export function flattenObservations(results: RunResultRow[]): ResultRow[] {
 
       const draft = draftFor(observation, result.name);
       if (draft !== null) {
-        drafts.push(draft);
+        drafts.push({ ...draft, raw: observation });
         continue;
       }
 
       drafts.push({
+        raw: observation,
         type: "Other",
         value:
           str(observation.value) ??
@@ -399,6 +419,7 @@ export function flattenObservations(results: RunResultRow[]): ResultRow[] {
         sources: [draft.source],
         occurrences: 1,
         url: draft.url,
+        evidence: [{ source: draft.source, observation: draft.raw ?? null }],
         firstSeen: draft.firstSeen,
         lastSeen: draft.lastSeen,
       });
@@ -406,6 +427,10 @@ export function flattenObservations(results: RunResultRow[]): ResultRow[] {
     }
 
     existing.occurrences += 1;
+    existing.evidence.push({
+      source: draft.source,
+      observation: draft.raw ?? null,
+    });
     if (!existing.sources.includes(draft.source)) {
       existing.sources.push(draft.source);
     }

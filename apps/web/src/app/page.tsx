@@ -85,6 +85,7 @@ export default function Page() {
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [pages, setPages] = useState<Record<string, number>>({});
+  const [selected, setSelected] = useState<ResultRow | null>(null);
 
   useEffect(() => {
     api
@@ -122,6 +123,7 @@ export default function Page() {
     setExpected(0);
     setPages({});
     setOpen({});
+    setSelected(null);
 
     // Rows are collected here as well as in state: React batches updates, and
     // the final summary has to be assembled from every row, not from whatever
@@ -222,6 +224,53 @@ export default function Page() {
   }, [resultRows]);
 
   const isOpen = (type: string) => open[type] ?? OPEN_BY_DEFAULT.has(type);
+
+  /**
+   * Pivot: take a value out of the results and make it the next search.
+   *
+   * The move every investigation makes — an address turns up under one domain,
+   * and the question becomes what else is on it. Doing that by retyping the
+   * value into the box is the tool making you do its work.
+   */
+  const pivot = (value: string) => {
+    setIndicator(value);
+    setKind("");
+    setSelected(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /** Everything on screen, as JSON, for a case file or another tool. */
+  const exportJson = () => {
+    if (result === null) return;
+    const payload = {
+      subject: result.subject,
+      ranAt: result.startedAt,
+      summary: result.summary,
+      sources: resultRows.map((r) => ({
+        source: r.name,
+        status: r.status,
+        reason: r.reason,
+        count: r.count,
+        durationMs: r.durationMs,
+      })),
+      findings: rows.map((r) => ({
+        type: r.type,
+        value: r.value,
+        detail: r.detail,
+        sources: r.sources,
+        evidence: r.evidence,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `scout-${result.subject.value}-${result.startedAt.slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="app">
@@ -337,7 +386,7 @@ export default function Page() {
       ) : null}
 
       {result === null ? null : (
-        <div className="split">
+        <div className={`split${selected !== null ? " with-detail" : ""}`}>
           <aside className="rail">
             <div className="rail-head">
               <h2>Sources</h2>
@@ -357,7 +406,15 @@ export default function Page() {
                   <span className="dot" />
                   <span className="s-name">{row.name}</span>
                   {row.status === "ok" ? (
-                    <span className="s-count">{row.count}</span>
+                    <>
+                      {/* Timing on the slow ones only — noise on the rest. */}
+                      {row.durationMs >= 2000 ? (
+                        <span className="s-time">
+                          {(row.durationMs / 1000).toFixed(1)}s
+                        </span>
+                      ) : null}
+                      <span className="s-count">{row.count}</span>
+                    </>
                   ) : row.status === "deeplink" && row.url !== null ? (
                     // Opened in a new tab, never embedded. Ahmia, Torch and
                     // ViewDNS all refuse to be framed, so an in-app panel was
@@ -391,6 +448,13 @@ export default function Page() {
                 spellCheck={false}
               />
               <span className="count">{visibleRows.length}</span>
+              <button
+                className="export"
+                onClick={exportJson}
+                disabled={rows.length === 0}
+              >
+                Export
+              </button>
             </div>
 
             {rows.length === 0 ? (
@@ -433,7 +497,16 @@ export default function Page() {
                           </thead>
                           <tbody>
                             {slice.map((row) => (
-                              <tr key={`${row.type}-${row.value}`}>
+                              <tr
+                                key={`${row.type}-${row.value}`}
+                                className={
+                                  selected?.value === row.value &&
+                                  selected?.type === row.type
+                                    ? "picked"
+                                    : undefined
+                                }
+                                onClick={() => setSelected(row)}
+                              >
                                 <td className="v">
                                   {row.url === null ? (
                                     row.value
@@ -492,6 +565,62 @@ export default function Page() {
               })
             )}
           </main>
+
+          {selected !== null ? (
+            <aside className="detail">
+              <div className="detail-head">
+                <h2>{selected.type.replace(/s$/, "")}</h2>
+                <button className="link" onClick={() => setSelected(null)}>
+                  Close
+                </button>
+              </div>
+
+              <div className="detail-body">
+                <p className="detail-value">{selected.value}</p>
+                {selected.detail.length > 0 ? (
+                  <p className="detail-sub">{selected.detail}</p>
+                ) : null}
+
+                <div className="detail-actions">
+                  <button onClick={() => pivot(selected.value)}>
+                    Search This
+                  </button>
+                  <button
+                    onClick={() =>
+                      void navigator.clipboard?.writeText(selected.value)
+                    }
+                  >
+                    Copy
+                  </button>
+                  {selected.url !== null ? (
+                    <a href={selected.url} target="_blank" rel="noreferrer">
+                      Open
+                    </a>
+                  ) : null}
+                </div>
+
+                <h3>Reported By</h3>
+                <ul className="detail-sources">
+                  {selected.sources.map((source) => (
+                    <li key={source}>{source}</li>
+                  ))}
+                </ul>
+
+                {/*
+                  The raw observation, verbatim. Every summary above is a
+                  choice about what mattered; this is what the source actually
+                  said, so a finding can be checked rather than trusted.
+                */}
+                <h3>Raw</h3>
+                {selected.evidence.map((item, index) => (
+                  <details key={`${item.source}-${index}`} open={index === 0}>
+                    <summary>{item.source}</summary>
+                    <pre>{JSON.stringify(item.observation, null, 2)}</pre>
+                  </details>
+                ))}
+              </div>
+            </aside>
+          ) : null}
         </div>
       )}
     </div>

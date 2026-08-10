@@ -92,6 +92,8 @@ const platformHostSchema = z.object({
       location: z
         .object({
           country: z.string().nullable().default(null),
+          city: z.string().nullable().default(null),
+          province: z.string().nullable().default(null),
         })
         .partial()
         .optional(),
@@ -107,7 +109,23 @@ const platformHostSchema = z.object({
         .partial()
         .optional(),
       services: z
-        .array(z.object({ port: z.number().int().optional() }))
+        .array(
+          z.object({
+            port: z.number().int().optional(),
+            protocol: z.string().optional(),
+            software: z
+              .array(
+                z.object({
+                  vendor: z.string().optional(),
+                  product: z.string().optional(),
+                }),
+              )
+              .default([]),
+            labels: z
+              .array(z.object({ value: z.string().optional() }))
+              .default([]),
+          }),
+        )
         .default([]),
     }),
   }),
@@ -137,6 +155,46 @@ export function normalizeCensysPlatform(
       asn: asn === null || asn === undefined ? null : `AS${asn}`,
       country: resource.location?.country ?? null,
       lastSeen: null,
+      // Censys is the only source here that says what is actually listening,
+      // rather than just that a port is open. `443/HTTPS` answers a question
+      // `443` only raises.
+      services: [
+        ...new Set(
+          resource.services
+            .filter((service) => service.port !== undefined)
+            .map((service) =>
+              service.protocol === undefined
+                ? String(service.port)
+                : `${service.port}/${service.protocol}`,
+            ),
+        ),
+      ].sort(),
+      software: [
+        ...new Set(
+          resource.services.flatMap((service) =>
+            service.software
+              .map((entry) =>
+                [entry.vendor, entry.product].filter(Boolean).join(" "),
+              )
+              .filter((name) => name.length > 0),
+          ),
+        ),
+      ].sort(),
+      // Labels are where Censys reports a WAF, a honeypot, a load balancer —
+      // context that changes how a host should be read.
+      tags: [
+        ...new Set(
+          resource.services.flatMap((service) =>
+            service.labels
+              .map((label) => label.value)
+              .filter((value): value is string => value !== undefined),
+          ),
+        ),
+      ].sort(),
+      location:
+        [resource.location?.city, resource.location?.province]
+          .filter(Boolean)
+          .join(", ") || null,
     },
   ];
 }

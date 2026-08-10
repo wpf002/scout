@@ -125,6 +125,7 @@ const internetDbSchema = z.object({
   ports: z.array(z.number().int()).default([]),
   cpes: z.array(z.string()).default([]),
   vulns: z.array(z.string()).default([]),
+  tags: z.array(z.string()).default([]),
 });
 
 export type InternetDbHost = z.infer<typeof internetDbSchema>;
@@ -142,6 +143,12 @@ export function normalizeInternetDb(host: InternetDbHost): InfraObservation[] {
       asn: null,
       country: null,
       lastSeen: null,
+      // The whole reason the free endpoint is worth calling. A CVE list is the
+      // most actionable thing an infrastructure scan produces, and it was
+      // being parsed and then thrown away.
+      vulns: host.vulns,
+      software: host.cpes.map((cpe) => cpe.replace(/^cpe:\/[aoh]:/, "")),
+      tags: host.tags,
     },
   ];
 }

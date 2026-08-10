@@ -357,6 +357,22 @@ export interface HostObservation {
   asn: string | null;
   country: string | null;
   lastSeen: string | null;
+  /**
+   * Known CVEs affecting this host, as reported by the scanner.
+   *
+   * Optional because most sources cannot answer it. Where a source can —
+   * Shodan's InternetDB does — dropping it would throw away the single most
+   * actionable thing an infrastructure scan produces.
+   */
+  vulns?: string[];
+  /** Detected products, as CPEs or vendor/product pairs. */
+  software?: string[];
+  /** Scanner labels: `cdn`, `WAF`, `self-signed`, and so on. */
+  tags?: string[];
+  /** City or region, where the source resolves below country level. */
+  location?: string | null;
+  /** Port with what is actually listening on it, e.g. `443/HTTPS`. */
+  services?: string[];
 }
 
 export interface SubdomainObservation {
@@ -470,6 +486,18 @@ function canonicalize(observation: InfraObservation): InfraObservation {
         ...observation,
         hostnames: unionSorted(observation.hostnames, []),
         ports: unionPorts(observation.ports, []),
+        ...(observation.vulns === undefined
+          ? {}
+          : { vulns: unionSorted(observation.vulns, []) }),
+        ...(observation.software === undefined
+          ? {}
+          : { software: unionSorted(observation.software, []) }),
+        ...(observation.tags === undefined
+          ? {}
+          : { tags: unionSorted(observation.tags, []) }),
+        ...(observation.services === undefined
+          ? {}
+          : { services: unionSorted(observation.services, []) }),
       };
     case "registration":
       return {
