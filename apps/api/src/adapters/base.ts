@@ -9,6 +9,12 @@ import { config } from "../config.js";
 
 import { TtlCache, responseCacheKey } from "../lib/cache.js";
 import { infraRateLimiter } from "../lib/ratelimit.js";
+import {
+  activeTrip,
+  recordFailure,
+  recordSuccess,
+  tripMessage,
+} from "../lib/breaker.js";
 
 /**
  * The CLI counterpart to `hasKey`.
@@ -290,6 +296,26 @@ export async function executeUnscopedSource<T>(
     };
   }
 
+  const trip = activeTrip(source.id);
+  if (trip !== null) {
+    const log = await recordQuery({
+      caseId: record.id,
+      source,
+      subject: ctx.subject,
+      phase: "EXECUTE",
+      outcome: "INERT",
+      reason: "cooling-down",
+      authorizationRef: record.authorizationRef,
+      operator: ctx.operator,
+    });
+    return {
+      status: "inert",
+      reason: "cooling-down",
+      message: tripMessage(source.name, trip),
+      provenance: provenanceFor(log.id),
+    };
+  }
+
   const cacheKey = responseCacheKey(
     source.id,
     ctx.subject.kind,
@@ -337,6 +363,7 @@ export async function executeUnscopedSource<T>(
   const startedAt = Date.now();
   try {
     const data = await run(ctx.subject);
+    recordSuccess(source.id);
     responseCache.set(cacheKey, data);
     const log = await recordQuery({
       caseId: record.id,
@@ -352,6 +379,9 @@ export async function executeUnscopedSource<T>(
   } catch (error) {
     // Adapters degrade to a reported error; they never take the request down.
     const message = error instanceof Error ? error.message : String(error);
+    // A quota refusal, or a run of failures, stops this source being called
+    // again until the cooldown expires.
+    recordFailure(source.id, message);
     const log = await recordQuery({
       caseId: record.id,
       source,

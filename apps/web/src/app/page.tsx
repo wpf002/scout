@@ -50,6 +50,25 @@ const STATUS_LABEL: Record<RunResultRow["status"], string> = {
   "no-adapter": "Coming Soon",
 };
 
+/**
+ * `inert` covers three different situations and they do not read alike: a key
+ * that was never set, a tool that is not installed, and a source resting after
+ * a quota or an outage. Labelling all three "Needs API Key" tells an operator
+ * to go find a key that would change nothing.
+ */
+const REASON_LABEL: Record<string, string> = {
+  "missing-key": "Needs API Key",
+  "missing-binary": "Not Installed",
+  "cooling-down": "Resting",
+};
+
+function statusLabel(row: RunResultRow): string {
+  if (row.reason !== null && row.reason in REASON_LABEL) {
+    return REASON_LABEL[row.reason] as string;
+  }
+  return STATUS_LABEL[row.status];
+}
+
 export default function Page() {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [caseId, setCaseId] = useState("");
@@ -269,7 +288,7 @@ export default function Page() {
                     </button>
                   ) : (
                     <span className="s-status" title={row.message ?? undefined}>
-                      {STATUS_LABEL[row.status]}
+                      {statusLabel(row)}
                     </span>
                   )}
                 </li>
