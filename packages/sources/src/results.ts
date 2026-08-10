@@ -377,9 +377,36 @@ export interface CertObservation {
   notAfter: string | null;
 }
 
+/**
+ * Who a domain is registered with and when — from RDAP, the structured
+ * successor to WHOIS.
+ */
+export interface RegistrationObservation {
+  kind: "registration";
+  domain: string;
+  registrar: string | null;
+  created: string | null;
+  updated: string | null;
+  expires: string | null;
+  nameservers: string[];
+  /** EPP status codes, e.g. clientTransferProhibited. */
+  statuses: string[];
+}
+
+/** A single DNS answer. Kept raw — interpretation belongs upstream of storage. */
+export interface DnsObservation {
+  kind: "dns-record";
+  name: string;
+  /** A, AAAA, MX, TXT, NS, CNAME. */
+  type: string;
+  value: string;
+}
+
 export type InfraObservation =
   | HostObservation
   | SubdomainObservation
+  | RegistrationObservation
+  | DnsObservation
   | CertObservation;
 
 /** One observation plus every source that reported it. */
@@ -405,6 +432,13 @@ export function observationKey(observation: InfraObservation): string {
       return observation.serial !== null
         ? `cert:${observation.serial.toLowerCase()}`
         : `cert:${observation.commonName.toLowerCase()}:${observation.notBefore ?? ""}`;
+    case "registration":
+      // One registration per domain, by definition.
+      return `registration:${observation.domain.toLowerCase()}`;
+    case "dns-record":
+      // Name, type and value together — two sources reporting the same MX are
+      // one record, while two different MX records are two.
+      return `dns:${observation.name.toLowerCase()}:${observation.type}:${observation.value.toLowerCase()}`;
   }
 }
 
@@ -436,6 +470,20 @@ function canonicalize(observation: InfraObservation): InfraObservation {
         ...observation,
         hostnames: unionSorted(observation.hostnames, []),
         ports: unionPorts(observation.ports, []),
+      };
+    case "registration":
+      return {
+        ...observation,
+        domain: observation.domain.trim().toLowerCase(),
+        nameservers: unionSorted(observation.nameservers, []),
+        statuses: unionSorted(observation.statuses, []),
+      };
+    case "dns-record":
+      return {
+        ...observation,
+        name: observation.name.trim().toLowerCase(),
+        type: observation.type.trim().toUpperCase(),
+        value: observation.value.trim(),
       };
     case "subdomain":
       return {

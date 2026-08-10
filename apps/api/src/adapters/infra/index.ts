@@ -12,6 +12,17 @@ import {
 } from "../cli/theharvester.js";
 import { fetchUrlscan, urlscanSource } from "./urlscan.js";
 import { fetchWayback, waybackSource } from "./wayback.js";
+import {
+  certSpotterSource,
+  fetchCertSpotter,
+  fetchHackerTarget,
+  fetchOtx,
+  fetchRapidDns,
+  hackerTargetSource,
+  otxSource,
+  rapidDnsSource,
+} from "./keyless.js";
+import { fetchRdap, rdapSource } from "./rdap.js";
 
 export interface InfraAdapter {
   source: Source;
@@ -34,6 +45,11 @@ export const INFRA_ADAPTERS: readonly InfraAdapter[] = Object.freeze([
   { source: theHarvesterSource, run: fetchTheHarvester },
   { source: urlscanSource, run: fetchUrlscan },
   { source: waybackSource, run: fetchWayback },
+  { source: rdapSource, run: fetchRdap },
+  { source: certSpotterSource, run: fetchCertSpotter },
+  { source: hackerTargetSource, run: fetchHackerTarget },
+  { source: rapidDnsSource, run: fetchRapidDns },
+  { source: otxSource, run: fetchOtx },
 ]);
 
 const BY_ID = new Map(INFRA_ADAPTERS.map((a) => [a.source.id, a]));

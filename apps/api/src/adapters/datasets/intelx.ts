@@ -4,7 +4,16 @@ import { dedupeEntities, extractEntities, requireSource } from "@scout/sources";
 
 export const intelxSource = requireSource("intelligence-x");
 
-const BASE = "https://2.intelx.io";
+/**
+ * Intelligence X assigns each account its own API instance, and the host is
+ * shown on the account's Developer tab alongside the key. `2.intelx.io` is the
+ * common one but it is not universal — a key issued against a different
+ * instance returns 401 here, which reads as a bad key when it is a wrong
+ * address. Override with INTELX_BASE_URL when the Developer tab shows another.
+ */
+const BASE = (
+  process.env["INTELX_BASE_URL"]?.trim() ?? "https://2.intelx.io"
+).replace(/\/$/, "");
 const REQUEST_TIMEOUT_MS = 20_000;
 /** How long to wait for the provider's async search to settle. */
 const RESULT_ATTEMPTS = 4;

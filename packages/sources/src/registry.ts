@@ -164,6 +164,69 @@ export const SOURCES: readonly Source[] = Object.freeze([
     binary: "theHarvester",
   },
   {
+    id: "rdap",
+    name: "RDAP + DNS",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["domain"],
+    description:
+      "Registrar, registration dates, nameservers and live A/MX/TXT/NS records.",
+    homepage: "https://rdap.org",
+    // No account exists to hold a key. Registration data and DNS are public
+    // infrastructure, which is why this is the one source that can never be
+    // inert.
+    keyEnv: null,
+  },
+  {
+    id: "certspotter",
+    name: "CertSpotter",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["domain"],
+    description:
+      "Certificate Transparency issuances — subdomains and certificate history.",
+    homepage: "https://sslmate.com/certspotter",
+    // Anonymous access is rate limited per address rather than keyed.
+    keyEnv: null,
+  },
+  {
+    id: "hackertarget",
+    name: "HackerTarget",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["domain"],
+    description: "Host search — subdomains paired with their addresses.",
+    homepage: "https://hackertarget.com",
+    keyEnv: null,
+  },
+  {
+    id: "rapiddns",
+    name: "RapidDNS",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["domain"],
+    description: "Passive DNS subdomain index.",
+    homepage: "https://rapiddns.io",
+    keyEnv: null,
+  },
+  {
+    id: "otx",
+    name: "AlienVault OTX",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["domain"],
+    description: "Open Threat Exchange passive DNS.",
+    homepage: "https://otx.alienvault.com",
+    // Anonymous requests are throttled to the point of uselessness (429 on the
+    // first call), so this is treated as keyed. The key itself is free.
+    keyEnv: "OTX_API_KEY",
+  },
+  {
     id: "crtsh",
     name: "crt.sh",
     tier: "infra",

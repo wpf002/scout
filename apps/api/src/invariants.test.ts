@@ -248,7 +248,14 @@ describe("invariant 6 — inert without keys, never guessed", () => {
     const keyless = SOURCES.filter(
       (s) => s.mode === "api" && s.keyEnv === null,
     ).map((s) => s.id);
-    expect(keyless.sort()).toEqual(["crtsh", "wayback-machine"]);
+    expect(keyless.sort()).toEqual([
+      "certspotter",
+      "crtsh",
+      "hackertarget",
+      "rapiddns",
+      "rdap",
+      "wayback-machine",
+    ]);
   });
 
   it("routes every built adapter to a source that exists in the registry", () => {

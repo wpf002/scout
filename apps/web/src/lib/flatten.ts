@@ -32,6 +32,8 @@ export interface ResultRow {
 
 /** Group display order. Anything unlisted sorts after these, alphabetically. */
 const GROUP_ORDER = [
+  "Registration",
+  "DNS Records",
   "Hosts",
   "Subdomains",
   "Certificates",
@@ -141,6 +143,39 @@ function draftFor(
         ),
         firstSeen: str(observation.notBefore),
         lastSeen: str(observation.notAfter),
+        url: null,
+      };
+    }
+
+    case "registration": {
+      const domain = str(observation.domain);
+      if (domain === null) return null;
+      const nameservers = list(observation.nameservers);
+      return {
+        ...base,
+        type: "Registration",
+        value: domain,
+        detail: detailOf(
+          str(observation.registrar),
+          nameservers.length > 0 ? `NS ${nameservers.join(", ")}` : null,
+          list(observation.statuses).slice(0, 3).join(", ") || null,
+        ),
+        firstSeen: str(observation.created),
+        lastSeen: str(observation.expires),
+        url: null,
+      };
+    }
+
+    case "dns-record": {
+      const value = str(observation.value);
+      const type = str(observation.type);
+      if (value === null || type === null) return null;
+      return {
+        ...base,
+        // Type in the value column so the table reads as a zone file would.
+        type: "DNS Records",
+        value: `${type}  ${value}`,
+        detail: str(observation.name) ?? "",
         url: null,
       };
     }

@@ -174,12 +174,34 @@ export async function executeScopedSource<T>(
     return {
       status: "error",
       reason: "upstream-error",
-      message: `${source.name} could not be reached.`,
+      message: upstreamMessage(source.name, message),
       provenance: makeProvenance(source, ctx.subject.value, ctx.subject.kind, {
         queryLogId: log.id,
       }),
     };
   }
+}
+
+/**
+ * What the upstream actually said, safe to show.
+ *
+ * "Shodan could not be reached" was the old message for every failure, which
+ * made three completely different problems look identical: a free account with
+ * no API entitlement, a key sent in the wrong auth scheme, and a service that
+ * is genuinely down. The operator then has no idea whether to buy something,
+ * fix something, or wait. The real message answers that in one line.
+ *
+ * Keys are stripped first. Some adapters put credentials in the query string,
+ * and an error string built from a URL would otherwise put a live key on
+ * screen and into the audit log.
+ */
+export function upstreamMessage(name: string, raw: string): string {
+  const scrubbed = raw
+    .replace(/([?&](?:key|api[_-]?key|token|secret)=)[^&\s]+/gi, "$1[redacted]")
+    .replace(/\b[A-Za-z0-9_-]{28,}\b/g, "[redacted]")
+    .trim();
+
+  return scrubbed.length === 0 ? `${name} could not be reached.` : scrubbed;
 }
 
 /** Shared short-TTL cache for non-scoped upstream responses. */
@@ -345,7 +367,7 @@ export async function executeUnscopedSource<T>(
     return {
       status: "error",
       reason: "upstream-error",
-      message: `${source.name} could not be reached.`,
+      message: upstreamMessage(source.name, message),
       provenance: provenanceFor(log.id),
     };
   }

@@ -10,8 +10,8 @@ import {
 import { TIERS } from "./types.js";
 
 describe("registry shape", () => {
-  it("holds 22 sources across 6 tiers", () => {
-    expect(SOURCES).toHaveLength(22);
+  it("holds 27 sources across 6 tiers", () => {
+    expect(SOURCES).toHaveLength(27);
     expect(new Set(SOURCES.map((s) => s.tier)).size).toBe(TIERS.length);
   });
 
@@ -96,10 +96,19 @@ describe("mode invariants", () => {
     const keyless = SOURCES.filter(
       (s) => s.mode === "api" && s.keyEnv === null,
     ).map((s) => s.id);
-    // Both are genuinely free and unauthenticated: crt.sh and the Wayback CDX
-    // index. Anything else claiming to be a keyless API source needs
-    // justifying — Aleph looked keyless and is not.
-    expect(keyless.sort()).toEqual(["crtsh", "wayback-machine"]);
+    // Every one of these is genuinely free and unauthenticated, verified
+    // against the live endpoint. RDAP and DNS have no account to key at all.
+    // Anything else claiming to be keyless needs justifying — Aleph looked
+    // keyless and is not, and OTX 429s an anonymous caller on the first
+    // request, so it is treated as keyed.
+    expect(keyless.sort()).toEqual([
+      "certspotter",
+      "crtsh",
+      "hackertarget",
+      "rapiddns",
+      "rdap",
+      "wayback-machine",
+    ]);
 
     for (const source of SOURCES) {
       if (source.mode === "api" && !keyless.includes(source.id)) {
