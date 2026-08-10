@@ -256,6 +256,19 @@ function draftFor(
       };
     }
 
+    case "reputation": {
+      const ip = str(observation.ip);
+      if (ip === null) return null;
+      return {
+        ...base,
+        type: "Reputation",
+        value: ip,
+        detail: detailOf(str(observation.verdict), str(observation.actor)),
+        lastSeen: str(observation.lastSeen),
+        url: str(observation.reportUrl),
+      };
+    }
+
     case "web-scan": {
       const url = str(observation.url);
       if (url === null) return null;

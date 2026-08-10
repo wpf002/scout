@@ -191,3 +191,65 @@ describe("finding what matters in a long table", () => {
     );
   });
 });
+
+describe("reputation", () => {
+  const reputation = (ip: string, observation: Record<string, unknown>) =>
+    row({
+      type: "Reputation",
+      value: ip,
+      evidence: [
+        { source: "GreyNoise", observation: { kind: "reputation", ...observation } },
+      ],
+    });
+
+  it("flags a hostile listing, and warns about shared hosting", () => {
+    const insights = analyze(
+      [
+        reputation("1.2.3.4", {
+          verdict: "Listed as botnet command-and-control: Dridex",
+          benign: false,
+          noise: false,
+        }),
+      ],
+      "x",
+    );
+    const found = insights.find((i) => i.id === "bad-reputation");
+
+    expect(found?.severity).toBe("high");
+    // A blocklist hit on shared hosting describes a neighbour, not the target.
+    expect(found?.detail).toMatch(/neighbour|shared hosting/i);
+  });
+
+  it("sets scanners aside rather than raising them", () => {
+    // The point of GreyNoise: an analyst chasing every scanner has been given
+    // busywork by their tooling.
+    const insights = analyze(
+      [
+        reputation("71.6.135.131", {
+          verdict: "Internet-wide scanner (benign)",
+          benign: false,
+          noise: true,
+        }),
+      ],
+      "x",
+    );
+    const found = insights.find((i) => i.id === "scanner-noise");
+
+    expect(found?.severity).toBe("low");
+    expect(insights.find((i) => i.id === "bad-reputation")).toBeUndefined();
+  });
+
+  it("says nothing about known-good infrastructure", () => {
+    const insights = analyze(
+      [
+        reputation("8.8.8.8", {
+          verdict: "Known-good service infrastructure",
+          benign: true,
+          noise: true,
+        }),
+      ],
+      "x",
+    );
+    expect(insights).toEqual([]);
+  });
+});

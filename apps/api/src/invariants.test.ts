@@ -244,6 +244,8 @@ describe("invariant 6 — inert without keys, never guessed", () => {
     expect(keyless.sort()).toEqual([
       "certspotter",
       "crtsh",
+      "feodo",
+      "greynoise",
       "hackertarget",
       "rapiddns",
       "rdap",

@@ -77,6 +77,50 @@ export function analyze(rows: ResultRow[], subject: string): Insight[] {
     });
   }
 
+  // ── Reputation ───────────────────────────────────────────────────────────
+  const reputation = by("Reputation");
+  const flagged: string[] = [];
+  const scanners: string[] = [];
+
+  for (const row of reputation) {
+    for (const observation of observationsOf(row)) {
+      const verdict = String(observation["verdict"] ?? "");
+      if (observation["benign"] === true) continue;
+      if (observation["noise"] === true) {
+        scanners.push(`${row.value} — ${verdict}`);
+        continue;
+      }
+      if (/command-and-control|malicious/i.test(verdict)) {
+        flagged.push(`${row.value} — ${verdict}`);
+      }
+    }
+  }
+
+  if (flagged.length > 0) {
+    insights.push({
+      id: "bad-reputation",
+      severity: "high",
+      title: `${new Set(flagged).size} address${new Set(flagged).size === 1 ? "" : "es"} flagged by a reputation service`,
+      detail:
+        "Listed as hostile by a third party. On shared hosting this can describe " +
+        "a neighbour rather than the target — check what else resolves to the " +
+        "address before drawing a conclusion.",
+      evidence: [...new Set(flagged)].slice(0, 8),
+    });
+  }
+
+  if (scanners.length > 0) {
+    insights.push({
+      id: "scanner-noise",
+      severity: "low",
+      title: `${new Set(scanners).size} address${new Set(scanners).size === 1 ? "" : "es"} are internet-wide scanners`,
+      detail:
+        "Indiscriminate scanning, not activity aimed at this target. Noted so " +
+        "it can be set aside rather than investigated.",
+      evidence: [...new Set(scanners)].slice(0, 6),
+    });
+  }
+
   // ── Known vulnerabilities ────────────────────────────────────────────────
   const vulnerable: string[] = [];
   for (const row of by("Hosts")) {

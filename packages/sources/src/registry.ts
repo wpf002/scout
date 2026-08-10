@@ -127,6 +127,31 @@ export const SOURCES: readonly Source[] = Object.freeze([
     binary: "theHarvester",
   },
   {
+    id: "greynoise",
+    name: "GreyNoise",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["domain", "ip"],
+    description:
+      "Whether an address is aimed at you or spraying the whole internet.",
+    homepage: "https://www.greynoise.io",
+    // The Community endpoint answers unauthenticated, verified against the
+    // live API. A key raises the rate limit; it is not needed to get answers.
+    keyEnv: null,
+  },
+  {
+    id: "feodo",
+    name: "Feodo Tracker",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["domain", "ip"],
+    description: "abuse.ch botnet command-and-control blocklist.",
+    homepage: "https://feodotracker.abuse.ch",
+    keyEnv: null,
+  },
+  {
     id: "rdap",
     name: "RDAP + DNS",
     tier: "infra",

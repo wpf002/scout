@@ -457,8 +457,32 @@ export interface ThreatObservation {
   reportUrl: string | null;
 }
 
+/**
+ * What a reputation service says about an address.
+ *
+ * Deliberately separate from `HostObservation`. A host observation is a
+ * measurement — these ports were open, this software answered. A reputation is
+ * somebody's opinion, with a date on it, and merging the two would let an
+ * opinion inherit the authority of a scan. The verdict is always attributed.
+ */
+export interface ReputationObservation {
+  kind: "reputation";
+  ip: string;
+  /** The service's own words, not a normalized scale. */
+  verdict: string;
+  /** Who or what it is, where the service names it. */
+  actor: string | null;
+  /** True when the address is indiscriminate internet background noise. */
+  noise: boolean;
+  /** True when the service considers it known-good infrastructure. */
+  benign: boolean;
+  lastSeen: string | null;
+  reportUrl: string | null;
+}
+
 export type InfraObservation =
   | HostObservation
+  | ReputationObservation
   | WebScanObservation
   | ThreatObservation
   | SubdomainObservation
@@ -500,6 +524,8 @@ export function observationKey(observation: InfraObservation): string {
       return `scan:${observation.url.toLowerCase()}:${observation.scannedAt ?? ""}`;
     case "threat-pulse":
       return `pulse:${observation.name.toLowerCase()}`;
+    case "reputation":
+      return `reputation:${observation.ip}:${observation.verdict.toLowerCase()}`;
   }
 }
 
@@ -562,6 +588,8 @@ function canonicalize(observation: InfraObservation): InfraObservation {
       return { ...observation, url: observation.url.trim() };
     case "threat-pulse":
       return { ...observation, tags: unionSorted(observation.tags, []) };
+    case "reputation":
+      return { ...observation, ip: observation.ip.trim() };
     case "subdomain":
       return {
         ...observation,
