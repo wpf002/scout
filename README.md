@@ -38,6 +38,16 @@ The scope gate is the product. A leaky gate is worse than no scoped tier at all.
 Requires Node ≥ 20.11, pnpm 10, and Postgres.
 
 ```bash
+brew install postgresql@16     # macOS — keg-only, no PATH setup needed
+sudo apt-get install postgresql # Debian/Ubuntu
+```
+
+You do not have to start it. `pnpm start` finds the server binaries — including
+Homebrew's keg-only ones and Postgres.app's, neither of which put `initdb` on
+`PATH` — and brings a local cluster up if nothing is already listening. Point
+`DATABASE_URL` at an existing server in `.env` and that step is skipped.
+
+```bash
 pnpm start
 ```
 
