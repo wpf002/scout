@@ -41,7 +41,7 @@ of the invariants stand, because none of them cost anything at the surface:
 | DeHashed | API | Built, needs `DEHASHED_API_KEY` |
 | Hunter.io | API | Built, needs `HUNTER_API_KEY` |
 | WhatsMyName | API | Built, needs `WHATSMYNAME_ENABLED` |
-| theHarvester | CLI | Built, needs the tool installed |
+| theHarvester | CLI | Built and verified against a live run |
 | Sherlock | CLI | Built, needs the tool installed |
 | Maigret | CLI | Built, needs the tool installed |
 | Recon-ng | CLI | Not built |
@@ -88,7 +88,7 @@ run. ✅
 with its reason and the run continues — a 403 for the whole request would throw
 away every other source's results.
 
-### Phase C — The Single Surface
+### Phase C — The Single Surface ✅ Shipped
 
 One page. Indicator field, run, results.
 
@@ -102,7 +102,11 @@ One page. Indicator field, run, results.
 - Copy pass: labels not sentences, correct title case, no editorial voice.
 
 **Done when:** paste an indicator, press one button, read one table. No other
-page is needed to run an investigation.
+page is needed to run an investigation. ✅
+
+One route (`apps/web/src/app/page.tsx`), a source rail, and a results table
+grouped by observation type in `apps/web/src/lib/flatten.ts`. The cases,
+sources, and watch-floor pages are gone, along with the token component.
 
 ### Phase D — Recon-ng and SpiderFoot
 

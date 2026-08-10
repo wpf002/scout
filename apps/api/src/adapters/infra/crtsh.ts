@@ -76,24 +76,61 @@ export function normalizeCrtsh(
   return observations;
 }
 
+/**
+ * crt.sh, with retries.
+ *
+ * It returns a 502 under load often enough that a single attempt fails more
+ * than it succeeds — three consecutive probes during development returned
+ * 200, 502, 502. It is also the only source that produces data with no key at
+ * all, so on an unkeyed install its flakiness is the difference between a
+ * result table and an empty one.
+ *
+ * Retries only what is worth retrying: a 502/503/504 or a transport error is
+ * transient, while a 4xx means the request itself was wrong and will be just
+ * as wrong the second time.
+ */
+const RETRY_STATUSES = new Set([429, 502, 503, 504]);
+const ATTEMPTS = 3;
+const BACKOFF_MS = 700;
+
+async function fetchWithRetry(url: string): Promise<string> {
+  let last = "";
+
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          accept: "application/json",
+          "user-agent": "Scout-OSINT/0.1 (+authorized-engagement-tooling)",
+        },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+
+      if (response.ok) return await response.text();
+
+      last = `crt.sh responded ${response.status}`;
+      if (!RETRY_STATUSES.has(response.status)) break;
+    } catch (error) {
+      last = error instanceof Error ? error.message : String(error);
+    }
+
+    if (attempt < ATTEMPTS) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, BACKOFF_MS * attempt),
+      );
+    }
+  }
+
+  throw new Error(last === "" ? "crt.sh could not be reached" : last);
+}
+
 export async function fetchCrtsh(
   subject: Subject,
 ): Promise<InfraObservation[]> {
   const domain = subject.value.trim().toLowerCase();
   const url = `https://crt.sh/?q=${encodeURIComponent(`%.${domain}`)}&output=json`;
 
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "user-agent": "Scout-OSINT/0.1 (+authorized-engagement-tooling)",
-    },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-
-  if (!response.ok) throw new Error(`crt.sh responded ${response.status}`);
-
-  // crt.sh occasionally returns an HTML error page with a 200.
-  const text = await response.text();
+  const text = await fetchWithRetry(url);
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);

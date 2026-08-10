@@ -147,7 +147,68 @@ async function request<T>(
   return payload as T;
 }
 
+/** One source's outcome in a consolidated run. */
+export interface RunResultRow {
+  sourceId: string;
+  name: string;
+  tier: string;
+  mode: string;
+  requiresScope: boolean;
+  status:
+    | "ok"
+    | "empty"
+    | "inert"
+    | "blocked"
+    | "error"
+    | "deeplink"
+    | "no-adapter";
+  reason: string | null;
+  message: string | null;
+  data: unknown[];
+  count: number;
+  url: string | null;
+  durationMs: number;
+}
+
+export interface Detection {
+  kind: SubjectKind;
+  confidence: "certain" | "likely" | "guess";
+  alternatives: SubjectKind[];
+  normalized: string;
+}
+
+export interface RunResponse {
+  subject: { kind: SubjectKind; value: string };
+  detection: Detection;
+  caseId: string;
+  startedAt: string;
+  finishedAt: string;
+  results: RunResultRow[];
+  summary: {
+    sourcesConsidered: number;
+    ran: number;
+    withResults: number;
+    observations: number;
+    inert: number;
+    blocked: number;
+    errored: number;
+  };
+}
+
 export const api = {
+  detect: (indicator: string) =>
+    request<{ detection: Detection; applicableSources: number }>(
+      `/run/detect?indicator=${encodeURIComponent(indicator)}`,
+    ),
+
+  run: (indicator: string, caseId: string, kind?: SubjectKind) =>
+    request<RunResponse>("/run", {
+      method: "POST",
+      body: kind === undefined
+        ? { indicator, caseId }
+        : { indicator, caseId, kind },
+    }),
+
   sources: () =>
     request<{ count: number; sources: SourceSummary[] }>("/sources"),
 

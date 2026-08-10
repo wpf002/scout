@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTheHarvester } from "./theharvester.js";
+import { assertRan, parseTheHarvester } from "./theharvester.js";
 import { parseSightings } from "./sherlock.js";
 import { outputLines, parseJsonOutput } from "./run.js";
 
@@ -66,6 +66,30 @@ describe("theHarvester output", () => {
 
   it("returns nothing rather than throwing on empty output", () => {
     expect(parseTheHarvester("", "example.com")).toEqual([]);
+  });
+});
+
+describe("telling an empty result from a run that never happened", () => {
+  it("accepts an empty report that reached the host section", () => {
+    expect(() =>
+      assertRan("[*] Target: example.com\n[*] No hosts found.", "", 0, false),
+    ).not.toThrow();
+  });
+
+  it("rejects a run theHarvester refused to start", () => {
+    // An unknown backend aborts the whole invocation and prints nothing. That
+    // must not read as "there is nothing out there".
+    expect(() =>
+      assertRan("The following engines are not supported: {'anubis'}\n[!] Invalid source.", "", 1, false),
+    ).toThrow(/rejected the backend list/i);
+  });
+
+  it("rejects output that never reached the report", () => {
+    expect(() => assertRan("banner only", "", 2, false)).toThrow(/exited with 2/i);
+  });
+
+  it("rejects a timeout", () => {
+    expect(() => assertRan("", "", null, true)).toThrow(/timed out/i);
   });
 });
 

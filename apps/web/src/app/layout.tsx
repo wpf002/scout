@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { OperatorToken } from "@/components/OperatorToken";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Scout",
-  description: "Tiered OSINT investigation platform — a launcher, not an aggregator.",
+  description: "OSINT indicator lookup across every configured source.",
 };
 
 export default function RootLayout({
@@ -15,22 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
-        <header className="topbar">
-          <div className="topbar-inner">
-            <Link href="/" className="brand">
-              SCOUT<span>launcher, not aggregator</span>
-            </Link>
-            <nav className="nav">
-              <Link href="/">Watch floor</Link>
-              <Link href="/cases">Cases</Link>
-              <Link href="/sources">Sources</Link>
-              <OperatorToken />
-            </nav>
-          </div>
-        </header>
-        <main className="shell">{children}</main>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

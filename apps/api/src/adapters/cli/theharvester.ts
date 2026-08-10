@@ -21,9 +21,15 @@ export const theHarvesterSource: Source = {
  * Named explicitly rather than using `-b all`. `all` includes backends that
  * need their own API keys and ones that routinely hang, and a single slow
  * backend holds the whole run — which, inside a sweep, holds every other
- * source's results with it. These four are keyless and fast.
+ * source's results with it. These are keyless and fast.
+ *
+ * Every name here must exist in the installed version. theHarvester rejects an
+ * unknown backend by refusing the whole invocation and printing nothing, so one
+ * wrong name silently produces "no results" for every domain — which reads as
+ * "nothing out there" rather than "this never ran". `anubis` was in this list
+ * and is not an engine in 4.11.x; that is what it looked like.
  */
-const BACKENDS = "crtsh,anubis,hackertarget,rapiddns";
+const BACKENDS = "crtsh,hackertarget,rapiddns,otx,certspotter";
 
 /** theHarvester is an aggregator itself, so it is legitimately slower. */
 const TIMEOUT_MS = 180_000;
@@ -31,13 +37,58 @@ const TIMEOUT_MS = 180_000;
 export async function fetchTheHarvester(
   subject: Subject,
 ): Promise<InfraObservation[]> {
-  const { stdout } = await runCli(
+  const { stdout, stderr, code, timedOut } = await runCli(
     theHarvesterSource.binary as string,
     ["-d", subject.value, "-b", BACKENDS],
     { timeoutMs: TIMEOUT_MS },
   );
 
-  return parseTheHarvester(stdout, subject.value);
+  const observations = parseTheHarvester(stdout, subject.value);
+  if (observations.length > 0) return observations;
+
+  // Nothing parsed. That is either a genuine empty result or a run that never
+  // happened, and the two must not look alike — an investigator reading "no
+  // results" concludes there is nothing out there, which is a finding, while
+  // "it refused to start" is not. So an empty parse is only accepted when the
+  // tool actually completed and reported its host section.
+  assertRan(stdout, stderr, code, timedOut);
+  return observations;
+}
+
+/**
+ * Throws unless the tool genuinely ran and found nothing.
+ *
+ * Exported for tests. The distinction it draws is the one that matters when a
+ * source produces no rows: silence because there was nothing, or silence
+ * because the tool never got started.
+ */
+export function assertRan(
+  stdout: string,
+  stderr: string,
+  code: number | null,
+  timedOut: boolean,
+): void {
+  if (timedOut) {
+    throw new Error("theHarvester timed out before reporting.");
+  }
+
+  const combined = `${stdout}\n${stderr}`;
+
+  const invalid = /not supported|invalid source/i.exec(combined);
+  if (invalid !== null) {
+    throw new Error(
+      "theHarvester rejected the backend list; no search was performed.",
+    );
+  }
+
+  // The host section header is printed even when the count is zero, so its
+  // absence means the run did not reach the reporting stage.
+  if (!/\[\*\]\s+(No hosts found|Hosts found)/i.test(combined)) {
+    if (code !== 0 && code !== null) {
+      throw new Error(`theHarvester exited with ${code} without reporting.`);
+    }
+    throw new Error("theHarvester produced no report.");
+  }
 }
 
 /**
