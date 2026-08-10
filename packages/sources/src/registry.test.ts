@@ -10,8 +10,8 @@ import {
 import { TIERS } from "./types.js";
 
 describe("registry shape", () => {
-  it("holds 19 sources across 6 tiers", () => {
-    expect(SOURCES).toHaveLength(19);
+  it("holds 22 sources across 6 tiers", () => {
+    expect(SOURCES).toHaveLength(22);
     expect(new Set(SOURCES.map((s) => s.tier)).size).toBe(TIERS.length);
   });
 
@@ -37,7 +37,7 @@ describe("registry shape", () => {
   });
 });
 
-describe("scoped sources are exactly the person-facing four", () => {
+describe("scoped sources are exactly the person-facing set", () => {
   // Pinned deliberately. A new `requiresScope` source must be added here on
   // purpose, alongside an adapter that calls enforceScope().
   it("matches the locked set", () => {
@@ -45,6 +45,8 @@ describe("scoped sources are exactly the person-facing four", () => {
       "dehashed",
       "hibp",
       "hunter-io",
+      "maigret",
+      "sherlock",
       "whatsmyname",
     ]);
   });
@@ -58,9 +60,10 @@ describe("scoped sources are exactly the person-facing four", () => {
   it("never marks a deeplink source as scoped", () => {
     // A deeplink never transmits the subject through Scout, so there is
     // nothing for the gate to guard — and marking one scoped would imply a
-    // protection that does not exist.
+    // protection that does not exist. `cli` sources do run the subject through
+    // Scout, so they are gated like `api` ones.
     for (const source of scopedSources()) {
-      expect(source.mode).toBe("api");
+      expect(["api", "cli"]).toContain(source.mode);
     }
   });
 });

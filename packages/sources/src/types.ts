@@ -24,8 +24,12 @@ export const tierSchema = z.enum(TIERS);
  *   these sources (locked invariant 4).
  * `api` — Scout itself makes the upstream call, which means keys, rate limits,
  *   audit rows, and — for `requiresScope` sources — the scope gate.
+ * `cli` — Scout runs a local program and parses its output. Same gate, same
+ *   audit rows as `api`; the difference is that the dependency is a binary on
+ *   PATH rather than a key in the environment, so an uninstalled tool reports
+ *   `inert` exactly as a keyless one does.
  */
-export const SOURCE_MODES = ["deeplink", "api"] as const;
+export const SOURCE_MODES = ["deeplink", "api", "cli"] as const;
 export type SourceMode = (typeof SOURCE_MODES)[number];
 export const sourceModeSchema = z.enum(SOURCE_MODES);
 
@@ -89,6 +93,14 @@ export interface Source {
    * guesses or fabricates a result (locked invariant 6).
    */
   keyEnv: string | null;
+  /**
+   * Executable this source shells out to, for `mode: "cli"` sources.
+   *
+   * The CLI equivalent of `keyEnv`: absent from PATH means the source reports
+   * `inert` rather than failing the run. Scout never substitutes a different
+   * tool or infers what the missing one would have said.
+   */
+  binary?: string;
   /**
    * Builds the URL for the investigator to open. Calling this does not make a
    * network request — it only formats a string.

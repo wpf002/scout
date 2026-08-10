@@ -1,5 +1,6 @@
 import type { Source, SourceResult, Subject } from "@scout/sources";
 import { hasKey, makeProvenance, requiresScopeFor } from "@scout/sources";
+import { isBinaryAvailable } from "./cli/run.js";
 import type { ScopeEntry } from "@scout/scope";
 import { ScopeError, enforceScope } from "@scout/scope";
 import { loadCaseWithScope, recordQuery } from "@scout/db";
@@ -7,6 +8,19 @@ import { notFound } from "../errors.js";
 
 import { TtlCache, responseCacheKey } from "../lib/cache.js";
 import { infraRateLimiter } from "../lib/ratelimit.js";
+
+/**
+ * The CLI counterpart to `hasKey`.
+ *
+ * A `cli` source depends on a program being installed rather than a key being
+ * set, and the two failures deserve the same treatment: report `inert`, run
+ * nothing, guess nothing (locked invariant 6). Sources with no `binary` are
+ * trivially available.
+ */
+async function hasBinary(source: Source): Promise<boolean> {
+  if (source.binary === undefined) return true;
+  return isBinaryAvailable(source.binary);
+}
 
 export interface ScopedRunContext {
   caseId: string;
@@ -83,6 +97,27 @@ export async function executeScopedSource<T>(
       status: "inert",
       reason: "missing-key",
       message: `${source.name} has no API key configured (${source.keyEnv}). No request was made.`,
+      provenance: makeProvenance(source, ctx.subject.value, ctx.subject.kind, {
+        queryLogId: log.id,
+      }),
+    };
+  }
+
+  if (!(await hasBinary(source))) {
+    const log = await recordQuery({
+      caseId: record.id,
+      source,
+      subject: ctx.subject,
+      phase: "EXECUTE",
+      outcome: "INERT",
+      authorizationRef: record.authorizationRef,
+      operator: ctx.operator,
+      matchedScope,
+    });
+    return {
+      status: "inert",
+      reason: "missing-binary",
+      message: `${source.name} is not installed (${source.binary} is not on PATH). Nothing was run.`,
       provenance: makeProvenance(source, ctx.subject.value, ctx.subject.kind, {
         queryLogId: log.id,
       }),
@@ -199,6 +234,25 @@ export async function executeUnscopedSource<T>(
       status: "inert",
       reason: "missing-key",
       message: `${source.name} has no API key configured (${source.keyEnv}). No request was made.`,
+      provenance: provenanceFor(log.id),
+    };
+  }
+
+  if (!(await hasBinary(source))) {
+    const log = await recordQuery({
+      caseId: record.id,
+      source,
+      subject: ctx.subject,
+      phase: "EXECUTE",
+      outcome: "INERT",
+      reason: "missing-binary",
+      authorizationRef: record.authorizationRef,
+      operator: ctx.operator,
+    });
+    return {
+      status: "inert",
+      reason: "missing-binary",
+      message: `${source.name} is not installed (${source.binary} is not on PATH). Nothing was run.`,
       provenance: provenanceFor(log.id),
     };
   }

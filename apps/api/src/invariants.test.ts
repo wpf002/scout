@@ -61,6 +61,8 @@ describe("invariant 1 — the scope gate is absolute", () => {
       "dehashed",
       "hibp",
       "hunter-io",
+      "maigret",
+      "sherlock",
       "whatsmyname",
     ]);
   });

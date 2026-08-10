@@ -4,6 +4,12 @@ import { fetchHibp, hibpSource } from "../hibp.js";
 import { dehashedSource, fetchDehashed } from "./dehashed.js";
 import { fetchHunter, hunterSource } from "./hunter.js";
 import { fetchWhatsMyName, whatsMyNameSource } from "./whatsmyname.js";
+import {
+  fetchMaigret,
+  fetchSherlock,
+  maigretSource,
+  sherlockSource,
+} from "../cli/sherlock.js";
 
 export interface ScopedAdapter {
   source: Source;
@@ -28,6 +34,8 @@ export const SCOPED_ADAPTERS: readonly ScopedAdapter[] = Object.freeze([
   { source: dehashedSource, run: fetchDehashed },
   { source: hunterSource, run: fetchHunter },
   { source: whatsMyNameSource, run: fetchWhatsMyName },
+  { source: sherlockSource, run: fetchSherlock },
+  { source: maigretSource, run: fetchMaigret },
 ]);
 
 const BY_ID = new Map(SCOPED_ADAPTERS.map((a) => [a.source.id, a]));

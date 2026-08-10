@@ -138,6 +138,19 @@ export const SOURCES: readonly Source[] = Object.freeze([
     keyEnv: "SECURITYTRAILS_API_KEY",
   },
   {
+    id: "theharvester",
+    name: "theHarvester",
+    tier: "infra",
+    mode: "cli",
+    requiresScope: false,
+    accepts: ["domain"],
+    description:
+      "Subdomain and host enumeration aggregated across public search sources.",
+    homepage: "https://github.com/laramies/theHarvester",
+    keyEnv: null,
+    binary: "theHarvester",
+  },
+  {
     id: "crtsh",
     name: "crt.sh",
     tier: "infra",
@@ -221,6 +234,31 @@ export const SOURCES: readonly Source[] = Object.freeze([
     // operator turns it on deliberately. There is no key to act as an
     // accidental off switch, so the switch is explicit.
     keyEnv: "WHATSMYNAME_ENABLED",
+  },
+  {
+    id: "sherlock",
+    name: "Sherlock",
+    tier: "people",
+    mode: "cli",
+    requiresScope: true,
+    accepts: ["username"],
+    description: "Username presence across several hundred social platforms.",
+    homepage: "https://github.com/sherlock-project/sherlock",
+    keyEnv: null,
+    binary: "sherlock",
+  },
+  {
+    id: "maigret",
+    name: "Maigret",
+    tier: "people",
+    mode: "cli",
+    requiresScope: true,
+    accepts: ["username"],
+    description:
+      "Username presence across a wider site list, with profile detail where available.",
+    homepage: "https://github.com/soxoj/maigret",
+    keyEnv: null,
+    binary: "maigret",
   },
 
   // ── onion ───────────────────────────────────────────────────────────────
