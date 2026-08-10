@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { InfraObservation, Subject } from "@scout/sources";
 import { requireSource } from "@scout/sources";
+import { resolveAddresses } from "./resolve.js";
 
 export const censysSource = requireSource("censys");
 
@@ -65,6 +66,81 @@ export function normalizeCensys(payload: CensysSearch): InfraObservation[] {
   return observations;
 }
 
+/**
+ * Censys, on the Platform API.
+ *
+ * The old implementation called `search.censys.io/api/v2` with a bearer token.
+ * That endpoint wants HTTP Basic with an API ID and secret, so a Platform
+ * personal access token got a 401 that read as a bad key — and Censys is
+ * decommissioning legacy Search through 2026 regardless.
+ *
+ * Platform search is also out of reach on a free plan: it 403s with "requires
+ * an organization ID for API access". Asset lookup by address is not, so that
+ * is what this uses. A domain subject is resolved to its addresses first,
+ * capped, because a free plan has 100 credits a month and one domain behind a
+ * large CDN pool could spend the lot.
+ */
+const PLATFORM_BASE = "https://api.platform.censys.io/v3/global/asset/host";
+
+/** Free plans are metered per lookup, so a domain fans out to a few at most. */
+const MAX_ADDRESSES = 3;
+
+const platformHostSchema = z.object({
+  result: z.object({
+    resource: z.object({
+      ip: z.string(),
+      location: z
+        .object({
+          country: z.string().nullable().default(null),
+        })
+        .partial()
+        .optional(),
+      autonomous_system: z
+        .object({
+          asn: z.number().int().nullable().default(null),
+          name: z.string().nullable().default(null),
+        })
+        .partial()
+        .optional(),
+      dns: z
+        .object({ names: z.array(z.string()).default([]) })
+        .partial()
+        .optional(),
+      services: z
+        .array(z.object({ port: z.number().int().optional() }))
+        .default([]),
+    }),
+  }),
+});
+
+export type CensysPlatformHost = z.infer<typeof platformHostSchema>;
+
+export function normalizeCensysPlatform(
+  payload: CensysPlatformHost,
+): InfraObservation[] {
+  const resource = payload.result.resource;
+  const asn = resource.autonomous_system?.asn;
+
+  return [
+    {
+      kind: "host",
+      ip: resource.ip,
+      hostnames: resource.dns?.names ?? [],
+      ports: [
+        ...new Set(
+          resource.services
+            .map((service) => service.port)
+            .filter((port): port is number => typeof port === "number"),
+        ),
+      ].sort((a, b) => a - b),
+      org: resource.autonomous_system?.name ?? null,
+      asn: asn === null || asn === undefined ? null : `AS${asn}`,
+      country: resource.location?.country ?? null,
+      lastSeen: null,
+    },
+  ];
+}
+
 export async function fetchCensys(
   subject: Subject,
 ): Promise<InfraObservation[]> {
@@ -74,23 +150,44 @@ export async function fetchCensys(
   }
 
   const value = subject.value.trim().toLowerCase();
-  const query =
-    subject.kind === "ip" ? `ip: "${value}"` : `names: "${value}"`;
+  const addresses =
+    subject.kind === "ip"
+      ? [value]
+      : await resolveAddresses(value, MAX_ADDRESSES);
 
-  const response = await fetch(
-    `https://search.censys.io/api/v2/hosts/search?q=${encodeURIComponent(query)}&per_page=50`,
-    {
-      headers: {
-        // Key in a header, never in the URL.
-        authorization: `Bearer ${key}`,
-        accept: "application/json",
+  if (addresses.length === 0) return [];
+
+  const observations: InfraObservation[] = [];
+  let lastError: string | null = null;
+
+  for (const address of addresses) {
+    const response = await fetch(
+      `${PLATFORM_BASE}/${encodeURIComponent(address)}`,
+      {
+        headers: {
+          authorization: `Bearer ${key}`,
+          accept: "application/json",
+        },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    },
-  );
+    );
 
-  if (response.status === 404) return [];
-  if (!response.ok) throw new Error(`Censys responded ${response.status}`);
+    // An address Censys has never scanned is a real answer, not a failure.
+    if (response.status === 404) continue;
+    if (!response.ok) {
+      lastError = `Censys responded ${response.status}`;
+      continue;
+    }
 
-  return normalizeCensys(searchSchema.parse(await response.json()));
+    observations.push(
+      ...normalizeCensysPlatform(platformHostSchema.parse(await response.json())),
+    );
+  }
+
+  // Every address failing is a failure; some failing still leaves an answer.
+  if (observations.length === 0 && lastError !== null) {
+    throw new Error(lastError);
+  }
+
+  return observations;
 }

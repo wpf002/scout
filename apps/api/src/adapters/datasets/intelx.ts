@@ -5,15 +5,26 @@ import { dedupeEntities, extractEntities, requireSource } from "@scout/sources";
 export const intelxSource = requireSource("intelligence-x");
 
 /**
- * Intelligence X assigns each account its own API instance, and the host is
- * shown on the account's Developer tab alongside the key. `2.intelx.io` is the
- * common one but it is not universal — a key issued against a different
- * instance returns 401 here, which reads as a bad key when it is a wrong
- * address. Override with INTELX_BASE_URL when the Developer tab shows another.
+ * Intelligence X splits accounts across API instances, and a key issued for
+ * one returns 401 against another — which reads as a bad key when it is a
+ * wrong address. Free accounts live on `free.intelx.io`, paid ones on
+ * `2.intelx.io`; nothing in the key says which.
+ *
+ * So rather than making the operator find this out, both are tried: the
+ * configured or default host first, and the other one only on a 401. One extra
+ * request in the wrong-host case, none in the right-host case, and a genuinely
+ * invalid key still ends up reported as 401.
  */
-const BASE = (
-  process.env["INTELX_BASE_URL"]?.trim() ?? "https://2.intelx.io"
-).replace(/\/$/, "");
+const FALLBACK_HOSTS = ["https://free.intelx.io", "https://2.intelx.io"];
+
+function hosts(): string[] {
+  const configured = process.env["INTELX_BASE_URL"]?.trim().replace(/\/$/, "");
+  const ordered =
+    configured !== undefined && configured.length > 0
+      ? [configured, ...FALLBACK_HOSTS]
+      : FALLBACK_HOSTS;
+  return [...new Set(ordered)];
+}
 const REQUEST_TIMEOUT_MS = 20_000;
 /** How long to wait for the provider's async search to settle. */
 const RESULT_ATTEMPTS = 4;
@@ -89,28 +100,49 @@ export async function fetchIntelx(subject: Subject): Promise<DatasetHit[]> {
   };
 
   // Intelligence X search is two-step: start a search, then poll for results.
-  const started = await fetch(`${BASE}/intelligent/search`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      term,
-      maxresults: 50,
-      media: 0,
-      sort: 4,
-      terminate: [],
-    }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
+  // The start call also settles which host this key belongs to.
+  let base = "";
+  let id = "";
+  let lastStatus = 0;
 
-  if (!started.ok) {
-    throw new Error(`Intelligence X responded ${started.status}`);
+  for (const host of hosts()) {
+    const started = await fetch(`${host}/intelligent/search`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        term,
+        maxresults: 50,
+        media: 0,
+        sort: 4,
+        terminate: [],
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (started.ok) {
+      base = host;
+      id = searchStartSchema.parse(await started.json()).id;
+      break;
+    }
+
+    lastStatus = started.status;
+    // Only a 401 is worth trying elsewhere — it is the wrong-instance
+    // signature. Any other status is a real failure at the right host.
+    if (started.status !== 401) break;
   }
 
-  const { id } = searchStartSchema.parse(await started.json());
+  if (base === "" || id === "") {
+    throw new Error(
+      lastStatus === 401
+        ? "Intelligence X rejected the key on every known API instance (401). " +
+          "Check the API URL on your Developer tab and set INTELX_BASE_URL."
+        : `Intelligence X responded ${lastStatus}`,
+    );
+  }
 
   for (let attempt = 0; attempt < RESULT_ATTEMPTS; attempt += 1) {
     const response = await fetch(
-      `${BASE}/intelligent/search/result?id=${encodeURIComponent(id)}&limit=50`,
+      `${base}/intelligent/search/result?id=${encodeURIComponent(id)}&limit=50`,
       { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
     );
 

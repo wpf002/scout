@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { InfraObservation, Subject } from "@scout/sources";
 import { requireSource } from "@scout/sources";
+import { resolveAddresses } from "./resolve.js";
 
 export const shodanSource = requireSource("shodan");
 
@@ -98,6 +99,82 @@ export function normalizeShodanHost(payload: ShodanHost): InfraObservation[] {
   ];
 }
 
+/**
+ * Shodan, with a free fallback.
+ *
+ * `/dns/domain` and `/shodan/host` both require a paid membership — a free
+ * account's key is valid and returns "Requires membership or higher" for
+ * every call, which is indistinguishable from a broken key unless the message
+ * is shown.
+ *
+ * InternetDB is Shodan's free, keyless view of the same scan data: open ports,
+ * hostnames, detected software and known CVEs for an address. It is not as
+ * rich as the paid endpoints, but it is the difference between this source
+ * contributing and being permanently dead on an unpaid account. The paid path
+ * is still tried first, so a membership upgrades the results with no config
+ * change.
+ */
+const INTERNETDB = "https://internetdb.shodan.io";
+
+/** Free-path lookups fan out per address, so a domain is capped. */
+const MAX_ADDRESSES = 3;
+
+const internetDbSchema = z.object({
+  ip: z.string(),
+  hostnames: z.array(z.string()).default([]),
+  ports: z.array(z.number().int()).default([]),
+  cpes: z.array(z.string()).default([]),
+  vulns: z.array(z.string()).default([]),
+});
+
+export type InternetDbHost = z.infer<typeof internetDbSchema>;
+
+export function normalizeInternetDb(host: InternetDbHost): InfraObservation[] {
+  return [
+    {
+      kind: "host",
+      ip: host.ip,
+      hostnames: host.hostnames,
+      ports: [...new Set(host.ports)].sort((a, b) => a - b),
+      // InternetDB carries no ownership data, so these stay null rather than
+      // being filled with something adjacent. A guessed org is worse than none.
+      org: null,
+      asn: null,
+      country: null,
+      lastSeen: null,
+    },
+  ];
+}
+
+async function fetchInternetDb(
+  subject: Subject,
+): Promise<InfraObservation[]> {
+  const value = subject.value.trim().toLowerCase();
+  const addresses =
+    subject.kind === "ip" ? [value] : await resolveAddresses(value, MAX_ADDRESSES);
+
+  const observations: InfraObservation[] = [];
+  for (const address of addresses) {
+    const response = await fetch(
+      `${INTERNETDB}/${encodeURIComponent(address)}`,
+      {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      },
+    );
+
+    // 404 means Shodan has never scanned it — a real answer.
+    if (response.status === 404) continue;
+    if (!response.ok) continue;
+
+    observations.push(
+      ...normalizeInternetDb(internetDbSchema.parse(await response.json())),
+    );
+  }
+
+  return observations;
+}
+
 export async function fetchShodan(
   subject: Subject,
 ): Promise<InfraObservation[]> {
@@ -120,14 +197,25 @@ export async function fetchShodan(
     },
   );
 
-  // 404 means Shodan has nothing on this target — a real negative answer.
-  if (response.status === 404) return [];
-  // Status only. The key is in the query string, so the URL must never appear
-  // in an error message that ends up in the audit log.
-  if (!response.ok) throw new Error(`Shodan responded ${response.status}`);
+  // 401/403 is the unpaid-account signature. Fall back rather than fail: the
+  // free view still answers the question, just with less detail.
+  if (response.status === 401 || response.status === 403) {
+    const fallback = await fetchInternetDb(subject);
+    if (fallback.length > 0) return fallback;
+    throw new Error(
+      "Shodan requires a paid membership for this endpoint, and its free " +
+        "InternetDB view has no record of this target.",
+    );
+  }
 
-  const body: unknown = await response.json();
+  if (response.status === 404) return [];
+  if (!response.ok) {
+    // The key is in the query string, so the URL is never put in the message.
+    throw new Error(`Shodan responded ${response.status}`);
+  }
+
+  const payload = await response.json();
   return subject.kind === "ip"
-    ? normalizeShodanHost(hostSchema.parse(body))
-    : normalizeShodanDomain(domainSchema.parse(body));
+    ? normalizeShodanHost(hostSchema.parse(payload))
+    : normalizeShodanDomain(domainSchema.parse(payload));
 }
