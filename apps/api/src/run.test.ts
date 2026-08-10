@@ -15,8 +15,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { prisma } from "@scout/db";
 
-const DB = process.env["DATABASE_URL"];
+/**
+ * Deliberately NOT `DATABASE_URL`.
+ *
+ * This suite creates cases and writes audit rows, and audit rows cannot be
+ * deleted — the immutability trigger refuses, which also blocks deleting the
+ * case that owns them. So a run against a working database leaves test cases
+ * in it permanently, cluttering the case picker with rows nobody can remove.
+ * Point SCOUT_TEST_DATABASE_URL at a throwaway database to run these.
+ */
+const DB = process.env["SCOUT_TEST_DATABASE_URL"];
 const run = DB === undefined || DB.length === 0 ? describe.skip : describe;
+
+if (DB !== undefined && DB.length > 0) {
+  process.env["DATABASE_URL"] = DB;
+}
 
 /**
  * A full run touches every applicable source, and the keyless ones (crt.sh)

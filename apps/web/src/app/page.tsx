@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   api,
   ApiError,
@@ -9,20 +9,27 @@ import {
   type RunResultRow,
 } from "@/lib/api";
 import type { CaseRecord, SubjectKind } from "@/lib/types";
-import { flattenObservations, type ResultRow } from "@/lib/flatten";
+import { flattenObservations, groupRank, type ResultRow } from "@/lib/flatten";
 
-const SUBJECT_KINDS: SubjectKind[] = [
-  "domain",
-  "ip",
-  "email",
-  "username",
-  "person",
-  "company",
-  "hash",
-  "keyword",
-];
+/** Plain names for the subject kinds. "hash" means nothing to most people. */
+const KIND_LABEL: Record<SubjectKind, string> = {
+  domain: "Domain",
+  ip: "IP Address",
+  email: "Email Address",
+  username: "Username",
+  person: "Person",
+  company: "Company",
+  hash: "File Hash",
+  keyword: "Keyword",
+};
 
-/** Status ordering for the source rail: problems first, quiet ones last. */
+const KINDS = Object.keys(KIND_LABEL) as SubjectKind[];
+
+/** Groups worth showing expanded. The rest open on demand. */
+const OPEN_BY_DEFAULT = new Set(["Hosts", "Emails", "Breaches", "Sanctions"]);
+
+const PAGE_SIZE = 50;
+
 const STATUS_RANK: Record<RunResultRow["status"], number> = {
   ok: 0,
   blocked: 1,
@@ -35,17 +42,17 @@ const STATUS_RANK: Record<RunResultRow["status"], number> = {
 
 const STATUS_LABEL: Record<RunResultRow["status"], string> = {
   ok: "Results",
-  empty: "No Results",
-  inert: "Not Configured",
-  blocked: "Out Of Scope",
-  error: "Failed",
-  deeplink: "Open Manually",
-  "no-adapter": "Not Built",
+  empty: "Nothing Found",
+  inert: "Needs API Key",
+  blocked: "Not Authorized",
+  error: "Unavailable",
+  deeplink: "Open",
+  "no-adapter": "Coming Soon",
 };
 
 export default function Page() {
   const [cases, setCases] = useState<CaseRecord[]>([]);
-  const [caseId, setCaseId] = useState<string>("");
+  const [caseId, setCaseId] = useState("");
   const [indicator, setIndicator] = useState("");
   const [kind, setKind] = useState<SubjectKind | "">("");
   const [detection, setDetection] = useState<Detection | null>(null);
@@ -53,7 +60,11 @@ export default function Page() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [pages, setPages] = useState<Record<string, number>>({});
+  const [viewer, setViewer] = useState<{ name: string; url: string } | null>(
+    null,
+  );
 
   useEffect(() => {
     api
@@ -65,8 +76,6 @@ export default function Page() {
       .catch(() => setCases([]));
   }, []);
 
-  // Detection previews as you type, so the kind is visible before anything
-  // runs — a wrong guess is correctable rather than discovered afterwards.
   useEffect(() => {
     const term = indicator.trim();
     if (term.length === 0) {
@@ -82,15 +91,13 @@ export default function Page() {
     return () => clearTimeout(timer);
   }, [indicator]);
 
-  const activeKind: SubjectKind | null =
-    kind !== "" ? kind : (detection?.kind ?? null);
-
   const run = useCallback(async () => {
     const term = indicator.trim();
     if (term.length === 0 || caseId === "" || running) return;
 
     setRunning(true);
     setError(null);
+    setViewer(null);
     try {
       const response = await api.run(
         term,
@@ -98,6 +105,8 @@ export default function Page() {
         kind === "" ? undefined : kind,
       );
       setResult(response);
+      setPages({});
+      setOpen({});
     } catch (caught) {
       setError(
         caught instanceof ApiError ? caught.message : "The run did not complete.",
@@ -119,18 +128,20 @@ export default function Page() {
       (row) =>
         row.value.toLowerCase().includes(needle) ||
         row.detail.toLowerCase().includes(needle) ||
-        row.source.toLowerCase().includes(needle),
+        row.sources.some((s) => s.toLowerCase().includes(needle)),
     );
   }, [rows, filter]);
 
   const grouped = useMemo(() => {
     const groups = new Map<string, ResultRow[]>();
     for (const row of visibleRows) {
-      const list = groups.get(row.type);
-      if (list === undefined) groups.set(row.type, [row]);
-      else list.push(row);
+      const existing = groups.get(row.type);
+      if (existing === undefined) groups.set(row.type, [row]);
+      else existing.push(row);
     }
-    return [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+    return [...groups.entries()].sort(
+      (a, b) => groupRank(a[0]) - groupRank(b[0]),
+    );
   }, [visibleRows]);
 
   const sourceRows = useMemo(() => {
@@ -142,89 +153,83 @@ export default function Page() {
     );
   }, [result]);
 
-  const activeCase = cases.find((c) => c.id === caseId) ?? null;
+  const isOpen = (type: string) => open[type] ?? OPEN_BY_DEFAULT.has(type);
 
   return (
     <div className="app">
       <header className="bar">
         <span className="mark">SCOUT</span>
-        <div className="bar-right">
-          <label className="field">
-            <span>Case</span>
-            <select
-              value={caseId}
-              onChange={(event) => setCaseId(event.target.value)}
-            >
-              {cases.length === 0 ? <option value="">No Cases</option> : null}
-              {cases.map((record) => (
-                <option key={record.id} value={record.id}>
-                  {record.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {activeCase !== null ? (
-            <span className="ref" title="Authorization reference">
-              {activeCase.authorizationRef}
-            </span>
-          ) : null}
-        </div>
+        <label className="field">
+          <span>Investigation</span>
+          <select
+            value={caseId}
+            onChange={(event) => setCaseId(event.target.value)}
+          >
+            {cases.length === 0 ? <option value="">None</option> : null}
+            {cases.map((record) => (
+              <option key={record.id} value={record.id}>
+                {record.name}
+              </option>
+            ))}
+          </select>
+        </label>
       </header>
 
       <section className="query">
         <input
-          ref={inputRef}
           className="indicator"
           value={indicator}
           onChange={(event) => setIndicator(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") void run();
           }}
-          placeholder="Domain, IP, email, username, hash"
+          placeholder="Search a domain, address, email, username or hash"
           spellCheck={false}
           autoFocus
         />
-        <label className="field">
-          <span>Type</span>
-          <select
-            value={kind}
-            onChange={(event) =>
-              setKind(event.target.value as SubjectKind | "")
-            }
-          >
-            <option value="">
-              {detection === null ? "Auto" : `Auto — ${detection.kind}`}
+        <select
+          className="kind"
+          value={kind}
+          onChange={(event) => setKind(event.target.value as SubjectKind | "")}
+        >
+          <option value="">
+            {detection === null
+              ? "Detect Automatically"
+              : `Detected: ${KIND_LABEL[detection.kind]}`}
+          </option>
+          {KINDS.map((k) => (
+            <option key={k} value={k}>
+              {KIND_LABEL[k]}
             </option>
-            {SUBJECT_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
-        </label>
+          ))}
+        </select>
         <button
           className="run"
           onClick={() => void run()}
           disabled={running || indicator.trim() === "" || caseId === ""}
         >
-          {running ? "Running" : "Run"}
+          {running ? "Searching" : "Search"}
         </button>
       </section>
 
-      {detection !== null && detection.confidence !== "certain" && kind === "" ? (
+      {detection !== null &&
+      detection.confidence !== "certain" &&
+      kind === "" ? (
         <p className="hint">
-          Read as <strong>{detection.kind}</strong>.{" "}
+          Treating this as {KIND_LABEL[detection.kind].toLowerCase()}.
           {detection.alternatives.length > 0 ? (
             <>
-              Also possible:{" "}
+              {" "}
+              Search as{" "}
               {detection.alternatives.map((alt, index) => (
                 <span key={alt}>
-                  {index > 0 ? ", " : ""}
+                  {index > 0 ? " or " : ""}
                   <button className="link" onClick={() => setKind(alt)}>
-                    {alt}
+                    {KIND_LABEL[alt].toLowerCase()}
                   </button>
                 </span>
-              ))}
+              ))}{" "}
+              instead.
             </>
           ) : null}
         </p>
@@ -234,7 +239,7 @@ export default function Page() {
 
       {result === null ? (
         <p className="empty">
-          {running ? "Running." : "Enter an indicator to run every source."}
+          {running ? "Searching every source." : "Enter something to search."}
         </p>
       ) : (
         <div className="split">
@@ -242,7 +247,8 @@ export default function Page() {
             <div className="rail-head">
               <h2>Sources</h2>
               <span>
-                {result.summary.withResults}/{result.summary.sourcesConsidered}
+                {result.summary.withResults} of{" "}
+                {result.summary.sourcesConsidered}
               </span>
             </div>
             <ul>
@@ -252,18 +258,18 @@ export default function Page() {
                   <span className="s-name">{row.name}</span>
                   {row.status === "ok" ? (
                     <span className="s-count">{row.count}</span>
-                  ) : (
-                    <span
-                      className="s-status"
-                      title={row.message ?? undefined}
+                  ) : row.status === "deeplink" && row.url !== null ? (
+                    <button
+                      className="s-open"
+                      onClick={() =>
+                        setViewer({ name: row.name, url: row.url as string })
+                      }
                     >
-                      {row.url !== null && row.status === "deeplink" ? (
-                        <a href={row.url} target="_blank" rel="noreferrer">
-                          Open
-                        </a>
-                      ) : (
-                        STATUS_LABEL[row.status]
-                      )}
+                      Open
+                    </button>
+                  ) : (
+                    <span className="s-status" title={row.message ?? undefined}>
+                      {STATUS_LABEL[row.status]}
                     </span>
                   )}
                 </li>
@@ -278,56 +284,136 @@ export default function Page() {
                 className="filter"
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
-                placeholder="Filter"
+                placeholder="Filter results"
                 spellCheck={false}
               />
-              <span className="count">
-                {visibleRows.length} of {rows.length}
-              </span>
+              <span className="count">{visibleRows.length}</span>
             </div>
 
+            {viewer !== null ? (
+              <section className="viewer">
+                <div className="viewer-head">
+                  <h3>{viewer.name}</h3>
+                  <a href={viewer.url} target="_blank" rel="noreferrer">
+                    Open In New Tab
+                  </a>
+                  <button className="link" onClick={() => setViewer(null)}>
+                    Close
+                  </button>
+                </div>
+                <iframe
+                  src={viewer.url}
+                  title={viewer.name}
+                  referrerPolicy="no-referrer"
+                  sandbox="allow-scripts allow-same-origin allow-forms"
+                />
+                <p className="viewer-note">
+                  Some sites refuse to be embedded. Use Open In New Tab if this
+                  stays blank.
+                </p>
+              </section>
+            ) : null}
+
             {rows.length === 0 ? (
-              <p className="empty">
-                No source returned data for {result.subject.value}.
-              </p>
+              <p className="empty">Nothing found for {result.subject.value}.</p>
             ) : (
-              grouped.map(([type, list]) => (
-                <section key={type} className="group">
-                  <h3>
-                    {type} <span>{list.length}</span>
-                  </h3>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Value</th>
-                        <th>Detail</th>
-                        <th>Source</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {list.map((row, index) => (
-                        <tr key={`${row.source}-${row.value}-${index}`}>
-                          <td className="v">
-                            {row.url === null ? (
-                              row.value
-                            ) : (
-                              <a
-                                href={row.url}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                {row.value}
-                              </a>
-                            )}
-                          </td>
-                          <td className="d">{row.detail}</td>
-                          <td className="src">{row.source}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </section>
-              ))
+              grouped.map(([type, list]) => {
+                const expanded = isOpen(type);
+                const page = pages[type] ?? 0;
+                const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+                const slice = list.slice(
+                  page * PAGE_SIZE,
+                  page * PAGE_SIZE + PAGE_SIZE,
+                );
+
+                return (
+                  <section key={type} className="group">
+                    <button
+                      className="group-head"
+                      onClick={() =>
+                        setOpen((current) => ({
+                          ...current,
+                          [type]: !expanded,
+                        }))
+                      }
+                    >
+                      <span className={`caret${expanded ? " down" : ""}`} />
+                      <h3>{type}</h3>
+                      <span className="group-count">{list.length}</span>
+                    </button>
+
+                    {expanded ? (
+                      <>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Value</th>
+                              <th>Detail</th>
+                              <th>Sources</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {slice.map((row) => (
+                              <tr key={`${row.type}-${row.value}`}>
+                                <td className="v">
+                                  {row.url === null ? (
+                                    row.value
+                                  ) : (
+                                    <button
+                                      className="cell-link"
+                                      onClick={() =>
+                                        setViewer({
+                                          name: row.value,
+                                          url: row.url as string,
+                                        })
+                                      }
+                                    >
+                                      {row.value}
+                                    </button>
+                                  )}
+                                </td>
+                                <td className="d">{row.detail}</td>
+                                <td className="src">
+                                  {row.sources.join(", ")}
+                                  {row.occurrences > 1 ? (
+                                    <span className="times">
+                                      ×{row.occurrences}
+                                    </span>
+                                  ) : null}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+
+                        {totalPages > 1 ? (
+                          <div className="pager">
+                            <button
+                              disabled={page === 0}
+                              onClick={() =>
+                                setPages((c) => ({ ...c, [type]: page - 1 }))
+                              }
+                            >
+                              Previous
+                            </button>
+                            <span>
+                              {page + 1} of {totalPages}
+                            </span>
+                            <button
+                              disabled={page + 1 >= totalPages}
+                              onClick={() =>
+                                setPages((c) => ({ ...c, [type]: page + 1 }))
+                              }
+                            >
+                              Next
+                            </button>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </section>
+                );
+              })
             )}
           </main>
         </div>

@@ -10,6 +10,7 @@ import {
   fetchTheHarvester,
   theHarvesterSource,
 } from "../cli/theharvester.js";
+import { fetchUrlscan, urlscanSource } from "./urlscan.js";
 
 export interface InfraAdapter {
   source: Source;
@@ -30,6 +31,7 @@ export const INFRA_ADAPTERS: readonly InfraAdapter[] = Object.freeze([
   { source: securityTrailsSource, run: fetchSecurityTrails },
   { source: censysSource, run: fetchCensys },
   { source: theHarvesterSource, run: fetchTheHarvester },
+  { source: urlscanSource, run: fetchUrlscan },
 ]);
 
 const BY_ID = new Map(INFRA_ADAPTERS.map((a) => [a.source.id, a]));

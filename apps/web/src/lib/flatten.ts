@@ -6,12 +6,16 @@ import type { RunResultRow } from "./api";
  * Each adapter returns its own shape — a certificate is not a breach is not a
  * username sighting — and the consolidated view has to show all of them
  * together without flattening away what makes them different. So every
- * observation becomes a value, a detail line, and the source that found it,
+ * observation becomes a value, a detail line, and the sources that found it,
  * grouped by what kind of thing it is rather than by which tool produced it.
  *
- * Grouping by type rather than by tool is the whole point of consolidating. If
- * three sources each found the same subdomain, an investigator wants one
- * "Subdomains" list, not three per-tool lists to reconcile by hand.
+ * Then it deduplicates, which is the part that makes the table readable. A
+ * domain with a renewed certificate produces one crt.sh row per issuance, so
+ * `store.example.com` arrives twenty times and buries everything else. Those
+ * are one host seen twenty times, not twenty findings. Merging them into a
+ * single row that names every source and spans the full first/last-seen window
+ * is what an investigator actually wants to read — and reconciling that by
+ * hand is the work this tool exists to do.
  */
 
 export interface ResultRow {
@@ -19,8 +23,30 @@ export interface ResultRow {
   type: string;
   value: string;
   detail: string;
-  source: string;
+  /** Every source that reported this value, deduplicated. */
+  sources: string[];
+  /** How many raw observations collapsed into this row. */
+  occurrences: number;
   url: string | null;
+}
+
+/** Group display order. Anything unlisted sorts after these, alphabetically. */
+const GROUP_ORDER = [
+  "Hosts",
+  "Subdomains",
+  "Certificates",
+  "Emails",
+  "Profiles",
+  "Breaches",
+  "Credentials",
+  "Sanctions",
+  "Dataset Hits",
+  "Other",
+];
+
+export function groupRank(type: string): number {
+  const index = GROUP_ORDER.indexOf(type);
+  return index === -1 ? GROUP_ORDER.length : index;
 }
 
 /** Discriminator carried by every normalized observation. */
@@ -29,41 +55,52 @@ interface Observation {
   [key: string]: unknown;
 }
 
+/** A row before merging, carrying the raw dates so windows can be widened. */
+interface DraftRow extends Omit<ResultRow, "sources" | "occurrences"> {
+  source: string;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  extra: string | null;
+}
+
 const str = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value : null;
 
 const list = (value: unknown): string[] =>
-  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+  Array.isArray(value)
+    ? value.filter((v): v is string => typeof v === "string")
+    : [];
 
 const num = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
-/** Joins the parts of a detail line, dropping the ones that were absent. */
 const detailOf = (...parts: (string | null)[]): string =>
-  parts.filter((part): part is string => part !== null && part.length > 0).join(" · ");
+  parts
+    .filter((part): part is string => part !== null && part.length > 0)
+    .join(" · ");
 
-function rowFor(
+/** Dates render as days. The clock time on a certificate is never the point. */
+const day = (value: string | null): string | null =>
+  value === null ? null : (value.split("T")[0] ?? value);
+
+function draftFor(
   observation: Observation,
   sourceName: string,
-): ResultRow | null {
+): DraftRow | null {
   const kind = observation.kind;
+  const base = { source: sourceName, firstSeen: null, lastSeen: null, extra: null };
 
   switch (kind) {
     case "subdomain": {
       const hostname = str(observation.hostname);
       if (hostname === null) return null;
       return {
+        ...base,
         type: "Subdomains",
-        value: hostname,
-        detail: detailOf(
-          str(observation.firstSeen) === null
-            ? null
-            : `first seen ${str(observation.firstSeen)}`,
-          str(observation.lastSeen) === null
-            ? null
-            : `last seen ${str(observation.lastSeen)}`,
-        ),
-        source: sourceName,
+        value: hostname.toLowerCase(),
+        detail: "",
+        firstSeen: str(observation.firstSeen),
+        lastSeen: str(observation.lastSeen),
         url: null,
       };
     }
@@ -75,16 +112,17 @@ function rowFor(
         ? observation.ports.filter((p): p is number => typeof p === "number")
         : [];
       return {
+        ...base,
         type: "Hosts",
         value: ip,
         detail: detailOf(
-          ports.length > 0 ? `ports ${ports.join(", ")}` : null,
-          list(observation.hostnames).slice(0, 3).join(", ") || null,
+          ports.length > 0 ? `Ports ${ports.join(", ")}` : null,
           str(observation.org),
           str(observation.asn),
           str(observation.country),
         ),
-        source: sourceName,
+        extra: list(observation.hostnames).slice(0, 2).join(", ") || null,
+        lastSeen: str(observation.lastSeen),
         url: null,
       };
     }
@@ -94,30 +132,28 @@ function rowFor(
       if (commonName === null) return null;
       const names = list(observation.names);
       return {
+        ...base,
         type: "Certificates",
-        value: commonName,
+        value: commonName.toLowerCase(),
         detail: detailOf(
           str(observation.issuer),
           names.length > 1 ? `${names.length} names` : null,
-          str(observation.notAfter) === null
-            ? null
-            : `expires ${str(observation.notAfter)}`,
         ),
-        source: sourceName,
+        firstSeen: str(observation.notBefore),
+        lastSeen: str(observation.notAfter),
         url: null,
       };
     }
 
     case "username-sighting": {
       const site = str(observation.site);
-      const url = str(observation.url);
       if (site === null) return null;
       return {
+        ...base,
         type: "Profiles",
         value: site,
         detail: detailOf(str(observation.username), str(observation.category)),
-        source: sourceName,
-        url,
+        url: str(observation.url),
       };
     }
 
@@ -125,13 +161,13 @@ function rowFor(
       const name = str(observation.name) ?? str(observation.title);
       if (name === null) return null;
       return {
+        ...base,
         type: "Breaches",
         value: name,
         detail: detailOf(
           str(observation.breachDate),
           list(observation.dataClasses).slice(0, 4).join(", ") || null,
         ),
-        source: sourceName,
         url: null,
       };
     }
@@ -140,15 +176,15 @@ function rowFor(
       const identifier = str(observation.email) ?? str(observation.username);
       if (identifier === null) return null;
       return {
+        ...base,
         type: "Credentials",
         value: identifier,
         detail: detailOf(
           str(observation.database),
           // Never renders credential material, only that it exists. The API
           // redacts by default; this is the second place that holds.
-          observation.hasPassword === true ? "password present" : null,
+          observation.hasPassword === true ? "Password present" : null,
         ),
-        source: sourceName,
         url: null,
       };
     }
@@ -157,10 +193,10 @@ function rowFor(
       const address = str(observation.address) ?? str(observation.email);
       if (address === null) return null;
       return {
+        ...base,
         type: "Emails",
-        value: address,
+        value: address.toLowerCase(),
         detail: detailOf(str(observation.type), str(observation.confidence)),
-        source: sourceName,
         url: null,
       };
     }
@@ -169,10 +205,10 @@ function rowFor(
       const title = str(observation.title) ?? str(observation.name);
       if (title === null) return null;
       return {
+        ...base,
         type: "Dataset Hits",
         value: title,
         detail: detailOf(str(observation.collection), str(observation.date)),
-        source: sourceName,
         url: str(observation.url),
       };
     }
@@ -182,14 +218,14 @@ function rowFor(
       if (name === null) return null;
       const score = num(observation.score);
       return {
+        ...base,
         type: "Sanctions",
         value: name,
         detail: detailOf(
           list(observation.designations).join(", ") || null,
           str(observation.country),
-          score === null ? null : `score ${score.toFixed(2)}`,
+          score === null ? null : `Score ${score.toFixed(2)}`,
         ),
-        source: sourceName,
         url: str(observation.url),
       };
     }
@@ -200,16 +236,15 @@ function rowFor(
 }
 
 /**
- * Flattens every source's results into display rows.
+ * Flattens and deduplicates every source's results.
  *
  * An observation whose shape is not recognised is not dropped — an adapter
- * that returns something new would otherwise go silently missing from the one
- * view that is supposed to show everything. It lands under "Other" with its
- * fields serialized, which is ugly on purpose: visible and wrong is fixable,
- * invisible is not.
+ * returning something new would otherwise go silently missing from the one
+ * view that is supposed to show everything. It lands under "Other", which is
+ * ugly on purpose: visible and wrong is fixable, invisible is not.
  */
 export function flattenObservations(results: RunResultRow[]): ResultRow[] {
-  const rows: ResultRow[] = [];
+  const drafts: DraftRow[] = [];
 
   for (const result of results) {
     if (result.status !== "ok") continue;
@@ -218,28 +253,91 @@ export function flattenObservations(results: RunResultRow[]): ResultRow[] {
       if (typeof raw !== "object" || raw === null) continue;
       const observation = raw as Observation;
 
-      const row = rowFor(observation, result.name);
-      if (row !== null) {
-        rows.push(row);
+      const draft = draftFor(observation, result.name);
+      if (draft !== null) {
+        drafts.push(draft);
         continue;
       }
 
-      const fallback =
-        str(observation.value) ??
-        str(observation.name) ??
-        str(observation.title) ??
-        str(observation.hostname) ??
-        str(observation.id);
-
-      rows.push({
+      drafts.push({
         type: "Other",
-        value: fallback ?? (observation.kind ?? "unknown"),
-        detail: JSON.stringify(observation).slice(0, 200),
+        value:
+          str(observation.value) ??
+          str(observation.name) ??
+          str(observation.title) ??
+          str(observation.hostname) ??
+          str(observation.id) ??
+          (observation.kind ?? "Unknown"),
+        detail: JSON.stringify(observation).slice(0, 160),
         source: result.name,
+        firstSeen: null,
+        lastSeen: null,
+        extra: null,
         url: null,
       });
     }
   }
 
-  return rows;
+  const merged = new Map<
+    string,
+    ResultRow & { firstSeen: string | null; lastSeen: string | null }
+  >();
+
+  for (const draft of drafts) {
+    const key = `${draft.type} ${draft.value.toLowerCase()}`;
+    const existing = merged.get(key);
+
+    if (existing === undefined) {
+      merged.set(key, {
+        type: draft.type,
+        value: draft.value,
+        detail: detailOf(draft.detail, draft.extra),
+        sources: [draft.source],
+        occurrences: 1,
+        url: draft.url,
+        firstSeen: draft.firstSeen,
+        lastSeen: draft.lastSeen,
+      });
+      continue;
+    }
+
+    existing.occurrences += 1;
+    if (!existing.sources.includes(draft.source)) {
+      existing.sources.push(draft.source);
+    }
+    // Widen the observed window rather than letting the last row win.
+    if (
+      draft.firstSeen !== null &&
+      (existing.firstSeen === null || draft.firstSeen < existing.firstSeen)
+    ) {
+      existing.firstSeen = draft.firstSeen;
+    }
+    if (
+      draft.lastSeen !== null &&
+      (existing.lastSeen === null || draft.lastSeen > existing.lastSeen)
+    ) {
+      existing.lastSeen = draft.lastSeen;
+    }
+    if (existing.detail === "" && draft.detail !== "") {
+      existing.detail = detailOf(draft.detail, draft.extra);
+    }
+    if (existing.url === null) existing.url = draft.url;
+  }
+
+  return [...merged.values()]
+    .map(({ firstSeen, lastSeen, ...row }) => ({
+      ...row,
+      detail: detailOf(
+        row.detail,
+        firstSeen === null && lastSeen === null
+          ? null
+          : `${day(firstSeen) ?? "?"} → ${day(lastSeen) ?? "?"}`,
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        groupRank(a.type) - groupRank(b.type) ||
+        b.sources.length - a.sources.length ||
+        a.value.localeCompare(b.value),
+    );
 }

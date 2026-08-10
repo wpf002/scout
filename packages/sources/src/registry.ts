@@ -306,7 +306,11 @@ export const SOURCES: readonly Source[] = Object.freeze([
   {
     id: "urlscan",
     name: "urlscan.io",
-    tier: "utils",
+    // Infra, not utils. It returns hosts, addresses and ASNs — the same shape
+    // Shodan and Censys return — and the batch sweep is restricted to the
+    // infra tier, so classifying it anywhere else would keep it out of the
+    // consolidated run for no reason other than where it sits in a list.
+    tier: "infra",
     mode: "api",
     requiresScope: false,
     accepts: ["domain", "ip", "keyword"],

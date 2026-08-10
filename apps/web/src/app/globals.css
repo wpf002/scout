@@ -92,17 +92,6 @@ a:hover {
   vertical-align: middle;
 }
 
-.bar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.ref {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-faint);
-}
 
 /* ── Query row ────────────────────────────────────────────────────────── */
 
@@ -365,30 +354,6 @@ a:hover {
   color: var(--text-faint);
 }
 
-.group h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  height: var(--row);
-  padding: 0 10px;
-  background: var(--bg-inset);
-  border-bottom: 1px solid var(--border);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-dim);
-}
-
-.group h3 span {
-  font-family: var(--mono);
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--text-faint);
-}
-
 .group table {
   width: 100%;
   border-collapse: collapse;
@@ -440,4 +405,189 @@ a:hover {
 .group .src {
   color: var(--text-faint);
   font-size: 11px;
+}
+
+/* ── Kind select ──────────────────────────────────────────────────────── */
+
+.kind {
+  height: 34px;
+  padding: 0 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+.kind:focus {
+  outline: none;
+  border-color: var(--text-faint);
+}
+
+/* ── Collapsible groups ───────────────────────────────────────────────── */
+
+.group + .group {
+  border-top: 1px solid var(--border);
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--bg-inset);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.group-head:hover {
+  background: #12121c;
+}
+
+.group-head h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.group-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.caret {
+  width: 0;
+  height: 0;
+  flex: none;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid var(--text-faint);
+  transition: transform 0.12s ease;
+}
+
+.caret.down {
+  transform: rotate(90deg);
+}
+
+/* ── Pagination ───────────────────────────────────────────────────────── */
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 34px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.pager button {
+  padding: 3px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pager button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.pager button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ── Embedded source viewer ───────────────────────────────────────────── */
+
+.viewer {
+  border-bottom: 1px solid var(--border);
+}
+
+.viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border);
+}
+
+.viewer-head h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.viewer-head a {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.viewer iframe {
+  display: block;
+  width: 100%;
+  height: 460px;
+  border: none;
+  background: #fff;
+}
+
+.viewer-note {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* ── Row extras ───────────────────────────────────────────────────────── */
+
+.times {
+  margin-left: 6px;
+  color: var(--text-faint);
+}
+
+.cell-link,
+.s-open {
+  padding: 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-strong);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.s-open {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.cell-link:hover,
+.s-open:hover {
+  border-bottom-color: var(--text-dim);
 }
