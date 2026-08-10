@@ -109,11 +109,12 @@ async function request<T>(
     throw new ApiError(
       0,
       timedOut ? "timeout" : "unreachable",
+      // No shell instructions here. Keeping the API up is the backend's job,
+      // and telling an operator to go run a command is handing them a
+      // deployment problem in the middle of an investigation.
       timedOut
-        ? `The Scout API did not answer within ${REQUEST_TIMEOUT_MS / 1000}s. ` +
-          "It is reachable but not responding — check its log."
-        : "Cannot reach the Scout API. Start it with `pnpm start`, which runs " +
-          "both servers and verifies them before reporting success.",
+        ? "The API did not respond in time."
+        : "The API is unavailable.",
     );
   }
 

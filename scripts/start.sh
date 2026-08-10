@@ -22,6 +22,19 @@ step() { printf '\033[36m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[33m !\033[0m %s\n' "$1"; }
 die()  { printf '\033[31m ✗\033[0m %s\n' "$1" >&2; exit 1; }
 
+# ── one instance ───────────────────────────────────────────────────────────
+# Two of these running is worse than none. Each carries a watchdog that frees
+# the ports and restarts whatever is not answering, so a second copy sees the
+# first one's servers, decides they are stale, kills them, and starts its own —
+# which the first then does back. The servers flap, and every request that
+# lands mid-restart fails for a reason that is nowhere in either log.
+LOCK="$RUN_DIR/start.pid"
+if [ -f "$LOCK" ] && kill -0 "$(cat "$LOCK" 2>/dev/null)" 2>/dev/null; then
+  die "Scout is already running (pid $(cat "$LOCK")). Stop it first, or run
+   kill $(cat "$LOCK")"
+fi
+printf '%s' "$$" > "$LOCK"
+
 API_PORT="${PORT:-3001}"
 WEB_PORT="${WEB_PORT:-3000}"
 WATCH_EVERY="${SCOUT_WATCH_SECONDS:-10}"
@@ -215,6 +228,7 @@ cleanup() {
   printf '\n'
   step "Stopping"
   stop_servers
+  rm -f "$LOCK"
   wait 2>/dev/null || true
 }
 trap cleanup INT TERM EXIT

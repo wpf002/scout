@@ -21,7 +21,12 @@ const nextConfig = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "",
   },
   async rewrites() {
-    const target = process.env.SCOUT_API_URL ?? "http://localhost:3001";
+    // 127.0.0.1, not `localhost`. The API binds an IPv4 address, while
+    // `localhost` resolves to ::1 first on most machines — so whether this
+    // proxy reaches a running API comes down to Node's DNS ordering, and when
+    // it picks the v6 address the page reports the API as down while it is
+    // sitting there answering on v4.
+    const target = process.env.SCOUT_API_URL ?? "http://127.0.0.1:3001";
     return [{ source: "/api/:path*", destination: `${target}/:path*` }];
   },
   eslint: { ignoreDuringBuilds: true },
