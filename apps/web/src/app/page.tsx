@@ -483,7 +483,8 @@ export default function Page() {
             ) : view === "graph" ? (
               <div className="graph">
                 <svg
-                  viewBox={`0 0 ${graph.width} ${graph.height}`}
+                  viewBox={graph.viewBox}
+                  preserveAspectRatio="xMidYMid meet"
                   role="img"
                   aria-label="Entity graph"
                 >
@@ -519,15 +520,37 @@ export default function Page() {
                         r={node.radius}
                         fill={TYPE_COLOR[node.type] ?? "var(--text-faint)"}
                       />
-                      <text x={node.x} y={node.y - node.radius - 5}>
-                        {node.label.length > 26
-                          ? `${node.label.slice(0, 25)}…`
-                          : node.label}
-                      </text>
+                      {/*
+                        Labelled only when corroborated, when it is the subject,
+                        or when picked. Labelling all 54 was the clutter — most
+                        of them overlapped their neighbour and none could be
+                        read. Hovering any node still shows its full value.
+                      */}
+                      {node.weight > 1 ||
+                      node.id === "subject" ||
+                      selected?.value === node.row?.value ? (
+                        <text x={node.x} y={node.y - node.radius - 5}>
+                          {node.label}
+                        </text>
+                      ) : null}
                       <title>{`${node.type} · ${node.label}`}</title>
                     </g>
                   ))}
                 </svg>
+
+                <ul className="legend">
+                  {[...new Set(graph.nodes.map((n) => n.type))].map((type) => (
+                    <li key={type}>
+                      <span
+                        className="swatch"
+                        style={{
+                          background: TYPE_COLOR[type] ?? "var(--text-faint)",
+                        }}
+                      />
+                      {type}
+                    </li>
+                  ))}
+                </ul>
 
                 {graph.omitted.length > 0 ? (
                   <p className="graph-note">

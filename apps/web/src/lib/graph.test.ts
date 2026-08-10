@@ -74,7 +74,7 @@ describe("building the graph", () => {
     expect(many!.radius).toBeGreaterThan(one!.radius);
   });
 
-  it("caps a ring and reports what it dropped", () => {
+  it("caps a cluster and reports what it dropped", () => {
     // 400 subdomains drawn at once is a black disc, not a graph. What is not
     // drawn has to be stated — a silently truncated picture reads as complete.
     const many = Array.from({ length: 40 }, (_, i) =>
@@ -82,8 +82,42 @@ describe("building the graph", () => {
     );
     const graph = buildGraph(many, "example.com");
 
-    expect(graph.nodes.filter((n) => n.type === "Subdomains")).toHaveLength(28);
-    expect(graph.omitted).toEqual([{ type: "Subdomains", count: 12 }]);
+    expect(graph.nodes.filter((n) => n.type === "Subdomains")).toHaveLength(14);
+    expect(graph.omitted).toEqual([{ type: "Subdomains", count: 26 }]);
+  });
+
+  it("leaves room for other types when one is huge", () => {
+    // The failure mode this guards: 400 subdomains eating the whole budget so
+    // the two emails and one threat pulse — the findings that matter most —
+    // never get drawn at all.
+    const rows = [
+      ...Array.from({ length: 200 }, (_, i) =>
+        row({ value: `host${i}.example.com` }),
+      ),
+      row({ type: "Emails", value: "a@example.com" }),
+      row({ type: "Threat Intel", value: "Some Pulse" }),
+    ];
+    const graph = buildGraph(rows, "example.com");
+
+    expect(graph.nodes.some((n) => n.type === "Emails")).toBe(true);
+    expect(graph.nodes.some((n) => n.type === "Threat Intel")).toBe(true);
+  });
+
+  it("fits the frame to where the nodes actually landed", () => {
+    // A fixed viewBox clipped every outer label, because a label is drawn
+    // beyond its node and nothing accounted for its width.
+    const graph = buildGraph(
+      [row({ value: "a.example.com" }), row({ value: "b.example.com" })],
+      "example.com",
+    );
+    const [x, y, w, h] = graph.viewBox.split(" ").map(Number);
+
+    for (const node of graph.nodes) {
+      expect(node.x).toBeGreaterThan(x!);
+      expect(node.x).toBeLessThan(x! + w!);
+      expect(node.y).toBeGreaterThan(y!);
+      expect(node.y).toBeLessThan(y! + h!);
+    }
   });
 
   it("keeps the best-corroborated when it caps", () => {
