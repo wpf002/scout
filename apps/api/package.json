@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --clear-screen=false --ignore \"../../.pgdata/**\" --ignore \"../../**/node_modules/**\" --ignore \"../../**/.next/**\" src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run"
   },

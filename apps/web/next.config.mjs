@@ -30,6 +30,37 @@ const nextConfig = {
     return [{ source: "/api/:path*", destination: `${target}/:path*` }];
   },
   eslint: { ignoreDuringBuilds: true },
+
+  /**
+   * What the dev server is allowed to watch.
+   *
+   * Without this, Watchpack walks the whole monorepo — including
+   * `node_modules` across every workspace and `.pgdata`, which is a live
+   * Postgres cluster the dev script creates inside the repo. On macOS every
+   * watched file costs a descriptor, and between the API's watcher and this
+   * one the process ran out: `EMFILE: too many open files`.
+   *
+   * The failure is silent and looks like something else entirely. Watchpack
+   * logs the EMFILE and carries on, Next never finishes discovering the app
+   * directory, and every request falls through to `_not-found` — so the
+   * dashboard answers 404 on `/` while reporting itself as ready. It reads as
+   * a broken route, not as a resource limit.
+   */
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        ...config.watchOptions,
+        ignored: [
+          "**/node_modules/**",
+          "**/.next/**",
+          "**/dist/**",
+          "**/.pgdata/**",
+          "**/.git/**",
+        ],
+      };
+    }
+    return config;
+  },
 };
 
 export default nextConfig;

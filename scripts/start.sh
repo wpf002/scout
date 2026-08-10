@@ -30,9 +30,22 @@ die()  { printf '\033[31m ✗\033[0m %s\n' "$1" >&2; exit 1; }
 # lands mid-restart fails for a reason that is nowhere in either log.
 LOCK="$RUN_DIR/start.pid"
 if [ -f "$LOCK" ] && kill -0 "$(cat "$LOCK" 2>/dev/null)" 2>/dev/null; then
-  die "Scout is already running (pid $(cat "$LOCK")). Stop it first, or run
-   kill $(cat "$LOCK")"
+  die "Scout is already running (pid $(cat "$LOCK")). Stop it with: pnpm stop"
 fi
+
+# The lock alone was not enough. It only catches an instance that wrote the
+# file and is still alive — not one that was SIGKILLed before its trap could
+# clean up, and not one whose lock file somebody removed. Both happened, and
+# the result was fifteen orphaned supervisors competing for two ports.
+#
+# So sweep for siblings on every start rather than trusting the file. Starting
+# is exactly the moment it is safe to assume nothing else should be running.
+if pgrep -f "scripts/start.sh" | grep -qv "^$$\$"; then
+  warn "Found an earlier Scout still running. Stopping it first."
+  "$ROOT/scripts/stop.sh" >/dev/null 2>&1 || true
+  sleep 1
+fi
+
 printf '%s' "$$" > "$LOCK"
 
 API_PORT="${PORT:-3001}"
