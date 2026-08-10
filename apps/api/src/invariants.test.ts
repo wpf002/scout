@@ -53,14 +53,8 @@ const PERSON_IDENTIFYING: readonly SubjectKind[] = [
  * separates it from the exposure and people tiers. This one is expected to
  * stay unscoped.
  *
- * `aleph` — OCCRP's corpus of published leaks, corporate registries and court
- * filings, which is searched by name by the journalists it was built for.
- * Gating name search would make it useless for its actual purpose, and what it
- * returns is already-published record material rather than private facts. Its
- * `email` selector IS gated, via scopedKinds — searching an address is a
- * lookup about one person, not research against a corpus.
  */
-const REVIEWED_UNSCOPED_PERSON_SOURCES = ["opensanctions", "aleph"];
+const REVIEWED_UNSCOPED_PERSON_SOURCES = ["opensanctions"];
 
 describe("invariant 1 — the scope gate is absolute", () => {
   it("pins the set of person-facing sources", () => {

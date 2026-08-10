@@ -422,10 +422,10 @@ run("Scout datasets tier", () => {
     it("404s for a source with no adapter", async () => {
       const response = await app.inject({
         method: "POST",
-        url: "/datasets/aleph",
+        url: "/datasets/opencorporates",
         payload: {
           caseId,
-          subject: { kind: "person", value: "Someone" },
+          subject: { kind: "company", value: "Someone Ltd" },
         },
       });
       expect(response.statusCode).toBe(404);

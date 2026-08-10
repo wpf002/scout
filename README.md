@@ -393,7 +393,7 @@ integration until someone has one.
 ## The datasets tier
 
 Leaks and pastes (**Intelligence X**), sanctions and PEP screening
-(**OpenSanctions**). Aleph, ICIJ, OpenCorporates and Wikidata stay deeplinks —
+(**OpenSanctions**). ICIJ, OpenCorporates and Wikidata stay deeplinks —
 none has a stable free API worth the coupling.
 
 ### Sweeps report what they refused to run

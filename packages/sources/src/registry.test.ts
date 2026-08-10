@@ -10,8 +10,8 @@ import {
 import { TIERS } from "./types.js";
 
 describe("registry shape", () => {
-  it("holds 27 sources across 6 tiers", () => {
-    expect(SOURCES).toHaveLength(27);
+  it("holds 26 sources across 6 tiers", () => {
+    expect(SOURCES).toHaveLength(26);
     expect(new Set(SOURCES.map((s) => s.tier)).size).toBe(TIERS.length);
   });
 
@@ -83,7 +83,7 @@ describe("mode invariants", () => {
     const dual = SOURCES.filter(
       (s) => s.mode === "api" && typeof s.deeplink === "function",
     ).map((s) => s.id);
-    expect(dual.sort()).toEqual(["aleph", "crtsh", "wayback-machine"]);
+    expect(dual.sort()).toEqual(["crtsh", "wayback-machine"]);
   });
 
   it("URL-encodes the term so it cannot break out of the deeplink", () => {

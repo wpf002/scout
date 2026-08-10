@@ -8,7 +8,6 @@ import {
   fetchOpenSanctions,
   openSanctionsSource,
 } from "./opensanctions.js";
-import { alephSource, fetchAleph } from "./aleph.js";
 
 export interface DatasetAdapter {
   source: Source;
@@ -28,7 +27,6 @@ export interface DatasetAdapter {
 export const DATASET_ADAPTERS: readonly DatasetAdapter[] = Object.freeze([
   { source: intelxSource, run: fetchIntelx },
   { source: openSanctionsSource, run: fetchOpenSanctions },
-  { source: alephSource, run: fetchAleph },
 ]);
 
 const BY_ID = new Map(DATASET_ADAPTERS.map((a) => [a.source.id, a]));

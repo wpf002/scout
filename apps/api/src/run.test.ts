@@ -159,7 +159,9 @@ run("POST /run", SUITE, () => {
   it("never fetches a deeplink source", async () => {
     const body = await doRun({ indicator: "example.com", caseId });
     for (const row of body.results) {
-      if (row.sourceId === "aleph" || row.sourceId === "wayback-machine") {
+      // Named sources that are actually deeplinks — the previous pair were
+      // promoted to api adapters, which left this assertion matching nothing.
+      if (row.sourceId === "viewdns" || row.sourceId === "ahmia") {
         expect(row.status).toBe("deeplink");
         expect(row.count).toBe(0);
       }
