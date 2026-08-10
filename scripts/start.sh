@@ -161,9 +161,19 @@ pnpm --filter @scout/db exec prisma migrate deploy 2>&1 \
 # be a surprise, and a bad one. An unreadable count means "do not seed" rather
 # than "seed anyway" for the same reason.
 step "Checking for existing cases"
+# `psql` is not necessarily on PATH — Homebrew's postgresql@NN is keg-only, so
+# a Mac with Postgres correctly installed has no psql anywhere PATH can see.
+# Calling it bare meant this probe silently produced nothing there, and an
+# empty database was never seeded: you would open Scout to no cases at all and
+# reasonably conclude it was broken.
+# shellcheck source=lib/find-pg.sh
+. "$ROOT/scripts/lib/find-pg.sh"
+PSQL_DIR="$(find_pg_bin psql || true)"
+PSQL="${PSQL_DIR:+$PSQL_DIR/}psql"
+
 COUNT="$(pnpm --filter @scout/db exec prisma db execute --url "$DATABASE_URL" \
   --stdin <<<'SELECT count(*) FROM "Case";' >/dev/null 2>&1 \
-  && psql "${DATABASE_URL%%\?*}" -tAc 'SELECT count(*) FROM "Case";' 2>/dev/null \
+  && "$PSQL" "${DATABASE_URL%%\?*}" -tAc 'SELECT count(*) FROM "Case";' 2>/dev/null \
   | tr -d '[:space:]')"
 if [ "$COUNT" = "0" ]; then
   step "Seeding a demo case (database is empty)"

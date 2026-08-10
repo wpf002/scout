@@ -39,58 +39,19 @@ fi
 #
 # Newest version first in each location, so a machine carrying several does not
 # get an ancient one by directory-listing order.
-PGBIN=""
-find_pgbin() {
-  local dir
-  for dir in "$@"; do
-    [ -x "$dir/initdb" ] && PGBIN="$dir" && return 0
-  done
-  return 1
-}
+# shellcheck source=lib/find-pg.sh
+. "$ROOT/scripts/lib/find-pg.sh"
 
-# shellcheck disable=SC2012
-newest() { ls -d $1 2>/dev/null | sort -Vr; }
-
-if command -v initdb >/dev/null 2>&1; then
-  PGBIN="$(dirname "$(command -v initdb)")"
-else
-  case "$(uname -s)" in
-    Darwin)
-      BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
-      # shellcheck disable=SC2046
-      find_pgbin \
-        $(newest "$BREW_PREFIX/opt/postgresql@*/bin") \
-        $(newest "/opt/homebrew/opt/postgresql@*/bin") \
-        $(newest "/usr/local/opt/postgresql@*/bin") \
-        $(newest "/Applications/Postgres.app/Contents/Versions/*/bin") \
-        "$BREW_PREFIX/bin" || true
-      ;;
-    *)
-      # shellcheck disable=SC2046
-      find_pgbin $(newest "/usr/lib/postgresql/*/bin") || true
-      ;;
-  esac
-fi
-
+PGBIN="$(find_pg_bin initdb || true)"
 if [ -z "$PGBIN" ]; then
-  echo "No Postgres server binaries found (looked for initdb)." >&2
-  echo >&2
-  case "$(uname -s)" in
-    Darwin)
-      echo "  brew install postgresql@16" >&2
-      echo >&2
-      echo "That formula is keg-only, so initdb will not land on your PATH —" >&2
-      echo "this script looks in Homebrew's opt directory for exactly that reason," >&2
-      echo "so no further setup is needed after the install." >&2
-      ;;
-    *)
-      echo "  sudo apt-get install postgresql        # Debian/Ubuntu" >&2
-      echo "  sudo dnf install postgresql-server     # Fedora/RHEL" >&2
-      ;;
-  esac
-  echo >&2
-  echo "Already have a server somewhere? Point DATABASE_URL at it in .env" >&2
-  echo "and this script is skipped entirely." >&2
+  {
+    echo "No Postgres server binaries found (looked for initdb)."
+    echo
+    pg_install_hint
+    echo
+    echo "Already have a server somewhere? Point DATABASE_URL at it in .env"
+    echo "and this script is skipped entirely."
+  } >&2
   exit 1
 fi
 
