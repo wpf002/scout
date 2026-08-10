@@ -102,5 +102,4 @@ export const infraRateLimiter = new RateLimiter({
   crtsh: { capacity: 2, refillPerSecond: 0.5, maxWaitMs: 8_000 },
   shodan: { capacity: 3, refillPerSecond: 1 },
   censys: { capacity: 3, refillPerSecond: 0.4 },
-  securitytrails: { capacity: 3, refillPerSecond: 0.5 },
 });

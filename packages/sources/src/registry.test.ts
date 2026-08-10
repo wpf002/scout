@@ -10,8 +10,8 @@ import {
 import { TIERS } from "./types.js";
 
 describe("registry shape", () => {
-  it("holds 25 sources across 6 tiers", () => {
-    expect(SOURCES).toHaveLength(25);
+  it("holds 24 sources across 6 tiers", () => {
+    expect(SOURCES).toHaveLength(24);
     expect(new Set(SOURCES.map((s) => s.tier)).size).toBe(TIERS.length);
   });
 

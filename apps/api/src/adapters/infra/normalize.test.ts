@@ -9,10 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeCrtsh } from "./crtsh.js";
 import { normalizeShodanDomain, normalizeShodanHost } from "./shodan.js";
-import {
-  normalizeSecurityTrailsIps,
-  normalizeSecurityTrailsSubdomains,
-} from "./securitytrails.js";
+import { normalizeCertSpotter } from "./keyless.js";
 import { normalizeCensys } from "./censys.js";
 import { mergeObservations } from "@scout/sources";
 
@@ -140,35 +137,6 @@ describe("Shodan", () => {
   });
 });
 
-describe("SecurityTrails", () => {
-  it("joins bare labels onto the apex so they dedupe against crt.sh", () => {
-    const observations = normalizeSecurityTrailsSubdomains(
-      { subdomains: ["www", "admin", "www"] },
-      "example.com",
-    );
-    const hostnames = observations.map((o) =>
-      o.kind === "subdomain" ? o.hostname : "",
-    );
-    expect(hostnames).toEqual(["admin.example.com", "www.example.com"]);
-  });
-
-  it("normalizes nearby IP blocks into hosts", () => {
-    const observations = normalizeSecurityTrailsIps({
-      blocks: [
-        {
-          ip: "203.0.113.10",
-          hostname: "WWW.example.com",
-          organization: "Example Org",
-        },
-      ],
-    });
-    const host = observations[0];
-    if (host?.kind !== "host") throw new Error("expected a host observation");
-    expect(host.hostnames).toEqual(["www.example.com"]);
-    expect(host.org).toBe("Example Org");
-  });
-});
-
 describe("Censys", () => {
   it("normalizes hits into hosts with ASN prefixed", () => {
     const observations = normalizeCensys({
@@ -234,16 +202,23 @@ describe("cross-source merge — the point of normalizing at all", () => {
       subdomains: ["www"],
       data: [],
     });
-    const st = normalizeSecurityTrailsSubdomains(
-      { subdomains: ["www"] },
+    const certspotter = normalizeCertSpotter(
+      [
+        {
+          dns_names: ["www.example.com"],
+          not_before: null,
+          not_after: null,
+          issuer: null,
+        },
+      ],
       "example.com",
     );
 
     const merged = mergeObservations([
       ...crtsh.map((observation) => ({ sourceId: "crtsh", observation })),
       ...shodan.map((observation) => ({ sourceId: "shodan", observation })),
-      ...st.map((observation) => ({
-        sourceId: "securitytrails",
+      ...certspotter.map((observation) => ({
+        sourceId: "certspotter",
         observation,
       })),
     ]);
@@ -255,8 +230,8 @@ describe("cross-source merge — the point of normalizing at all", () => {
     );
     expect(www).toBeDefined();
     expect(www?.sourceIds.sort()).toEqual([
+      "certspotter",
       "crtsh",
-      "securitytrails",
       "shodan",
     ]);
   });

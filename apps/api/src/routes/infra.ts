@@ -103,7 +103,7 @@ export async function registerInfraRoutes(
     const outcome = await runSweep(adapters, body.subject, body.caseId, operatorOf(request));
 
     // One board, not four source-shaped silos. Attribution is a union, so a
-    // hostname seen by both crt.sh and SecurityTrails names both.
+    // hostname seen by both crt.sh and CertSpotter names both.
     const merged = mergeObservations(
       outcome.ran.flatMap(({ adapter, result }) =>
         (result.status === "ok" ? (result.data ?? []) : []).map(

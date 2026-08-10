@@ -130,6 +130,7 @@ function runnableAdapters(): Map<string, Runnable> {
 async function pooled<T>(
   tasks: readonly (() => Promise<T>)[],
   limit: number,
+  onSettled?: (value: T, index: number) => void,
 ): Promise<T[]> {
   const results = new Array<T>(tasks.length);
   let next = 0;
@@ -141,7 +142,11 @@ async function pooled<T>(
         const index = next++;
         const task = tasks[index];
         if (task === undefined) return;
-        results[index] = await task();
+        const value = await task();
+        results[index] = value;
+        // Fires as each source lands, which is what lets the streaming route
+        // report progress instead of going quiet for the whole run.
+        onSettled?.(value, index);
       }
     },
   );
@@ -150,9 +155,23 @@ async function pooled<T>(
   return results;
 }
 
-export async function registerRunRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/run", async (request) => {
-    const parsed = runRequestSchema.safeParse(request.body);
+interface RunPlan {
+  subject: Subject;
+  detection: Detection;
+  caseId: string;
+  considered: Source[];
+  tasks: (() => Promise<RunResultRow>)[];
+}
+
+/**
+ * Works out what to run, without running it.
+ *
+ * Shared by `/run` and `/run/stream` so the two cannot drift — a source that
+ * appeared in one and not the other would be an investigation silently missing
+ * a result depending on which endpoint the page happened to call.
+ */
+function planRun(body: unknown, operator: string): RunPlan {
+  const parsed = runRequestSchema.safeParse(body);
     if (!parsed.success) {
       throw badRequest(parsed.error.issues[0]?.message ?? "Invalid run request.");
     }
@@ -167,9 +186,7 @@ export async function registerRunRoutes(app: FastifyInstance): Promise<void> {
       value: detection.normalized,
     };
 
-    const operator = operatorOf(request);
     const adapters = runnableAdapters();
-    const startedAt = new Date();
 
     const considered = SOURCES.filter((source) => {
       if (sourceIds !== undefined && !sourceIds.includes(source.id)) {
@@ -276,29 +293,97 @@ export async function registerRunRoutes(app: FastifyInstance): Promise<void> {
       }
     });
 
-    const results = await pooled(tasks, CONCURRENCY);
+  return { subject, detection, caseId, considered, tasks };
+}
+
+/** Rolls per-source rows up into the summary both endpoints return. */
+function summarize(results: RunResultRow[], considered: number) {
+  return {
+    sourcesConsidered: considered,
+    ran: results.filter((r) => r.status === "ok" || r.status === "empty").length,
+    withResults: results.filter((r) => r.status === "ok").length,
+    observations: results.reduce((total, r) => total + r.count, 0),
+    inert: results.filter((r) => r.status === "inert").length,
+    blocked: results.filter((r) => r.status === "blocked").length,
+    errored: results.filter((r) => r.status === "error").length,
+  };
+}
+
+export async function registerRunRoutes(app: FastifyInstance): Promise<void> {
+  app.post("/run", async (request) => {
+    const plan = planRun(request.body, operatorOf(request));
+    const startedAt = new Date();
+    const results = await pooled(plan.tasks, CONCURRENCY);
     const finishedAt = new Date();
 
     const response: RunResponse = {
-      subject,
-      detection,
-      caseId,
+      subject: plan.subject,
+      detection: plan.detection,
+      caseId: plan.caseId,
       startedAt: startedAt.toISOString(),
       finishedAt: finishedAt.toISOString(),
       results,
-      summary: {
-        sourcesConsidered: considered.length,
-        ran: results.filter((r) => r.status === "ok" || r.status === "empty")
-          .length,
-        withResults: results.filter((r) => r.status === "ok").length,
-        observations: results.reduce((total, r) => total + r.count, 0),
-        inert: results.filter((r) => r.status === "inert").length,
-        blocked: results.filter((r) => r.status === "blocked").length,
-        errored: results.filter((r) => r.status === "error").length,
-      },
+      summary: summarize(results, plan.considered.length),
     };
 
     return response;
+  });
+
+  /**
+   * The same run, reported as it happens.
+   *
+   * A full run takes the better part of a minute — theHarvester alone queries
+   * several backends — and the page spent all of it blank. Newline-delimited
+   * JSON rather than a single response means the surface can name every source
+   * up front, fill a real progress bar as each one lands, and show findings
+   * while the slow sources are still working.
+   *
+   * NDJSON rather than server-sent events: this is one response read once, not
+   * a subscription, and SSE would add reconnect semantics that would silently
+   * re-run an investigation.
+   */
+  app.post("/run/stream", async (request, reply) => {
+    const plan = planRun(request.body, operatorOf(request));
+    const startedAt = new Date();
+
+    reply.raw.writeHead(200, {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "cache-control": "no-store",
+      // Without this a proxy may hold the whole body, which would defeat the
+      // entire point of streaming it.
+      "x-accel-buffering": "no",
+    });
+
+    const send = (event: unknown): void => {
+      reply.raw.write(`${JSON.stringify(event)}\n`);
+    };
+
+    send({
+      type: "start",
+      subject: plan.subject,
+      detection: plan.detection,
+      caseId: plan.caseId,
+      startedAt: startedAt.toISOString(),
+      sources: plan.considered.map((source) => ({
+        sourceId: source.id,
+        name: source.name,
+        tier: source.tier,
+        requiresScope: source.requiresScope,
+      })),
+    });
+
+    const results = await pooled(plan.tasks, CONCURRENCY, (row) => {
+      send({ type: "result", row });
+    });
+
+    send({
+      type: "done",
+      finishedAt: new Date().toISOString(),
+      summary: summarize(results, plan.considered.length),
+    });
+
+    reply.raw.end();
+    return reply;
   });
 
   /** Detection on its own, so the surface can show the guess before running. */

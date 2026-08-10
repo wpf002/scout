@@ -196,6 +196,107 @@ export interface RunResponse {
   };
 }
 
+/** A source named at the start of a stream, before it has run. */
+export interface PendingSource {
+  sourceId: string;
+  name: string;
+  tier: string;
+  requiresScope: boolean;
+}
+
+export type RunEvent =
+  | {
+      type: "start";
+      subject: { kind: SubjectKind; value: string };
+      detection: Detection;
+      caseId: string;
+      startedAt: string;
+      sources: PendingSource[];
+    }
+  | { type: "result"; row: RunResultRow }
+  | {
+      type: "done";
+      finishedAt: string;
+      summary: RunResponse["summary"];
+    };
+
+/**
+ * Runs a search, reporting each source as it finishes.
+ *
+ * Reads newline-delimited JSON off the response body rather than awaiting the
+ * whole thing, so the page can show progress and partial findings during a run
+ * that takes the better part of a minute.
+ *
+ * No timeout here, unlike `request`: a full run legitimately outlives the
+ * 30-second budget a single call gets, and the stream itself is the evidence
+ * that it is still working.
+ */
+export async function runStream(
+  indicator: string,
+  caseId: string,
+  kind: SubjectKind | undefined,
+  onEvent: (event: RunEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const token = getOperatorToken();
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (token !== null) headers.authorization = `Bearer ${token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(`${BASE}/run/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(
+        kind === undefined
+          ? { indicator, caseId }
+          : { indicator, caseId, kind },
+      ),
+      cache: "no-store",
+      ...(signal === undefined ? {} : { signal }),
+    });
+  } catch {
+    throw new ApiError(0, "unreachable", "The API is unavailable.");
+  }
+
+  if (!response.ok || response.body === null) {
+    throw new ApiError(
+      response.status,
+      "run-failed",
+      `The search could not be started (${response.status}).`,
+    );
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // A chunk boundary can land mid-line, so only whole lines are parsed and
+    // the remainder is carried forward.
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) continue;
+      try {
+        onEvent(JSON.parse(trimmed) as RunEvent);
+      } catch {
+        // A malformed line is skipped rather than aborting a run that is
+        // otherwise delivering results.
+      }
+    }
+  }
+}
+
 export const api = {
   detect: (indicator: string) =>
     request<{ detection: Detection; applicableSources: number }>(

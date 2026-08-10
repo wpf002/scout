@@ -90,8 +90,15 @@ export function normalizeCrtsh(
  * as wrong the second time.
  */
 const RETRY_STATUSES = new Set([429, 502, 503, 504]);
-const ATTEMPTS = 3;
-const BACKOFF_MS = 700;
+
+/**
+ * crt.sh is both the highest-yield source here and the least reliable — 706
+ * observations for a domain where CertSpotter, covering the same CT logs,
+ * returns 17. Three attempts was not enough: a working window is often the
+ * fourth or fifth request. Given the payoff, it is worth waiting for.
+ */
+const ATTEMPTS = 6;
+const BACKOFF_MS = 900;
 
 async function fetchWithRetry(url: string): Promise<string> {
   let last = "";

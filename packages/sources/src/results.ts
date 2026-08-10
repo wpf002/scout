@@ -342,7 +342,7 @@ export function dedupeEntities(
 /* ── infrastructure tier ─────────────────────────────────────────────────
  *
  * Every infra source normalizes into one of these three shapes, so Shodan,
- * Censys, SecurityTrails and crt.sh all feed a single board instead of four
+ * Censys, CertSpotter and crt.sh all feed a single board instead of four
  * source-shaped silos. Adding an infra source means writing a normalizer, not
  * a new view.
  */
@@ -537,7 +537,7 @@ function mergePair(
 /**
  * Merges observations from several sources into one deduped list.
  *
- * Attribution is a union, never a winner: if crt.sh and SecurityTrails both
+ * Attribution is a union, never a winner: if crt.sh and CertSpotter both
  * report `admin.example.com`, the result names both. Dropping one would lose
  * provenance, and provenance is not optional (locked invariant 5).
  *

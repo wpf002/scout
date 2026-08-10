@@ -515,52 +515,6 @@ a:hover {
   cursor: default;
 }
 
-/* ── Embedded source viewer ───────────────────────────────────────────── */
-
-.viewer {
-  border-bottom: 1px solid var(--border);
-}
-
-.viewer-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 32px;
-  padding: 0 10px;
-  background: var(--bg-inset);
-  border-bottom: 1px solid var(--border);
-}
-
-.viewer-head h3 {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-dim);
-}
-
-.viewer-head a {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.viewer iframe {
-  display: block;
-  width: 100%;
-  height: 460px;
-  border: none;
-  background: #fff;
-}
-
-.viewer-note {
-  margin: 0;
-  padding: 6px 10px;
-  font-size: 11px;
-  color: var(--text-faint);
-}
-
 /* ── Row extras ───────────────────────────────────────────────────────── */
 
 .times {
@@ -590,4 +544,75 @@ a:hover {
 .cell-link:hover,
 .s-open:hover {
   border-bottom-color: var(--text-dim);
+}
+
+/* ── Search progress ──────────────────────────────────────────────────── */
+
+/*
+ * Real progress, not a spinner. The run streams one event per source, so the
+ * bar tracks sources settled against sources planned — a spinner would be
+ * indistinguishable from a hang on a run that legitimately takes a minute.
+ */
+.progress {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.progress-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.progress-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.progress-track {
+  height: 3px;
+  overflow: hidden;
+  background: var(--bg-inset);
+  border-radius: 2px;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--text);
+  border-radius: 2px;
+  transition: width 0.25s ease;
+}
+
+/* Before the source list arrives there is nothing to measure against. */
+.progress-fill.indeterminate {
+  width: 30%;
+  animation: progress-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes progress-sweep {
+  0% { margin-left: -30%; }
+  100% { margin-left: 100%; }
+}
+
+.progress-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* A source still working, shown before it has reported. */
+.rail li.pending .s-name {
+  color: var(--text-faint);
 }

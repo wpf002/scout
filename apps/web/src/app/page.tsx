@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   api,
   ApiError,
+  runStream,
   type Detection,
   type RunResponse,
   type RunResultRow,
@@ -77,13 +78,13 @@ export default function Page() {
   const [detection, setDetection] = useState<Detection | null>(null);
   const [result, setResult] = useState<RunResponse | null>(null);
   const [running, setRunning] = useState(false);
+  /** Sources named at the start, so the rail is complete before any finish. */
+  const [expected, setExpected] = useState<number>(0);
+  const [live, setLive] = useState<RunResultRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [pages, setPages] = useState<Record<string, number>>({});
-  const [viewer, setViewer] = useState<{ name: string; url: string } | null>(
-    null,
-  );
 
   useEffect(() => {
     api
@@ -116,28 +117,76 @@ export default function Page() {
 
     setRunning(true);
     setError(null);
-    setViewer(null);
+    setResult(null);
+    setLive([]);
+    setExpected(0);
+    setPages({});
+    setOpen({});
+
+    // Rows are collected here as well as in state: React batches updates, and
+    // the final summary has to be assembled from every row, not from whatever
+    // the last render happened to see.
+    const collected: RunResultRow[] = [];
+
     try {
-      const response = await api.run(
-        term,
-        caseId,
-        kind === "" ? undefined : kind,
-      );
-      setResult(response);
-      setPages({});
-      setOpen({});
+      await runStream(term, caseId, kind === "" ? undefined : kind, (event) => {
+        if (event.type === "start") {
+          setExpected(event.sources.length);
+          setResult({
+            subject: event.subject,
+            detection: event.detection,
+            caseId: event.caseId,
+            startedAt: event.startedAt,
+            finishedAt: "",
+            results: [],
+            summary: {
+              sourcesConsidered: event.sources.length,
+              ran: 0,
+              withResults: 0,
+              observations: 0,
+              inert: 0,
+              blocked: 0,
+              errored: 0,
+            },
+          });
+          return;
+        }
+
+        if (event.type === "result") {
+          collected.push(event.row);
+          setLive([...collected]);
+          return;
+        }
+
+        setResult((current) =>
+          current === null
+            ? current
+            : {
+                ...current,
+                finishedAt: event.finishedAt,
+                results: [...collected],
+                summary: event.summary,
+              },
+        );
+      });
     } catch (caught) {
       setError(
-        caught instanceof ApiError ? caught.message : "The run did not complete.",
+        caught instanceof ApiError ? caught.message : "The search did not complete.",
       );
     } finally {
       setRunning(false);
     }
   }, [indicator, caseId, kind, running]);
 
+  /** During a run the live rows are the truth; afterwards the final set is. */
+  const resultRows = useMemo<RunResultRow[]>(
+    () => (running ? live : (result?.results.length ? result.results : live)),
+    [running, live, result],
+  );
+
   const rows = useMemo<ResultRow[]>(
-    () => (result === null ? [] : flattenObservations(result.results)),
-    [result],
+    () => flattenObservations(resultRows),
+    [resultRows],
   );
 
   const visibleRows = useMemo(() => {
@@ -164,13 +213,13 @@ export default function Page() {
   }, [visibleRows]);
 
   const sourceRows = useMemo(() => {
-    if (result === null) return [];
-    return [...result.results].sort(
+    if (resultRows.length === 0) return [];
+    return [...resultRows].sort(
       (a, b) =>
         STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
         a.name.localeCompare(b.name),
     );
-  }, [result]);
+  }, [resultRows]);
 
   const isOpen = (type: string) => open[type] ?? OPEN_BY_DEFAULT.has(type);
 
@@ -256,10 +305,39 @@ export default function Page() {
 
       {error !== null ? <p className="error">{error}</p> : null}
 
+      {running || (result !== null && result.finishedAt === "") ? (
+        <div className="progress" role="status" aria-live="polite">
+          <div className="progress-head">
+            <span className="progress-label">
+              Searching {expected > 0 ? `${expected} sources` : "sources"}
+            </span>
+            <span className="progress-count">
+              {resultRows.length}
+              {expected > 0 ? ` / ${expected}` : ""}
+            </span>
+          </div>
+          <div className="progress-track">
+            <div
+              className={`progress-fill${expected === 0 ? " indeterminate" : ""}`}
+              style={
+                expected === 0
+                  ? undefined
+                  : {
+                      width: `${Math.min(100, Math.round((resultRows.length / expected) * 100))}%`,
+                    }
+              }
+            />
+          </div>
+          {rows.length > 0 ? (
+            <p className="progress-note">
+              {rows.length} results so far. Slow sources are still working.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {result === null ? (
-        <p className="empty">
-          {running ? "Searching every source." : "Enter something to search."}
-        </p>
+        <p className="empty">Enter something to search.</p>
       ) : (
         <div className="split">
           <aside className="rail">
@@ -278,14 +356,17 @@ export default function Page() {
                   {row.status === "ok" ? (
                     <span className="s-count">{row.count}</span>
                   ) : row.status === "deeplink" && row.url !== null ? (
-                    <button
+                    // Opened in a new tab, never embedded. Ahmia, Torch and
+                    // ViewDNS all refuse to be framed, so an in-app panel was
+                    // guaranteed to render as a blank white box.
+                    <a
                       className="s-open"
-                      onClick={() =>
-                        setViewer({ name: row.name, url: row.url as string })
-                      }
+                      href={row.url}
+                      target="_blank"
+                      rel="noreferrer"
                     >
                       Open
-                    </button>
+                    </a>
                   ) : (
                     <span className="s-status" title={row.message ?? undefined}>
                       {statusLabel(row)}
@@ -308,30 +389,6 @@ export default function Page() {
               />
               <span className="count">{visibleRows.length}</span>
             </div>
-
-            {viewer !== null ? (
-              <section className="viewer">
-                <div className="viewer-head">
-                  <h3>{viewer.name}</h3>
-                  <a href={viewer.url} target="_blank" rel="noreferrer">
-                    Open In New Tab
-                  </a>
-                  <button className="link" onClick={() => setViewer(null)}>
-                    Close
-                  </button>
-                </div>
-                <iframe
-                  src={viewer.url}
-                  title={viewer.name}
-                  referrerPolicy="no-referrer"
-                  sandbox="allow-scripts allow-same-origin allow-forms"
-                />
-                <p className="viewer-note">
-                  Some sites refuse to be embedded. Use Open In New Tab if this
-                  stays blank.
-                </p>
-              </section>
-            ) : null}
 
             {rows.length === 0 ? (
               <p className="empty">Nothing found for {result.subject.value}.</p>
@@ -378,17 +435,14 @@ export default function Page() {
                                   {row.url === null ? (
                                     row.value
                                   ) : (
-                                    <button
+                                    <a
                                       className="cell-link"
-                                      onClick={() =>
-                                        setViewer({
-                                          name: row.value,
-                                          url: row.url as string,
-                                        })
-                                      }
+                                      href={row.url}
+                                      target="_blank"
+                                      rel="noreferrer"
                                     >
                                       {row.value}
-                                    </button>
+                                    </a>
                                   )}
                                 </td>
                                 <td className="d">{row.detail}</td>

@@ -3,10 +3,6 @@ import { crtshSource, fetchCrtsh } from "./crtsh.js";
 import { fetchShodan, shodanSource } from "./shodan.js";
 import { censysSource, fetchCensys } from "./censys.js";
 import {
-  fetchSecurityTrails,
-  securityTrailsSource,
-} from "./securitytrails.js";
-import {
   fetchTheHarvester,
   theHarvesterSource,
 } from "../cli/theharvester.js";
@@ -40,7 +36,6 @@ export interface InfraAdapter {
 export const INFRA_ADAPTERS: readonly InfraAdapter[] = Object.freeze([
   { source: crtshSource, run: fetchCrtsh },
   { source: shodanSource, run: fetchShodan },
-  { source: securityTrailsSource, run: fetchSecurityTrails },
   { source: censysSource, run: fetchCensys },
   { source: theHarvesterSource, run: fetchTheHarvester },
   { source: urlscanSource, run: fetchUrlscan },

@@ -114,17 +114,6 @@ export const SOURCES: readonly Source[] = Object.freeze([
     keyEnv: "CENSYS_API_KEY",
   },
   {
-    id: "securitytrails",
-    name: "SecurityTrails",
-    tier: "infra",
-    mode: "api",
-    requiresScope: false,
-    accepts: ["domain", "ip"],
-    description: "Historical DNS, subdomain enumeration and WHOIS history.",
-    homepage: "https://securitytrails.com",
-    keyEnv: "SECURITYTRAILS_API_KEY",
-  },
-  {
     id: "theharvester",
     name: "theHarvester",
     tier: "infra",
