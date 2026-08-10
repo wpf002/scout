@@ -909,3 +909,51 @@ a:hover {
   stroke-width: 2.5px;
   stroke-linejoin: round;
 }
+
+/* ── What changed ─────────────────────────────────────────────────────── */
+
+/*
+ * The headline of a repeat search. A list of everything found is the same list
+ * every week; what appeared and what vanished is the finding.
+ */
+.changed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.changed-head {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.changed .added {
+  font-family: var(--mono);
+  color: var(--ok);
+}
+
+.changed .removed {
+  font-family: var(--mono);
+  color: var(--deny);
+}
+
+.changed-list {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}

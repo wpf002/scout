@@ -7,6 +7,7 @@ import {
   runStream,
   type Detection,
   type RunResponse,
+  type RunDiff,
   type RunResultRow,
 } from "@/lib/api";
 import type { CaseRecord, SubjectKind } from "@/lib/types";
@@ -88,6 +89,7 @@ export default function Page() {
   const [pages, setPages] = useState<Record<string, number>>({});
   const [selected, setSelected] = useState<ResultRow | null>(null);
   const [view, setView] = useState<"table" | "graph">("table");
+  const [diff, setDiff] = useState<RunDiff | null>(null);
 
   useEffect(() => {
     api
@@ -126,6 +128,7 @@ export default function Page() {
     setPages({});
     setOpen({});
     setSelected(null);
+    setDiff(null);
 
     // Rows are collected here as well as in state: React batches updates, and
     // the final summary has to be assembled from every row, not from whatever
@@ -172,6 +175,13 @@ export default function Page() {
                 summary: event.summary,
               },
         );
+
+        // Asked only once the run has been written, so the comparison is
+        // against this search rather than the one before it.
+        api
+          .diff(caseId, term)
+          .then(setDiff)
+          .catch(() => setDiff(null));
       });
     } catch (caught) {
       setError(
@@ -389,6 +399,23 @@ export default function Page() {
               {rows.length} results so far. Slow sources are still working.
             </p>
           ) : null}
+        </div>
+      ) : null}
+
+      {diff !== null && diff.comparable &&
+      (diff.added.count > 0 || diff.removed.count > 0) ? (
+        <div className="changed">
+          <span className="changed-head">Since Last Search</span>
+          {diff.added.count > 0 ? (
+            <span className="added">+{diff.added.count} new</span>
+          ) : null}
+          {diff.removed.count > 0 ? (
+            <span className="removed">−{diff.removed.count} gone</span>
+          ) : null}
+          <span className="changed-list">
+            {[...diff.added.values.slice(0, 6)].join(", ")}
+            {diff.added.count > 6 ? " …" : ""}
+          </span>
         </div>
       ) : null}
 

@@ -297,7 +297,33 @@ export async function runStream(
   }
 }
 
+export interface RunHistory {
+  count: number;
+  runs: { observedAt: string; term: string; kind: string; sources: number }[];
+}
+
+export type RunDiff =
+  | { comparable: false; runs: number; message: string }
+  | {
+      comparable: true;
+      latest: string;
+      previous: string;
+      added: { count: number; values: string[] };
+      removed: { count: number; values: string[] };
+      unchanged: number;
+    };
+
 export const api = {
+  history: (caseId: string, term: string) =>
+    request<RunHistory>(
+      `/history?caseId=${encodeURIComponent(caseId)}&term=${encodeURIComponent(term)}`,
+    ),
+
+  diff: (caseId: string, term: string) =>
+    request<RunDiff>(
+      `/history/diff?caseId=${encodeURIComponent(caseId)}&term=${encodeURIComponent(term)}`,
+    ),
+
   detect: (indicator: string) =>
     request<{ detection: Detection; applicableSources: number }>(
       `/run/detect?indicator=${encodeURIComponent(indicator)}`,

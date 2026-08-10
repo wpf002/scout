@@ -16,6 +16,7 @@ import { DATASET_ADAPTERS } from "../adapters/datasets/index.js";
 import { SCOPED_ADAPTERS } from "../adapters/scoped/index.js";
 import { operatorOf } from "../auth.js";
 import { badRequest } from "../errors.js";
+import { persistRun } from "./history.js";
 
 /**
  * One indicator in, every applicable source run, one result set out.
@@ -316,6 +317,15 @@ export async function registerRunRoutes(app: FastifyInstance): Promise<void> {
     const results = await pooled(plan.tasks, CONCURRENCY);
     const finishedAt = new Date();
 
+    // Kept so the next run can be compared against this one. A failure to
+    // persist must not lose the results the operator is waiting for.
+    await persistRun(
+      plan.caseId,
+      plan.subject,
+      results,
+      operatorOf(request),
+    ).catch(() => 0);
+
     const response: RunResponse = {
       subject: plan.subject,
       detection: plan.detection,
@@ -375,6 +385,13 @@ export async function registerRunRoutes(app: FastifyInstance): Promise<void> {
     const results = await pooled(plan.tasks, CONCURRENCY, (row) => {
       send({ type: "result", row });
     });
+
+    await persistRun(
+      plan.caseId,
+      plan.subject,
+      results,
+      operatorOf(request),
+    ).catch(() => 0);
 
     send({
       type: "done",
