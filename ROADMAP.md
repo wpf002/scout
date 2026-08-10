@@ -67,7 +67,7 @@ was HTTP-and-a-key only, so there was no way to reach them.
 **Done when:** the three CLI sources appear in the registry, report `inert`
 cleanly on a machine that lacks them, and the parsers are covered. ✅
 
-### Phase B — Run Everything
+### Phase B — Run Everything ✅ Shipped
 
 The endpoint behind the single box.
 
@@ -81,7 +81,12 @@ The endpoint behind the single box.
 
 **Done when:** one call against a domain returns normalized results from every
 keyed and installed source, plus an honest account of everything that did not
-run.
+run. ✅
+
+`POST /run` and `GET /run/detect` in `apps/api/src/routes/run.ts`, detection in
+`packages/sources/src/detect.ts`. A scope denial comes back as a `blocked` row
+with its reason and the run continues — a 403 for the whole request would throw
+away every other source's results.
 
 ### Phase C — The Single Surface
 
