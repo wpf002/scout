@@ -418,8 +418,49 @@ export interface DnsObservation {
   value: string;
 }
 
+/**
+ * A recorded page load — what was actually being served, and when.
+ *
+ * Distinct from a host: a host is an address with ports open, while this is a
+ * scan of a specific URL with a title, a server banner, a certificate issuer
+ * and a screenshot. urlscan is the only source here that answers "what does
+ * this look like", and reducing that to an IP address threw away the answer.
+ */
+export interface WebScanObservation {
+  kind: "web-scan";
+  url: string;
+  title: string | null;
+  server: string | null;
+  ip: string | null;
+  tlsIssuer: string | null;
+  /** Age of the apex domain in days, where the source computes it. */
+  domainAgeDays: number | null;
+  scannedAt: string | null;
+  screenshot: string | null;
+  reportUrl: string | null;
+}
+
+/**
+ * A threat-intelligence association.
+ *
+ * OTX groups indicators into "pulses" — a named report by an author, with
+ * tags and a date. A domain appearing in one is a materially different fact
+ * from a domain merely resolving, and it belongs at the top of the results
+ * rather than nowhere.
+ */
+export interface ThreatObservation {
+  kind: "threat-pulse";
+  name: string;
+  author: string | null;
+  created: string | null;
+  tags: string[];
+  reportUrl: string | null;
+}
+
 export type InfraObservation =
   | HostObservation
+  | WebScanObservation
+  | ThreatObservation
   | SubdomainObservation
   | RegistrationObservation
   | DnsObservation
@@ -455,6 +496,10 @@ export function observationKey(observation: InfraObservation): string {
       // Name, type and value together — two sources reporting the same MX are
       // one record, while two different MX records are two.
       return `dns:${observation.name.toLowerCase()}:${observation.type}:${observation.value.toLowerCase()}`;
+    case "web-scan":
+      return `scan:${observation.url.toLowerCase()}:${observation.scannedAt ?? ""}`;
+    case "threat-pulse":
+      return `pulse:${observation.name.toLowerCase()}`;
   }
 }
 
@@ -513,6 +558,10 @@ function canonicalize(observation: InfraObservation): InfraObservation {
         type: observation.type.trim().toUpperCase(),
         value: observation.value.trim(),
       };
+    case "web-scan":
+      return { ...observation, url: observation.url.trim() };
+    case "threat-pulse":
+      return { ...observation, tags: unionSorted(observation.tags, []) };
     case "subdomain":
       return {
         ...observation,

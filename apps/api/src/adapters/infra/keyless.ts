@@ -311,27 +311,94 @@ export function normalizeOtx(
   return observations;
 }
 
+/**
+ * OTX's `general` section, which carries the pulses an indicator appears in.
+ *
+ * A pulse is a named threat report by an author, with tags and a date. A
+ * domain appearing in one is a materially different fact from a domain merely
+ * resolving, and passive DNS alone never surfaces it — so this is a second
+ * call rather than an optional extra.
+ */
+const otxGeneralSchema = z.object({
+  pulse_info: z
+    .object({
+      count: z.number().int().default(0),
+      pulses: z
+        .array(
+          z.object({
+            id: z.string().optional(),
+            name: z.string().default(""),
+            author_name: z.string().nullable().default(null),
+            created: z.string().nullable().default(null),
+            tags: z.array(z.string()).default([]),
+          }),
+        )
+        .default([]),
+    })
+    .default({ count: 0, pulses: [] }),
+});
+
+export function normalizeOtxPulses(
+  payload: z.infer<typeof otxGeneralSchema>,
+): InfraObservation[] {
+  return payload.pulse_info.pulses
+    .filter((pulse) => pulse.name.trim().length > 0)
+    .map((pulse) => ({
+      kind: "threat-pulse" as const,
+      name: pulse.name,
+      author: pulse.author_name,
+      created: pulse.created,
+      tags: pulse.tags,
+      reportUrl:
+        pulse.id === undefined
+          ? null
+          : `https://otx.alienvault.com/pulse/${pulse.id}`,
+    }));
+}
+
 export async function fetchOtx(
   subject: Subject,
 ): Promise<InfraObservation[]> {
   const apex = subject.value.trim().toLowerCase();
   const key = process.env["OTX_API_KEY"]?.trim() ?? "";
+  const headers = {
+    accept: "application/json",
+    "user-agent": UA,
+    ...(key.length > 0 ? { "X-OTX-API-KEY": key } : {}),
+  };
 
-  const response = await fetch(
-    `https://otx.alienvault.com/api/v1/indicators/domain/${encodeURIComponent(apex)}/passive_dns`,
-    {
-      headers: {
-        accept: "application/json",
-        "user-agent": UA,
-        ...(key.length > 0 ? { "X-OTX-API-KEY": key } : {}),
-      },
+  const base = `https://otx.alienvault.com/api/v1/indicators/domain/${encodeURIComponent(apex)}`;
+
+  const [dns, general] = await Promise.allSettled([
+    fetch(`${base}/passive_dns`, {
+      headers,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    },
-  );
+    }),
+    fetch(`${base}/general`, {
+      headers,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    }),
+  ]);
 
-  if (!response.ok) {
-    throw new Error(`AlienVault OTX responded ${response.status}`);
+  const observations: InfraObservation[] = [];
+  let failure: string | null = null;
+
+  if (dns.status === "fulfilled" && dns.value.ok) {
+    observations.push(
+      ...normalizeOtx(otxSchema.parse(await dns.value.json()), apex),
+    );
+  } else if (dns.status === "fulfilled") {
+    failure = `AlienVault OTX responded ${dns.value.status}`;
   }
 
-  return normalizeOtx(otxSchema.parse(await response.json()), apex);
+  // Threat associations are worth having even when passive DNS is empty, and
+  // vice versa — neither half is allowed to sink the other.
+  if (general.status === "fulfilled" && general.value.ok) {
+    observations.push(
+      ...normalizeOtxPulses(otxGeneralSchema.parse(await general.value.json())),
+    );
+  }
+
+  if (observations.length === 0 && failure !== null) throw new Error(failure);
+  return observations;
 }

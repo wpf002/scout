@@ -599,6 +599,30 @@ export default function Page() {
                   ) : null}
                 </div>
 
+                {/*
+                  A screenshot is the fastest way to know what a host actually
+                  is. Rendered inline rather than linked, because the point is
+                  to see it without leaving the investigation.
+                */}
+                {selected.evidence
+                  .map((item) => item.observation as { screenshot?: unknown })
+                  .filter(
+                    (o) =>
+                      o !== null &&
+                      typeof o === "object" &&
+                      typeof o.screenshot === "string",
+                  )
+                  .slice(0, 1)
+                  .map((o) => (
+                    <img
+                      key={String(o.screenshot)}
+                      className="detail-shot"
+                      src={String(o.screenshot)}
+                      alt="Page screenshot"
+                      loading="lazy"
+                    />
+                  ))}
+
                 <h3>Reported By</h3>
                 <ul className="detail-sources">
                   {selected.sources.map((source) => (

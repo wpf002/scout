@@ -28,6 +28,11 @@ const searchSchema = z.object({
             asnname: z.string().nullable().default(null),
             country: z.string().nullable().default(null),
             server: z.string().nullable().default(null),
+            title: z.string().nullable().default(null),
+            url: z.string().nullable().default(null),
+            tlsIssuer: z.string().nullable().default(null),
+            ptr: z.string().nullable().default(null),
+            apexDomainAgeDays: z.number().nullable().default(null),
           })
           .default({}),
         task: z
@@ -36,6 +41,8 @@ const searchSchema = z.object({
             url: z.string().nullable().default(null),
           })
           .default({}),
+        screenshot: z.string().nullable().default(null),
+        result: z.string().nullable().default(null),
       }),
     )
     .default([]),
@@ -78,6 +85,24 @@ export function normalizeUrlscan(
       });
     }
 
+    // The scan itself — what was being served, not just where. This is the
+    // only source here that answers that, and it was being reduced to an IP.
+    const scannedUrl = record.page.url ?? record.task.url;
+    if (scannedUrl !== null && scannedUrl.length > 0) {
+      observations.push({
+        kind: "web-scan",
+        url: scannedUrl,
+        title: record.page.title,
+        server: record.page.server,
+        ip: record.page.ip,
+        tlsIssuer: record.page.tlsIssuer,
+        domainAgeDays: record.page.apexDomainAgeDays,
+        scannedAt: record.task.time,
+        screenshot: record.screenshot,
+        reportUrl: record.result,
+      });
+    }
+
     const ip = record.page.ip?.trim() ?? "";
     if (ip.length > 0 && !seenIps.has(ip)) {
       seenIps.add(ip);
@@ -90,6 +115,9 @@ export function normalizeUrlscan(
         asn: record.page.asn,
         country: record.page.country,
         lastSeen: record.task.time,
+        ...(record.page.server === null
+          ? {}
+          : { software: [record.page.server] }),
       });
     }
   }

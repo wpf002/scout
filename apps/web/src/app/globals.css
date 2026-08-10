@@ -773,3 +773,11 @@ a:hover {
 .group tr.picked td {
   background: rgba(255, 255, 255, 0.05);
 }
+
+.detail-shot {
+  display: block;
+  width: 100%;
+  margin: 12px 0 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}

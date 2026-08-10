@@ -45,6 +45,7 @@ const GROUP_ORDER = [
   "Hosts",
   "Subdomains",
   "Certificates",
+  "Web Scans",
   "Profiles",
   "Breaches",
   "Credentials",
@@ -226,6 +227,42 @@ function draftFor(
         firstSeen: str(observation.notBefore),
         lastSeen: str(observation.notAfter),
         url: null,
+      };
+    }
+
+    case "threat-pulse": {
+      const name = str(observation.name);
+      if (name === null) return null;
+      return {
+        ...base,
+        type: "Threat Intel",
+        value: name,
+        detail: detailOf(
+          str(observation.author),
+          list(observation.tags).slice(0, 5).join(", ") || null,
+          day(str(observation.created)),
+        ),
+        url: str(observation.reportUrl),
+      };
+    }
+
+    case "web-scan": {
+      const url = str(observation.url);
+      if (url === null) return null;
+      const age = num(observation.domainAgeDays);
+      return {
+        ...base,
+        type: "Web Scans",
+        value: str(observation.title) ?? url,
+        detail: detailOf(
+          url === (str(observation.title) ?? url) ? null : url,
+          str(observation.server),
+          str(observation.tlsIssuer),
+          str(observation.ip),
+          age === null ? null : `domain ${age}d old`,
+        ),
+        lastSeen: str(observation.scannedAt),
+        url: str(observation.reportUrl) ?? url,
       };
     }
 
