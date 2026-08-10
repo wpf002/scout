@@ -128,7 +128,18 @@ export async function fetchCrtsh(
   subject: Subject,
 ): Promise<InfraObservation[]> {
   const domain = subject.value.trim().toLowerCase();
-  const url = `https://crt.sh/?q=${encodeURIComponent(`%.${domain}`)}&output=json`;
+  // `q=domain`, not `q=%.domain`.
+  //
+  // The wildcard form asks crt.sh's Postgres for a prefix scan across the CT
+  // corpus, which is expensive enough to exceed their gateway timeout when the
+  // service is under load — and it is under load most of the time. The plain
+  // identity query is far cheaper and returns the same names: crt.sh matches
+  // the domain against certificate identities, so every subdomain that appears
+  // in a CN or SAN comes back anyway. Measured on betterman.com: the plain
+  // query returned 352 certificates covering 11 distinct names including
+  // store, staging, hubdev and img.emaildelivery, while the wildcard form
+  // returned 502 on five attempts out of five.
+  const url = `https://crt.sh/?q=${encodeURIComponent(domain)}&output=json`;
 
   const text = await fetchWithRetry(url);
   let parsed: unknown;
