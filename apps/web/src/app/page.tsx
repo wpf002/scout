@@ -336,9 +336,7 @@ export default function Page() {
         </div>
       ) : null}
 
-      {result === null ? (
-        <p className="empty">Enter something to search.</p>
-      ) : (
+      {result === null ? null : (
         <div className="split">
           <aside className="rail">
             <div className="rail-head">
