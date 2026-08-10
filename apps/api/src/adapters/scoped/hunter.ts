@@ -87,6 +87,19 @@ export function normalizeHunterVerify(
   ];
 }
 
+/**
+ * Hunter caps results per plan, and asking for more than the plan allows is a
+ * 400 for the whole request rather than a truncated answer — so a hardcoded
+ * `limit=100` meant every lookup failed on a free plan while the same request
+ * without it succeeded. Omitted by default so the plan's own maximum applies;
+ * set HUNTER_RESULT_LIMIT to raise it on a plan that permits more.
+ */
+function resultLimit(): string {
+  const raw = process.env["HUNTER_RESULT_LIMIT"]?.trim() ?? "";
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? `&limit=${parsed}` : "";
+}
+
 export async function fetchHunter(
   subject: Subject,
 ): Promise<EmailPatternResult[]> {
@@ -102,7 +115,7 @@ export async function fetchHunter(
   const url =
     subject.kind === "email"
       ? `https://api.hunter.io/v2/email-verifier?email=${encodeURIComponent(value)}&api_key=${encodeURIComponent(key)}`
-      : `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(value)}&limit=100&api_key=${encodeURIComponent(key)}`;
+      : `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(value)}${resultLimit()}&api_key=${encodeURIComponent(key)}`;
 
   const response = await fetch(url, {
     headers: { accept: "application/json" },
