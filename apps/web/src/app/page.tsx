@@ -50,7 +50,7 @@ const STATUS_RANK: Record<RunResultRow["status"], number> = {
 
 const STATUS_LABEL: Record<RunResultRow["status"], string> = {
   ok: "Results",
-  empty: "Nothing Found",
+  empty: "No Results",
   inert: "Needs API Key",
   blocked: "Not Authorized",
   error: "Unavailable",
@@ -670,7 +670,7 @@ export default function Page() {
             </div>
 
             {rows.length === 0 ? (
-              <p className="empty">Nothing found for {result.subject.value}.</p>
+              <p className="empty">No results for {result.subject.value}.</p>
             ) : view === "graph" ? (
               <div className="graph">
                 <svg
