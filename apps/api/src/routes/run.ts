@@ -17,6 +17,7 @@ import { SCOPED_ADAPTERS } from "../adapters/scoped/index.js";
 import { operatorOf } from "../auth.js";
 import { badRequest } from "../errors.js";
 import { persistRun } from "./history.js";
+import { jsonSafe } from "@scout/db";
 
 /**
  * One indicator in, every applicable source run, one result set out.
@@ -156,6 +157,62 @@ async function pooled<T>(
   return results;
 }
 
+/**
+ * Mailbox providers whose domain says nothing about the person.
+ *
+ * An email implies a domain, and for a corporate address that domain is the
+ * most productive thing to search — it reaches nineteen sources where the
+ * address alone reaches four. For a free provider it reaches nineteen sources
+ * about Google, which is noise wearing the costume of a finding.
+ */
+const FREE_MAIL = new Set([
+  "gmail.com",
+  "googlemail.com",
+  "outlook.com",
+  "hotmail.com",
+  "live.com",
+  "msn.com",
+  "yahoo.com",
+  "ymail.com",
+  "aol.com",
+  "icloud.com",
+  "me.com",
+  "mac.com",
+  "proton.me",
+  "protonmail.com",
+  "pm.me",
+  "gmx.com",
+  "gmx.net",
+  "mail.com",
+  "zoho.com",
+  "yandex.com",
+  "yandex.ru",
+  "tutanota.com",
+  "tuta.io",
+  "fastmail.com",
+  "hushmail.com",
+  "qq.com",
+  "163.com",
+  "126.com",
+]);
+
+/**
+ * A second subject worth running alongside the one that was asked for.
+ *
+ * Only the email-to-domain case exists today. It is not a guess about the
+ * person — the results are about the organisation's infrastructure — so the
+ * rows carry the derived subject and the surface says which is which.
+ */
+export function derivedSubject(subject: Subject): Subject | null {
+  if (subject.kind !== "email") return null;
+
+  const domain = subject.value.split("@")[1]?.trim().toLowerCase();
+  if (domain === undefined || domain.length === 0) return null;
+  if (FREE_MAIL.has(domain)) return null;
+
+  return { kind: "domain", value: domain };
+}
+
 interface RunPlan {
   subject: Subject;
   detection: Detection;
@@ -196,7 +253,31 @@ function planRun(body: unknown, operator: string): RunPlan {
       return source.accepts.includes(subjectKind);
     });
 
-    const tasks = considered.map((source) => async (): Promise<RunResultRow> => {
+    // An email also gets its domain searched, where the domain is worth
+    // searching. Person-facing sources are excluded from the derived run: the
+    // operator asked about one address, and a domain is not permission to
+    // enumerate everyone at it.
+    const derived = derivedSubject(subject);
+    const derivedSources =
+      derived === null
+        ? []
+        : SOURCES.filter(
+            (source) =>
+              source.accepts.includes("domain") &&
+              !source.requiresScope &&
+              !considered.some((c) => c.id === source.id),
+          );
+
+    const plannedFor = new Map<string, Subject>();
+    for (const source of considered) plannedFor.set(source.id, subject);
+    for (const source of derivedSources) {
+      plannedFor.set(source.id, derived as Subject);
+    }
+
+    const all = [...considered, ...derivedSources];
+
+    const tasks = all.map((source) => async (): Promise<RunResultRow> => {
+      const subject = plannedFor.get(source.id) as Subject;
       const base = {
         sourceId: source.id,
         name: source.name,
@@ -294,7 +375,7 @@ function planRun(body: unknown, operator: string): RunPlan {
       }
     });
 
-  return { subject, detection, caseId, considered, tasks };
+  return { subject, detection, caseId, considered: all, tasks };
 }
 
 /** Rolls per-source rows up into the summary both endpoints return. */
@@ -336,7 +417,11 @@ export async function registerRunRoutes(app: FastifyInstance): Promise<void> {
       summary: summarize(results, plan.considered.length),
     };
 
-    return response;
+    // BigInt everywhere it counts something — HIBP's breach counts are the
+    // worked example — and JSON has no integer wide enough. Without this the
+    // whole response dies serializing, so a source that succeeded reads on the
+    // page as "Unavailable".
+    return jsonSafe(response);
   });
 
   /**
@@ -365,7 +450,7 @@ export async function registerRunRoutes(app: FastifyInstance): Promise<void> {
     });
 
     const send = (event: unknown): void => {
-      reply.raw.write(`${JSON.stringify(event)}\n`);
+      reply.raw.write(`${JSON.stringify(jsonSafe(event))}\n`);
     };
 
     send({
