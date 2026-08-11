@@ -551,7 +551,7 @@ export default function Page() {
 
       {insights.length > 0 ? (
         <section className="insights">
-          <h2>What Stands Out</h2>
+          <h2>Findings</h2>
           <ul>
             {insights.map((insight) => (
               <li key={insight.id} className={`sev-${insight.severity}`}>
