@@ -50,7 +50,18 @@ export type RunStatus =
   | "blocked"
   | "error"
   | "deeplink"
-  | "no-adapter";
+  | "no-adapter"
+  /**
+   * The source cannot answer a question about this kind of thing.
+   *
+   * Shodan indexes hosts and has nothing to say about an email address; crt.sh
+   * knows certificates and nothing else. These were silently filtered out of
+   * the run, which contradicted this file's own rule that nothing is ever
+   * dropped — and left an operator looking at four sources with no way to tell
+   * whether the other twenty-two were broken, unconfigured, or simply not
+   * applicable. They are listed now, greyed, saying which.
+   */
+  | "not-applicable";
 
 export interface RunResultRow {
   sourceId: string;
@@ -246,12 +257,12 @@ function planRun(body: unknown, operator: string): RunPlan {
 
     const adapters = runnableAdapters();
 
-    const considered = SOURCES.filter((source) => {
-      if (sourceIds !== undefined && !sourceIds.includes(source.id)) {
-        return false;
-      }
-      return source.accepts.includes(subjectKind);
-    });
+    const inScope = SOURCES.filter(
+      (source) => sourceIds === undefined || sourceIds.includes(source.id),
+    );
+    const considered = inScope.filter((source) =>
+      source.accepts.includes(subjectKind),
+    );
 
     // An email also gets its domain searched, where the domain is worth
     // searching. Person-facing sources are excluded from the derived run: the
@@ -274,7 +285,19 @@ function planRun(body: unknown, operator: string): RunPlan {
       plannedFor.set(source.id, derived as Subject);
     }
 
-    const all = [...considered, ...derivedSources];
+    // Everything else is reported rather than hidden, so the roster is always
+    // the full roster and the reason is always visible.
+    const notApplicable = inScope.filter(
+      (source) =>
+        !considered.some((c) => c.id === source.id) &&
+        !derivedSources.some((d) => d.id === source.id),
+    );
+    for (const source of notApplicable) plannedFor.set(source.id, subject);
+
+    const all = [...considered, ...derivedSources, ...notApplicable];
+    const applicable = new Set(
+      [...considered, ...derivedSources].map((s) => s.id),
+    );
 
     const tasks = all.map((source) => async (): Promise<RunResultRow> => {
       const subject = plannedFor.get(source.id) as Subject;
@@ -289,6 +312,15 @@ function planRun(body: unknown, operator: string): RunPlan {
         url: null as string | null,
         durationMs: 0,
       };
+
+      if (!applicable.has(source.id)) {
+        return {
+          ...base,
+          status: "not-applicable",
+          reason: "kind-not-accepted",
+          message: `${source.name} answers questions about ${source.accepts.join(" or ")}, not ${subject.kind}.`,
+        };
+      }
 
       // A deeplink is never fetched. Scout formats a URL and the investigator's
       // own browser opens it — the subject never reaches a Scout-owned request
@@ -381,7 +413,11 @@ function planRun(body: unknown, operator: string): RunPlan {
 /** Rolls per-source rows up into the summary both endpoints return. */
 function summarize(results: RunResultRow[], considered: number) {
   return {
-    sourcesConsidered: considered,
+    // Counts the sources that could answer. The not-applicable rows are shown
+    // for completeness, not counted as coverage the run failed to achieve.
+    sourcesConsidered:
+      considered -
+      results.filter((r) => r.status === "not-applicable").length,
     ran: results.filter((r) => r.status === "ok" || r.status === "empty").length,
     withResults: results.filter((r) => r.status === "ok").length,
     observations: results.reduce((total, r) => total + r.count, 0),

@@ -269,6 +269,19 @@ export const SOURCES: readonly Source[] = Object.freeze([
     keyEnv: "HUNTER_API_KEY",
   },
   {
+    id: "gravatar",
+    name: "Gravatar",
+    tier: "people",
+    mode: "api",
+    // Person-facing: it answers a question about one individual's address.
+    requiresScope: true,
+    accepts: ["email"],
+    description:
+      "Public profile and linked accounts attached to an email address.",
+    homepage: "https://gravatar.com",
+    keyEnv: null,
+  },
+  {
     id: "whatsmyname",
     name: "WhatsMyName",
     tier: "people",

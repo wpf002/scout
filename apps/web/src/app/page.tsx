@@ -43,6 +43,9 @@ const STATUS_RANK: Record<RunResultRow["status"], number> = {
   deeplink: 4,
   inert: 5,
   "no-adapter": 6,
+  // Last, and dimmed. Listed so the roster is always complete, but a source
+  // that cannot answer this kind of question is not a gap in coverage.
+  "not-applicable": 7,
 };
 
 const STATUS_LABEL: Record<RunResultRow["status"], string> = {
@@ -53,6 +56,7 @@ const STATUS_LABEL: Record<RunResultRow["status"], string> = {
   error: "Unavailable",
   deeplink: "Open",
   "no-adapter": "Coming Soon",
+  "not-applicable": "Not For This Type",
 };
 
 /**

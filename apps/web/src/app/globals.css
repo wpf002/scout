@@ -1139,3 +1139,8 @@ a:hover {
 .watch-chip button:hover {
   color: var(--deny);
 }
+
+/* A source that cannot answer this kind of question — shown, not counted. */
+.rail li.s-not-applicable {
+  opacity: 0.42;
+}

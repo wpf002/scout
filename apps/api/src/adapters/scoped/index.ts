@@ -3,6 +3,7 @@ import { requiresScopeFor } from "@scout/sources";
 import { fetchHibp, hibpSource } from "../hibp.js";
 import { fetchHunter, hunterSource } from "./hunter.js";
 import { fetchWhatsMyName, whatsMyNameSource } from "./whatsmyname.js";
+import { fetchGravatar, gravatarSource } from "./gravatar.js";
 import {
   fetchMaigret,
   fetchSherlock,
@@ -34,6 +35,7 @@ export const SCOPED_ADAPTERS: readonly ScopedAdapter[] = Object.freeze([
   { source: whatsMyNameSource, run: fetchWhatsMyName },
   { source: sherlockSource, run: fetchSherlock },
   { source: maigretSource, run: fetchMaigret },
+  { source: gravatarSource, run: fetchGravatar },
 ]);
 
 const BY_ID = new Map(SCOPED_ADAPTERS.map((a) => [a.source.id, a]));

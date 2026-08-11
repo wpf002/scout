@@ -59,6 +59,7 @@ const REVIEWED_UNSCOPED_PERSON_SOURCES = ["opensanctions"];
 describe("invariant 1 — the scope gate is absolute", () => {
   it("pins the set of person-facing sources", () => {
     expect(scopedSources().map((s) => s.id).sort()).toEqual([
+      "gravatar",
       "hibp",
       "hunter-io",
       "maigret",
@@ -245,6 +246,7 @@ describe("invariant 6 — inert without keys, never guessed", () => {
       "certspotter",
       "crtsh",
       "feodo",
+      "gravatar",
       "greynoise",
       "hackertarget",
       "rapiddns",

@@ -162,7 +162,9 @@ export interface RunResultRow {
     | "blocked"
     | "error"
     | "deeplink"
-    | "no-adapter";
+    | "no-adapter"
+    /** Cannot answer a question about this kind of subject. */
+    | "not-applicable";
   reason: string | null;
   message: string | null;
   data: unknown[];
