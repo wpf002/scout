@@ -56,7 +56,7 @@ const STATUS_LABEL: Record<RunResultRow["status"], string> = {
   error: "Unavailable",
   deeplink: "Open",
   "no-adapter": "Coming Soon",
-  "not-applicable": "Not For This Type",
+  "not-applicable": "Not Applicable",
 };
 
 /**

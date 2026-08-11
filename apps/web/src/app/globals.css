@@ -308,7 +308,12 @@ a:hover {
   white-space: nowrap;
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--text-faint);
+  /*
+   * Secondary, not invisible. This was --text-faint, which on the raised panel
+   * background sat close enough to the surface to be unreadable — and the
+   * status is the whole reason the row is listed.
+   */
+  color: var(--text-dim);
 }
 
 .s-ok .s-count {
@@ -1140,7 +1145,18 @@ a:hover {
   color: var(--deny);
 }
 
-/* A source that cannot answer this kind of question — shown, not counted. */
-.rail li.s-not-applicable {
-  opacity: 0.42;
+/*
+ * A source that cannot answer this kind of question — shown, not counted.
+ *
+ * Set back rather than hidden. The previous 0.42 opacity compounded with the
+ * already-muted text and made a whole column of rows unreadable, which defeats
+ * the point of listing them: the reason has to be legible or the row is just
+ * clutter.
+ */
+.rail li.s-not-applicable .s-name {
+  color: var(--text-faint);
+}
+
+.rail li.s-not-applicable .s-status {
+  color: var(--text-faint);
 }
