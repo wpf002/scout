@@ -15,6 +15,7 @@ import { OsintPanel } from "@/components/OsintPanel";
 import { Ticker, ZuluClock, type TickerItem } from "@/components/Hud";
 import { Search } from "@/components/Search";
 import { useAlerts, ago } from "@/lib/alerts";
+import type { Shape } from "@/lib/measure";
 
 /**
  * MapLibre touches `window` at import time, so it cannot be server-rendered.
@@ -28,7 +29,14 @@ const GlobeMap = dynamic(
 const TOOLS = [
   { id: "osint", glyph: "◎", name: "OSINT Search" },
   { id: "alerts", glyph: "⚠", name: "Live Alerts" },
+  { id: "measure", glyph: "⊹", name: "Measure" },
   { id: "layers", glyph: "≡", name: "Layers" },
+];
+
+const SHAPES: Array<{ id: Shape; name: string; hint: string }> = [
+  { id: "radius", name: "Radius", hint: "Centre, then edge." },
+  { id: "box", name: "Box", hint: "Two opposite corners." },
+  { id: "path", name: "Path", hint: "Click each leg." },
 ];
 
 export default function Page() {
@@ -48,6 +56,8 @@ export default function Page() {
   } | null>(null);
   const [place, setPlace] = useState<string | null>(null);
   const [seeded, setSeeded] = useState("");
+  const [measure, setMeasure] = useState<Shape | null>(null);
+  const [reading, setReading] = useState<string | null>(null);
 
   // ── URL is the source of truth ───────────────────────────────────────────
   useEffect(() => {
@@ -158,6 +168,8 @@ export default function Page() {
         onCursor={onCursor}
         flyTo={flyTo}
         onCentre={onCentre}
+        measure={measure}
+        onMeasure={setReading}
       />
 
       {/* ── Top HUD ────────────────────────────────────────────────────── */}
@@ -254,7 +266,13 @@ export default function Page() {
               key={item.id}
               className={`tool-icon${tool === item.id ? " on" : ""}`}
               onClick={() =>
-                setTool((current) => (current === item.id ? null : item.id))
+                setTool((current) => {
+                  const next = current === item.id ? null : item.id;
+                  // Leaving the measure panel leaves measure mode. A crosshair
+                  // that outlives its panel eats clicks meant for features.
+                  if (next !== "measure") setMeasure(null);
+                  return next;
+                })
               }
               title={item.name}
             >
@@ -340,6 +358,48 @@ export default function Page() {
               );
             })}
           </ul>
+        </section>
+      ) : null}
+
+      {tool === "measure" ? (
+        <section className="tool-panel">
+          <div className="tool-panel-head">
+            <h2>Measure</h2>
+            <button
+              className="link"
+              onClick={() => {
+                setTool(null);
+                setMeasure(null);
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <div className="measure-body">
+            <div className="measure-shapes">
+              {SHAPES.map((shape) => (
+                <button
+                  key={shape.id}
+                  className={measure === shape.id ? "on" : undefined}
+                  onClick={() =>
+                    setMeasure((current) =>
+                      current === shape.id ? null : shape.id,
+                    )
+                  }
+                >
+                  {shape.name}
+                </button>
+              ))}
+            </div>
+            <p className="measure-hint">
+              {measure === null
+                ? "Pick a shape, then click the map."
+                : (SHAPES.find((s) => s.id === measure)?.hint ?? "")}
+            </p>
+            {reading !== null ? (
+              <p className="measure-reading">{reading}</p>
+            ) : null}
+          </div>
         </section>
       ) : null}
 

@@ -5,6 +5,7 @@ import * as maplibregl from "maplibre-gl";
 import { LAYERS, LAYER_BY_ID } from "@/lib/layers";
 import { nightPolygon } from "@/lib/terminator";
 import { BASEMAPS, type BasemapId } from "@/lib/basemap";
+import { build, type Point as MeasurePoint, type Shape } from "@/lib/measure";
 
 /**
  * The map.
@@ -29,6 +30,10 @@ interface Props {
   flyTo: { lat: number; lon: number; zoom?: number } | null;
   /** Fired when the camera settles, for the reverse-geocoded readout. */
   onCentre: (centre: { lat: number; lon: number }) => void;
+  /** Active measurement tool, or null when the map is in normal use. */
+  measure: Shape | null;
+  /** The current reading, so the shell can display it. */
+  onMeasure: (reading: string | null) => void;
   /** Extra points contributed by the OSINT panel. */
   osintFeatures: GeoJSON.Feature[];
   onSelect: (selection: Selection | null) => void;
@@ -55,6 +60,8 @@ export function GlobeMap({
   onCursor,
   flyTo,
   onCentre,
+  measure,
+  onMeasure,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -183,6 +190,102 @@ export function GlobeMap({
       speed: 1.4,
     });
   }, [flyTo]);
+
+  /**
+   * Measurement.
+   *
+   * The click handler is registered per tool rather than always-on and
+   * filtered, so with no tool selected the map has exactly the handlers it
+   * had before this existed — a measurement mode that quietly eats clicks
+   * meant for a feature is worse than not having one.
+   *
+   * Points live in a ref as well as in state: the handler is registered once
+   * per tool and would otherwise close over the empty array it was created
+   * with, so every click would look like the first.
+   */
+  const [points, setPoints] = useState<MeasurePoint[]>([]);
+  const pointsRef = useRef<MeasurePoint[]>([]);
+
+  useEffect(() => {
+    pointsRef.current = [];
+    setPoints([]);
+    onMeasure(null);
+
+    const instance = map.current;
+    if (instance === null || !ready || measure === null) return;
+
+    const onClick = (event: maplibregl.MapMouseEvent) => {
+      const next = [
+        ...pointsRef.current,
+        { lon: event.lngLat.lng, lat: event.lngLat.lat },
+      ];
+      // A circle and a box are defined by two points; a third starts over
+      // rather than silently ignoring the click.
+      const capped =
+        measure !== "path" && next.length > 2 ? next.slice(-1) : next;
+      pointsRef.current = capped;
+      setPoints(capped);
+    };
+
+    instance.getCanvas().style.cursor = "crosshair";
+    instance.on("click", onClick);
+    return () => {
+      instance.off("click", onClick);
+      instance.getCanvas().style.cursor = "";
+    };
+  }, [measure, ready, onMeasure]);
+
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+
+    const { features, reading } = build(measure ?? "path", points);
+    const data: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: measure === null ? [] : features,
+    };
+
+    const source = instance.getSource("measure") as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (source === undefined) {
+      instance.addSource("measure", { type: "geojson", data });
+      instance.addLayer({
+        id: "measure-fill",
+        type: "fill",
+        source: "measure",
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: { "fill-color": "#e0173a", "fill-opacity": 0.12 },
+      });
+      instance.addLayer({
+        id: "measure-line",
+        type: "line",
+        source: "measure",
+        filter: ["!=", ["geometry-type"], "Point"],
+        paint: {
+          "line-color": "#e0173a",
+          "line-width": 1.6,
+          "line-dasharray": [2, 1.5],
+        },
+      });
+      instance.addLayer({
+        id: "measure-point",
+        type: "circle",
+        source: "measure",
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": 4,
+          "circle-color": "#ffffff",
+          "circle-stroke-color": "#e0173a",
+          "circle-stroke-width": 2,
+        },
+      });
+    } else {
+      source.setData(data);
+    }
+
+    onMeasure(measure === null ? null : reading);
+  }, [points, measure, ready, redraw, onMeasure]);
 
   // ── Draw and update layers ───────────────────────────────────────────────
   useEffect(() => {
