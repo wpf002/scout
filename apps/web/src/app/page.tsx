@@ -73,6 +73,7 @@ export default function Page() {
   const [stops, setStops] = useState<Array<Stop | null>>([null, null]);
   const [picking, setPicking] = useState<number | null>(null);
   const [kp, setKp] = useState<{ kp: number | null; level: string } | null>(null);
+  const [capabilities, setCapabilities] = useState<Record<string, boolean>>({});
 
   // ── URL is the source of truth ───────────────────────────────────────────
   useEffect(() => {
@@ -159,6 +160,27 @@ export default function Page() {
     [],
   );
 
+  /*
+   * What this deployment can actually offer. Layers needing a capability the
+   * server does not have are dropped from the rail entirely rather than shown
+   * and permanently failing.
+   */
+  useEffect(() => {
+    void fetch("/api/live/layers", { cache: "no-store" })
+      .then((r) => r.json() as Promise<{ capabilities?: Record<string, boolean> }>)
+      .then((d) => setCapabilities(d.capabilities ?? {}))
+      .catch(() => setCapabilities({}));
+  }, []);
+
+  const offered = useCallback(
+    (layerId: string) => {
+      const layer = LAYER_BY_ID.get(layerId);
+      if (layer === undefined) return false;
+      return layer.requires === undefined || capabilities[layer.requires] === true;
+    },
+    [capabilities],
+  );
+
   const alerts = useAlerts(active);
 
   // ── Ticker and HUD readings ──────────────────────────────────────────────
@@ -236,11 +258,11 @@ export default function Page() {
 
   const countFor = (layerId: string) => status[layerId];
   const activeInCategory = (ids: string[]) =>
-    ids.filter((id) => active.includes(id)).length;
+    ids.filter((id) => active.includes(id) && offered(id)).length;
 
   const switchRow = (layerId: string) => {
     const layer = LAYER_BY_ID.get(layerId);
-    if (layer === undefined) return null;
+    if (layer === undefined || !offered(layerId)) return null;
     const on = active.includes(layerId);
     const count = countFor(layerId);
     const failed = typeof count === "string";
@@ -316,7 +338,7 @@ export default function Page() {
 
       {/* ── Left category rail ─────────────────────────────────────────── */}
       <nav className="cat-rail" aria-label="Layer categories">
-        {CATEGORIES.map((category) => {
+        {CATEGORIES.filter((c) => c.layerIds.some(offered)).map((category) => {
           const on = activeInCategory(category.layerIds);
           return (
             <button

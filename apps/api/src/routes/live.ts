@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { badRequest } from "../errors.js";
 import { cached } from "../live/cache.js";
-import { BY_ID, LAYERS } from "../live/registry.js";
+import { BY_ID, availableLayers, capabilities } from "../live/registry.js";
 import { markets } from "../live/feeds/markets.js";
 
 export { clearLiveCache } from "../live/cache.js";
@@ -19,14 +19,18 @@ export { clearLiveCache } from "../live/cache.js";
 
 export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
   /** What layers exist, so the client never hardcodes the roster. */
-  app.get("/live/layers", async () => ({
-    count: LAYERS.length,
-    layers: LAYERS.map((layer) => ({
-      id: layer.id,
-      name: layer.name,
-      refreshSeconds: Math.round(layer.ttlMs / 1000),
-    })),
-  }));
+  app.get("/live/layers", async () => {
+    const layers = availableLayers();
+    return {
+      count: layers.length,
+      capabilities: capabilities(),
+      layers: layers.map((layer) => ({
+        id: layer.id,
+        name: layer.name,
+        refreshSeconds: Math.round(layer.ttlMs / 1000),
+      })),
+    };
+  });
 
   /** The markets crawl. Not geographic, so not a layer. */
   app.get("/live/markets", async (_request, reply) => {
@@ -49,6 +53,11 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
     const layer = BY_ID.get(params.data.layer);
     if (layer === undefined) {
       throw badRequest(`Unknown layer "${params.data.layer}".`);
+    }
+    if (layer.requires !== undefined && capabilities()[layer.requires] !== true) {
+      throw badRequest(
+        `${layer.name} needs ${layer.requires} to be configured on the server.`,
+      );
     }
 
     try {

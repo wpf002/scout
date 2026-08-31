@@ -7,6 +7,11 @@ import { cctv } from "./feeds/cctv.js";
 import { maritime } from "./feeds/maritime.js";
 import { cables, gdeltEvents, infrastructure, liveNews } from "./feeds/reference.js";
 import { aurora, spaceWeather } from "./feeds/space.js";
+import {
+  cloudflareAttackOrigins,
+  cloudflareConfigured,
+  cloudflareOutages,
+} from "./feeds/cloudflare.js";
 
 /**
  * Every live layer, and how often it is worth asking again.
@@ -22,6 +27,12 @@ export interface LayerDef {
   name: string;
   ttlMs: number;
   load: () => Promise<FeatureCollection>;
+  /**
+   * A capability this layer needs. When the capability is absent the layer is
+   * not offered at all rather than being offered and permanently failing — a
+   * map switch that can never draw is a dead switch, not an honest one.
+   */
+  requires?: "cloudflare";
 }
 
 const MINUTE = 60_000;
@@ -69,6 +80,34 @@ export const LAYERS: LayerDef[] = [
 
   // Infrastructure.
   { id: "cables", name: "Submarine Cables", ttlMs: 24 * HOUR, load: cables },
+
+  // Cloudflare Radar. The only layers here that need a key.
+  {
+    id: "cf_outages",
+    name: "Internet Outages",
+    ttlMs: 15 * MINUTE,
+    load: cloudflareOutages,
+    requires: "cloudflare",
+  },
+  {
+    id: "cf_attacks",
+    name: "Attack Origins",
+    ttlMs: 30 * MINUTE,
+    load: cloudflareAttackOrigins,
+    requires: "cloudflare",
+  },
 ];
+
+/** What this deployment can actually offer. */
+export function capabilities(): Record<string, boolean> {
+  return { cloudflare: cloudflareConfigured() };
+}
+
+export function availableLayers(): LayerDef[] {
+  const have = capabilities();
+  return LAYERS.filter(
+    (layer) => layer.requires === undefined || have[layer.requires] === true,
+  );
+}
 
 export const BY_ID = new Map(LAYERS.map((layer) => [layer.id, layer]));

@@ -21,6 +21,12 @@ export interface LayerDef {
   draw?: Draw;
   /** Heavy layers are only drawn in, and fetched for, the current view. */
   heavy?: boolean;
+  /**
+   * A server capability this layer needs. Layers whose capability is absent
+   * are not offered at all — a map switch that can never draw is a dead
+   * switch, not an honest one.
+   */
+  requires?: string;
   description: string;
 }
 
@@ -78,7 +84,7 @@ export const CATEGORIES: CategoryDef[] = [
     id: "network",
     name: "Network Intel",
     glyph: "⌗",
-    layerIds: ["malware", "cyber_attacks"],
+    layerIds: ["malware", "cyber_attacks", "cf_outages", "cf_attacks"],
   },
   {
     id: "space_weather",
@@ -335,6 +341,28 @@ export const LAYERS: LayerDef[] = [
     kind: "feed",
     draw: "line",
     description: "The submarine fibre that carries the internet between continents.",
+  },
+
+  // ── Cloudflare Radar ────────────────────────────────────────────────────
+  {
+    id: "cf_outages",
+    name: "Internet Outages",
+    glyph: "⊘",
+    colour: "#ff3b52",
+    kind: "feed",
+    requires: "cloudflare",
+    description:
+      "Internet outages Cloudflare has observed, placed at the country centroid — an outage is national, not a point.",
+  },
+  {
+    id: "cf_attacks",
+    name: "Attack Origins",
+    glyph: "◬",
+    colour: "#ff9f0a",
+    kind: "feed",
+    requires: "cloudflare",
+    description:
+      "Share of layer-3 attack traffic by country of origin over the last day, from Cloudflare Radar. A proportion, not a count.",
   },
 
   // ── Display ─────────────────────────────────────────────────────────────
