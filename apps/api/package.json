@@ -14,12 +14,13 @@
   "dependencies": {
     "@fastify/cors": "^11.3.0",
     "@scout/db": "workspace:*",
+    "@scout/graph": "workspace:*",
     "@scout/scope": "workspace:*",
     "@scout/sources": "workspace:*",
     "docx": "^9.7.1",
     "fastify": "^5.2.0",
-    "zod": "^3.24.1",
-    "@scout/graph": "workspace:*"
+    "satellite.js": "^7.1.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
