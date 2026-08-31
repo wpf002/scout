@@ -341,6 +341,47 @@ async function singapore(): Promise<Camera[]> {
   });
 }
 
+// ── Ottawa ─────────────────────────────────────────────────────────────────
+
+const OTTAWA_SCHEMA = z.array(
+  z.object({
+    id: z.number().optional(),
+    number: z.number().optional(),
+    description: z.string().optional(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+    type: z.string().optional(),
+  }),
+);
+
+async function ottawa(): Promise<Camera[]> {
+  const parsed = OTTAWA_SCHEMA.parse(
+    await getJson("https://traffic.ottawa.ca/beta/camera_list", {
+      timeoutMs: 30_000,
+    }),
+  );
+
+  return parsed.flatMap((row): Camera[] => {
+    if (!usable(row.longitude, row.latitude)) return [];
+    return [
+      {
+        id: `ottawa-${row.number ?? row.id ?? `${row.longitude},${row.latitude}`}`,
+        name: row.description?.trim() || "Ottawa camera",
+        lat: row.latitude as number,
+        lon: row.longitude as number,
+        city: "Ottawa",
+        country: "Canada",
+        streamUrl:
+          row.number === undefined
+            ? null
+            : `https://traffic.ottawa.ca/beta/camera?id=${row.number}`,
+        streamType: "image",
+        operator: row.type === "MTO" ? "Ontario MTO" : "City of Ottawa",
+      },
+    ];
+  });
+}
+
 export async function cctv(): Promise<FeatureCollection> {
   const { items, failures } = await merge<Camera>([
     caltrans,
@@ -348,6 +389,7 @@ export async function cctv(): Promise<FeatureCollection> {
     driveBc,
     tfl,
     nyc,
+    ottawa,
     singapore,
   ]);
 

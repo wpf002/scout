@@ -99,6 +99,9 @@ async function loadPayloadHosts() {
 
 const MALWARE_LIMIT = 900;
 
+/** Enough C2 to read as infrastructure without spending the whole geoip budget. */
+const C2_LIMIT = 400;
+
 export async function malware(): Promise<FeatureCollection> {
   const hosts = await cached("urlhaus-hosts", TTL_MS, loadPayloadHosts);
 
@@ -149,23 +152,76 @@ export async function malware(): Promise<FeatureCollection> {
 
 // ── Command and control ────────────────────────────────────────────────────
 
-const FEODO_SCHEMA = z.array(
-  z.object({
-    ip_address: z.string(),
-    port: z.number().optional(),
-    status: z.string().optional(),
-    hostname: z.string().nullable().optional(),
-    as_number: z.number().nullable().optional(),
-    as_name: z.string().nullable().optional(),
-    country: z.string().nullable().optional(),
-    first_seen: z.string().nullable().optional(),
-    last_online: z.string().nullable().optional(),
-    malware: z.string().optional(),
-  }),
+const THREATFOX_SCHEMA = z.record(
+  z.string(),
+  z.array(
+    z.object({
+      ioc_value: z.string(),
+      ioc_type: z.string(),
+      threat_type: z.string().nullable().optional(),
+      malware: z.string().nullable().optional(),
+      malware_printable: z.string().nullable().optional(),
+      confidence_level: z.number().nullable().optional(),
+      first_seen_utc: z.string().nullable().optional(),
+      last_seen_utc: z.string().nullable().optional(),
+      reporter: z.string().nullable().optional(),
+      // A comma-separated string, not an array — the API's own docs say
+      // otherwise, which is why this is pinned to what it actually sends.
+      tags: z.string().nullable().optional(),
+    }),
+  ),
 );
 
-async function loadC2() {
-  return FEODO_SCHEMA.parse(await getJson(FEODO_JSON, { timeoutMs: 30_000 }));
+const THREATFOX_JSON = "https://threatfox.abuse.ch/export/json/recent/";
+
+interface C2 {
+  ip: string;
+  port: number | null;
+  malware: string;
+  threatType: string;
+  confidence: number | null;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  reporter: string | null;
+}
+
+/**
+ * Command-and-control servers, from abuse.ch ThreatFox.
+ *
+ * Feodo Tracker is the obvious choice and is the wrong one: it is still
+ * served, still keyless, and down to a handful of entries whose most recent
+ * sighting is months old. It is alive but empty, which on a map is worse than
+ * absent — five dots read as "quiet", not as "this feed stopped". ThreatFox is
+ * its live replacement and carries thousands of current indicators.
+ */
+async function loadC2(): Promise<C2[]> {
+  const body = await getText(THREATFOX_JSON, { timeoutMs: 60_000 });
+  const parsed = THREATFOX_SCHEMA.parse(JSON.parse(body));
+
+  const out: C2[] = [];
+  for (const rows of Object.values(parsed)) {
+    for (const row of rows) {
+      // `ip:port` is the only type that can be placed. A domain would need
+      // resolving, and resolving thousands of C2 domains from this process is
+      // neither fast nor a good idea.
+      if (row.ioc_type !== "ip:port") continue;
+      const split = row.ioc_value.lastIndexOf(":");
+      const ip = split === -1 ? row.ioc_value : row.ioc_value.slice(0, split);
+      if (!IPV4.test(ip)) continue;
+
+      out.push({
+        ip,
+        port: split === -1 ? null : Number(row.ioc_value.slice(split + 1)) || null,
+        malware: row.malware_printable ?? row.malware ?? "Unknown",
+        threatType: row.threat_type ?? "botnet_cc",
+        confidence: row.confidence_level ?? null,
+        firstSeen: row.first_seen_utc ?? null,
+        lastSeen: row.last_seen_utc ?? null,
+        reporter: row.reporter ?? null,
+      });
+    }
+  }
+  return out;
 }
 
 const FAMILY_COLOUR: Record<string, string> = {
@@ -193,50 +249,64 @@ const FAMILY_COLOUR: Record<string, string> = {
  */
 export async function attackInfrastructure(): Promise<FeatureCollection> {
   const [servers, hosts] = await Promise.all([
-    cached("feodo-c2", TTL_MS, loadC2),
+    cached("threatfox-c2", TTL_MS, loadC2),
     cached("urlhaus-hosts", TTL_MS, loadPayloadHosts),
   ]);
 
+  // One entry per address. ThreatFox lists an indicator per port, and a host
+  // with twenty open ports is one machine, not twenty.
+  const byIp = new Map<string, C2>();
+  for (const server of servers) {
+    if (!byIp.has(server.ip)) byIp.set(server.ip, server);
+  }
+  const unique = [...byIp.values()].slice(0, C2_LIMIT);
+
   const payloads = [...hosts.values()].filter((h) => h.status === "online");
   const placed = await locate([
-    ...servers.map((s) => s.ip_address),
-    ...payloads.slice(0, 300).map((h) => h.host),
+    ...unique.map((s) => s.ip),
+    ...payloads.slice(0, 200).map((h) => h.host),
   ]);
 
   const features: Feature[] = [];
 
-  for (const server of servers) {
-    const where = placed.get(server.ip_address);
+  for (const server of unique) {
+    const where = placed.get(server.ip);
     if (where === undefined) continue;
-    const family = server.malware ?? "Unknown";
 
     features.push(
       point(where.lon, where.lat, {
         layer: "cyber_attacks",
         role: "c2",
-        id: `c2-${server.ip_address}`,
-        label: `${family} C2 — ${where.city ?? where.country ?? server.ip_address}`,
-        ip: server.ip_address,
-        port: server.port ?? null,
-        malware: family,
-        status: server.status ?? null,
-        hostname: server.hostname ?? null,
+        id: `c2-${server.ip}`,
+        label: `${server.malware} C2 — ${where.city ?? where.country ?? server.ip}`,
+        ip: server.ip,
+        port: server.port,
+        malware: server.malware,
+        threatType: server.threatType,
+        confidence: server.confidence,
         country: where.country,
         city: where.city,
-        asn: where.asn ?? server.as_number ?? null,
-        asName: where.asName ?? server.as_name ?? null,
-        firstSeen: server.first_seen ?? null,
-        lastOnline: server.last_online ?? null,
-        url: `https://feodotracker.abuse.ch/browse/host/${server.ip_address}/`,
-        colour: FAMILY_COLOUR[family] ?? "#ff3b52",
+        asn: where.asn,
+        asName: where.asName,
+        firstSeen: server.firstSeen,
+        lastSeen: server.lastSeen,
+        reporter: server.reporter,
+        url: `https://threatfox.abuse.ch/browse.php?search=ioc%3A${encodeURIComponent(server.ip)}`,
+        colour: FAMILY_COLOUR[server.malware] ?? "#e0173a",
       }),
     );
 
-    // One link per server, to the nearest payload host of the same family.
-    // More than one would say more about how many samples abuse.ch happens to
-    // hold than about the campaign.
+    /*
+     * One link per server, to a payload host of the same family.
+     *
+     * Both ends are addresses abuse.ch is currently observing in the same
+     * campaign, which is a real and published relationship. It is not an
+     * observed attack — there is no keyless feed of those with both
+     * endpoints, and drawing one would mean inventing the coordinates.
+     */
+    const family = server.malware.toLowerCase();
     const match = payloads.find(
-      (h) => h.malware.toLowerCase() === family.toLowerCase() && placed.has(h.host),
+      (h) => h.malware.toLowerCase() === family && placed.has(h.host),
     );
     if (match === undefined) continue;
     const to = placed.get(match.host);
@@ -251,10 +321,10 @@ export async function attackInfrastructure(): Promise<FeatureCollection> {
         {
           layer: "cyber_attacks",
           role: "link",
-          id: `link-${server.ip_address}-${match.host}`,
-          label: `${family}: C2 ${server.ip_address} to payload host ${match.host}`,
-          malware: family,
-          colour: FAMILY_COLOUR[family] ?? "#ff3b52",
+          id: `link-${server.ip}-${match.host}`,
+          label: `${server.malware}: C2 ${server.ip} to payload host ${match.host}`,
+          malware: server.malware,
+          colour: FAMILY_COLOUR[server.malware] ?? "#e0173a",
         },
       ),
     );
@@ -264,8 +334,9 @@ export async function attackInfrastructure(): Promise<FeatureCollection> {
     type: "FeatureCollection",
     features,
     meta: {
-      source: "abuse.ch Feodo Tracker and URLhaus",
-      note: "Command-and-control servers and payload hosts of the same family, both currently observed. Not observed attacks.",
+      source: "abuse.ch ThreatFox and URLhaus",
+      c2Seen: byIp.size,
+      note: "Command-and-control servers and payload hosts of the same family, both currently observed. Not observed attacks. Positions are IP geolocation, which is approximate.",
     },
   };
 }

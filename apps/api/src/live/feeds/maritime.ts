@@ -83,13 +83,30 @@ async function finland(): Promise<Feature[]> {
 
 // ── Norway ─────────────────────────────────────────────────────────────────
 
-const BARENTSWATCH_SCHEMA = z.object({
+const KYSTDATAHUSET_SCHEMA = z.object({
   features: z
     .array(
       z.object({
-        properties: z.record(z.string(), z.unknown()).default({}),
+        properties: z
+          .object({
+            id: z.number().optional(),
+            mmsi: z.number().optional(),
+            imo: z.number().optional(),
+            ship_name: z.string().nullable().optional(),
+            ship_type: z.number().nullable().optional(),
+            callsign: z.string().nullable().optional(),
+            destination: z.string().nullable().optional(),
+            speed: z.number().nullable().optional(),
+            cog: z.number().nullable().optional(),
+            true_heading: z.number().nullable().optional(),
+            draught: z.number().nullable().optional(),
+            length: z.number().nullable().optional(),
+            breadth: z.number().nullable().optional(),
+            date_time_utc: z.string().nullable().optional(),
+          })
+          .partial(),
         geometry: z
-          .object({ coordinates: z.array(z.number()) })
+          .object({ type: z.string(), coordinates: z.unknown() })
           .nullable()
           .default(null),
       }),
@@ -97,29 +114,86 @@ const BARENTSWATCH_SCHEMA = z.object({
     .default([]),
 });
 
+/**
+ * AIS ship types, by the published first digit of the code.
+ *
+ * The full table is a hundred entries of increasingly specific cargo; the
+ * decade is what an operator actually reads off a map.
+ */
+const SHIP_TYPE: Record<number, string> = {
+  2: "Wing in ground",
+  3: "Special craft",
+  4: "High-speed craft",
+  5: "Special craft",
+  6: "Passenger",
+  7: "Cargo",
+  8: "Tanker",
+  9: "Other",
+};
+
+function shipType(code: number | null | undefined): string | null {
+  if (code === null || code === undefined || code === 0) return null;
+  if (code === 30) return "Fishing";
+  if (code === 31 || code === 32) return "Towing";
+  if (code === 35) return "Military";
+  if (code === 36) return "Sailing";
+  if (code === 37) return "Pleasure craft";
+  if (code === 51) return "Search and rescue";
+  if (code === 52) return "Tug";
+  if (code === 55) return "Law enforcement";
+  return SHIP_TYPE[Math.floor(code / 10)] ?? "Other";
+}
+
+/**
+ * The Norwegian Coastal Administration's live AIS.
+ *
+ * The best keyless AIS feed there is: several thousand vessels carrying name,
+ * IMO, MMSI, type, destination, speed and draught — everything an operator
+ * would want and most feeds do not give.
+ *
+ * Its geometry is a LineString, not a Point: each feature is a short recent
+ * track, so the vessel is at the *last* coordinate. Reading the first would
+ * put every ship a few metres behind itself, which is invisible and wrong.
+ */
 async function norway(): Promise<Feature[]> {
-  const parsed = BARENTSWATCH_SCHEMA.parse(
-    await getJson(
-      "https://kystdatahuset.no/ws/geo/ais/positions/live",
-      { timeoutMs: 25_000 },
-    ),
+  const parsed = KYSTDATAHUSET_SCHEMA.parse(
+    await getJson("https://kystdatahuset.no/ws/api/ais/realtime/geojson", {
+      timeoutMs: 45_000,
+    }),
   );
 
   return parsed.features.flatMap((feature) => {
-    const [lon, lat] = feature.geometry?.coordinates ?? [];
+    const raw = feature.geometry?.coordinates;
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+
+    const track = (
+      Array.isArray(raw[0]) ? raw : [raw]
+    ) as unknown as [number, number][];
+    const last = track[track.length - 1];
+    if (last === undefined) return [];
+    const [lon, lat] = last;
     if (!usable(lon, lat)) return [];
+
     const p = feature.properties;
-    const mmsi = typeof p["mmsi"] === "number" ? p["mmsi"] : null;
+    const name = (p.ship_name ?? "").trim();
+    const mmsi = p.mmsi ?? null;
 
     return [
       point(lon, lat as number, {
         layer: "maritime",
         role: "vessel",
         id: mmsi === null ? `no-${lon},${lat}` : `mmsi-${mmsi}`,
-        label: typeof p["name"] === "string" && p["name"].length > 0 ? p["name"] : `MMSI ${mmsi ?? "?"}`,
+        label: name.length > 0 ? name : `MMSI ${mmsi ?? "unknown"}`,
         mmsi,
-        speedKn: typeof p["sog"] === "number" ? p["sog"] : null,
-        heading: typeof p["cog"] === "number" ? p["cog"] : 0,
+        imo: p.imo === 0 ? null : (p.imo ?? null),
+        callsign: (p.callsign ?? "").trim() || null,
+        shipType: shipType(p.ship_type),
+        destination: (p.destination ?? "").trim() || null,
+        speedKn: p.speed ?? null,
+        heading: p.true_heading ?? p.cog ?? 0,
+        draughtM: p.draught === 0 ? null : (p.draught ?? null),
+        lengthM: p.length ?? null,
+        at: p.date_time_utc ?? null,
         authority: "Kystverket (Norway)",
         colour: "#30d0c0",
       }),

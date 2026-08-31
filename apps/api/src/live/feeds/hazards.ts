@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getJson } from "../http.js";
+import { getJson, getText } from "../http.js";
 import { point, usable, type FeatureCollection } from "../types.js";
 
 /** Natural hazards: earthquakes, active fires, severe weather, and incidents. */
@@ -65,67 +65,79 @@ export async function earthquakes(): Promise<FeatureCollection> {
 // ── Fires ──────────────────────────────────────────────────────────────────
 
 /**
- * Active fire detections.
+ * Active fire detections, from NASA FIRMS.
  *
- * NASA FIRMS is the authoritative source and needs a free self-serve MAP_KEY;
- * when `FIRMS_MAP_KEY` is set, that is what runs, giving individual satellite
- * detections with brightness and radiative power.
+ * No key. The `/api/area/` endpoint everyone reaches for first hard-fails
+ * without a MAP_KEY, but the CSV archive it is built on is served openly, and
+ * it is the same data — brightness, confidence, radiative power, per satellite
+ * pixel, for the last 24 hours.
  *
- * Without it the layer still works, from EONET's open wildfire events. The
- * difference is real and worth knowing: EONET publishes a few hundred *named
- * fire events*, FIRMS publishes tens of thousands of *pixel detections* from
- * the last 24 hours. The layer says which one it is rather than quietly being
- * a hundred times sparser than it looks.
+ * It is also 14 MB and 170,000 rows, which is more fire than any map can draw
+ * and more bytes than a layer should move. The server honours Range requests,
+ * so only the leading slice is fetched and the layer says what it took.
  */
-const FIRMS_SCHEMA = z.array(z.array(z.string()));
+const FIRMS_CSV =
+  "https://firms.modaps.eosdis.nasa.gov/data/active_fire/suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Global_24h.csv";
 
-async function firmsFires(key: string): Promise<FeatureCollection> {
-  const csv = await getJson<string>(
-    `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${key}/VIIRS_SNPP_NRT/world/1`,
-  ).catch(async () => {
-    // The endpoint serves CSV, not JSON; getJson is only used above to reuse
-    // the headers, so fall through to a text fetch on the parse failure.
-    const { getText } = await import("../http.js");
-    return getText(
-      `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${key}/VIIRS_SNPP_NRT/world/1`,
-      { timeoutMs: 60_000 },
-    );
+/** Enough rows for a global picture without moving fourteen megabytes. */
+const FIRMS_BYTES = 1_500_000;
+
+async function firmsFires(): Promise<FeatureCollection> {
+  const csv = await getText(FIRMS_CSV, {
+    headers: { range: `bytes=0-${FIRMS_BYTES}` },
+    timeoutMs: 90_000,
+    // A server that ignores Range answers 200 with everything; one that
+    // honours it answers 206. Both are usable.
+    allowStatus: [206],
   });
 
-  const rows = csv.trim().split("\n");
+  const rows: string[] = csv.split("\n");
   const header = (rows.shift() ?? "").split(",");
-  const index = (name: string) => header.indexOf(name);
-  const iLat = index("latitude");
-  const iLon = index("longitude");
-  const iBright = index("bright_ti4");
-  const iConf = index("confidence");
-  const iFrp = index("frp");
-  const iDate = index("acq_date");
-  const iTime = index("acq_time");
+  const at = (name: string) => header.indexOf(name);
+  const iLat = at("latitude");
+  const iLon = at("longitude");
+  const iBright = at("bright_ti4");
+  const iConf = at("confidence");
+  const iFrp = at("frp");
+  const iDate = at("acq_date");
+  const iTime = at("acq_time");
+  const iDayNight = at("daynight");
   if (iLat < 0 || iLon < 0) throw new Error("FIRMS returned an unexpected CSV");
 
-  const parsed = FIRMS_SCHEMA.parse(rows.map((row) => row.split(",")));
+  const features = rows.flatMap((row, index) => {
+    const cells = row.split(",");
+    // The Range cut lands mid-row; a short final row is dropped rather than
+    // read as a fire at a truncated coordinate.
+    if (cells.length < header.length) return [];
+
+    const lon = Number(cells[iLon]);
+    const lat = Number(cells[iLat]);
+    if (!usable(lon, lat)) return [];
+
+    return [
+      point(lon, lat, {
+        layer: "fires",
+        id: `firms-${index}`,
+        label: "Fire detection",
+        brightness: Number(cells[iBright]) || null,
+        confidence: cells[iConf] ?? null,
+        frp: Number(cells[iFrp]) || null,
+        daynight: cells[iDayNight] === "D" ? "Day" : "Night",
+        at: `${cells[iDate] ?? ""} ${cells[iTime] ?? ""}`.trim(),
+        source: "NASA FIRMS (VIIRS S-NPP)",
+        colour: "#ff6b35",
+      }),
+    ];
+  });
+
   return {
     type: "FeatureCollection",
-    features: parsed.flatMap((cells, n) => {
-      const lon = Number(cells[iLon]);
-      const lat = Number(cells[iLat]);
-      if (!usable(lon, lat)) return [];
-      return [
-        point(lon, lat, {
-          layer: "fires",
-          id: `firms-${n}`,
-          label: "Fire detection",
-          brightness: Number(cells[iBright] ?? 0) || null,
-          confidence: cells[iConf] ?? null,
-          frp: Number(cells[iFrp] ?? 0) || null,
-          at: `${cells[iDate] ?? ""} ${cells[iTime] ?? ""}`.trim(),
-          source: "NASA FIRMS (VIIRS)",
-          colour: "#ff6b35",
-        }),
-      ];
-    }),
-    meta: { source: "NASA FIRMS (VIIRS)", resolution: "detections" },
+    features,
+    meta: {
+      source: "NASA FIRMS (VIIRS S-NPP)",
+      resolution: "detections",
+      note: "The leading slice of the global 24-hour detection file, which holds around 170,000 rows in total.",
+    },
   };
 }
 
@@ -181,35 +193,41 @@ function latestPosition(
 }
 
 export async function fires(): Promise<FeatureCollection> {
-  const key = process.env["FIRMS_MAP_KEY"];
-  if (key !== undefined && key.length > 0) {
-    return firmsFires(key);
+  try {
+    return await firmsFires();
+  } catch {
+    /*
+     * EONET's named fire events, when FIRMS will not answer.
+     *
+     * The difference is real and worth knowing rather than hiding: FIRMS
+     * publishes satellite pixel detections, EONET publishes a few hundred
+     * named fire *events*. The layer says which one it is showing.
+     */
+    const parsed = await eonet("wildfires");
+    return {
+      type: "FeatureCollection",
+      features: parsed.events.flatMap((event) => {
+        const position = latestPosition(event);
+        if (position === null) return [];
+        return [
+          point(position.lon, position.lat, {
+            layer: "fires",
+            id: event.id ?? event.title,
+            label: event.title,
+            at: position.date,
+            url: event.link ?? null,
+            source: "NASA EONET",
+            colour: "#ff6b35",
+          }),
+        ];
+      }),
+      meta: {
+        source: "NASA EONET",
+        resolution: "events",
+        note: "Named fire events. FIRMS detections were unavailable.",
+      },
+    };
   }
-
-  const parsed = await eonet("wildfires");
-  return {
-    type: "FeatureCollection",
-    features: parsed.events.flatMap((event) => {
-      const position = latestPosition(event);
-      if (position === null) return [];
-      return [
-        point(position.lon, position.lat, {
-          layer: "fires",
-          id: event.id ?? event.title,
-          label: event.title,
-          at: position.date,
-          url: event.link ?? null,
-          source: "NASA EONET",
-          colour: "#ff6b35",
-        }),
-      ];
-    }),
-    meta: {
-      source: "NASA EONET",
-      resolution: "events",
-      note: "Named fire events. Set FIRMS_MAP_KEY for individual VIIRS detections.",
-    },
-  };
 }
 
 // ── Severe weather ─────────────────────────────────────────────────────────
@@ -251,7 +269,9 @@ const NWS_SCHEMA = z.object({
  */
 export async function weather(): Promise<FeatureCollection> {
   const [storms, alerts] = await Promise.allSettled([
-    eonet("severeStorms"),
+    // Unfiltered, and classified here. `category=severeStorms` alone is
+    // typically under ten open events, which reads as a broken layer.
+    eonet(null, 200),
     getJson(
       "https://api.weather.gov/alerts/active?severity=Extreme,Severe&status=actual",
       { timeoutMs: 40_000 },
@@ -260,8 +280,21 @@ export async function weather(): Promise<FeatureCollection> {
 
   const features = [];
 
+  /** EONET categories that belong on a weather layer rather than a fire one. */
+  const WEATHER_CATEGORIES = new Set([
+    "severeStorms",
+    "floods",
+    "drought",
+    "dustHaze",
+    "snow",
+    "temperatureExtremes",
+    "waterColor",
+  ]);
+
   if (storms.status === "fulfilled") {
     for (const event of storms.value.events) {
+      const categoryId = event.categories[0]?.id ?? "";
+      if (!WEATHER_CATEGORIES.has(categoryId)) continue;
       const position = latestPosition(event);
       if (position === null) continue;
       features.push(
@@ -376,12 +409,39 @@ const ALERT_COLOUR: Record<string, string> = {
  * as-is and coloured accordingly.
  */
 export async function incidents(): Promise<FeatureCollection> {
-  const parsed = GDACS_SCHEMA.parse(
-    await getJson(
-      "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH",
-      { timeoutMs: 40_000 },
-    ),
+  /*
+   * Two GDACS endpoints, unioned.
+   *
+   * SEARCH is orange and red events; EVENTS4APP leans green and live. Both are
+   * hard-capped at a hundred features and ignore every paging parameter, so a
+   * single call to either is the ceiling — asking both and deduplicating on
+   * the event id is the only way to see past it.
+   */
+  const [search, app] = await Promise.allSettled([
+    getJson("https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH", {
+      timeoutMs: 40_000,
+    }),
+    getJson("https://www.gdacs.org/gdacsapi/api/events/geteventlist/EVENTS4APP", {
+      timeoutMs: 40_000,
+    }),
+  ]);
+
+  const collected = [search, app].flatMap((result) =>
+    result.status === "fulfilled"
+      ? GDACS_SCHEMA.safeParse(result.value).data?.features ?? []
+      : [],
   );
+  if (collected.length === 0) throw new Error("GDACS did not answer");
+
+  const seen = new Set<string>();
+  const parsed = {
+    features: collected.filter((event) => {
+      const key = `${event.properties.eventtype ?? ""}-${event.properties.eventid ?? ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }),
+  };
 
   return {
     type: "FeatureCollection",
