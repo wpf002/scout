@@ -40,6 +40,13 @@ export interface Props {
   onCentre: (centre: { lat: number; lon: number }) => void;
   measure: Shape | null;
   onMeasure: (reading: string | null) => void;
+  /** The planned route, drawn under everything else. */
+  route: { coordinates: [number, number][] } | null;
+  /** Stops placed so far, drawn as lettered pins. */
+  stops: Array<{ label: string; lat: number; lon: number } | null>;
+  /** Which stop the next map click should fill, if any. */
+  picking: number | null;
+  onPick: (index: number, lngLat: { lat: number; lon: number }) => void;
 }
 
 const FEED_LAYERS = LAYERS.filter((layer) => layer.kind === "feed");
@@ -67,6 +74,10 @@ export function GlobeMap({
   onCentre,
   measure,
   onMeasure,
+  route,
+  stops,
+  picking,
+  onPick,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -331,6 +342,107 @@ export function GlobeMap({
 
     onMeasure(measure === null ? null : reading);
   }, [points, measure, ready, redraw, onMeasure]);
+
+  // ── Routing ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+
+    const placed = stops.flatMap((stop, index) =>
+      stop === null
+        ? []
+        : [
+            {
+              type: "Feature" as const,
+              properties: {
+                label:
+                  index === 0
+                    ? "A"
+                    : index === stops.length - 1
+                      ? "B"
+                      : String(index),
+              },
+              geometry: {
+                type: "Point" as const,
+                coordinates: [stop.lon, stop.lat],
+              },
+            },
+          ],
+    );
+
+    const data: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: [
+        ...(route === null || route.coordinates.length === 0
+          ? []
+          : [
+              {
+                type: "Feature" as const,
+                properties: { role: "route" },
+                geometry: {
+                  type: "LineString" as const,
+                  coordinates: route.coordinates,
+                },
+              },
+            ]),
+        ...placed,
+      ],
+    };
+
+    const source = instance.getSource("route") as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (source === undefined) {
+      instance.addSource("route", { type: "geojson", data });
+      // A casing under the line so the route stays readable over both the
+      // satellite imagery and the dark vector style.
+      instance.addLayer({
+        id: "route-casing",
+        type: "line",
+        source: "route",
+        filter: ["==", ["geometry-type"], "LineString"],
+        paint: { "line-color": "#05050a", "line-width": 6, "line-opacity": 0.8 },
+      });
+      instance.addLayer({
+        id: "route-line",
+        type: "line",
+        source: "route",
+        filter: ["==", ["geometry-type"], "LineString"],
+        paint: { "line-color": "#35c46a", "line-width": 3 },
+      });
+      instance.addLayer({
+        id: "route-stops",
+        type: "circle",
+        source: "route",
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": 7,
+          "circle-color": "#35c46a",
+          "circle-stroke-color": "#05050a",
+          "circle-stroke-width": 2,
+        },
+      });
+    } else {
+      source.setData(data);
+    }
+  }, [route, stops, ready, redraw]);
+
+  // Picking a stop off the map. Registered only while a stop is being picked,
+  // so it cannot take a click meant for a feature.
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready || picking === null) return;
+
+    const onClick = (event: maplibregl.MapMouseEvent) => {
+      onPick(picking, { lat: event.lngLat.lat, lon: event.lngLat.lng });
+    };
+    instance.getCanvas().style.cursor = "crosshair";
+    instance.on("click", onClick);
+    return () => {
+      instance.off("click", onClick);
+      instance.getCanvas().style.cursor = "";
+    };
+  }, [picking, ready, onPick]);
 
   // ── Layer painting ───────────────────────────────────────────────────────
 
@@ -619,7 +731,7 @@ export function GlobeMap({
   // ── Selection ────────────────────────────────────────────────────────────
   useEffect(() => {
     const instance = map.current;
-    if (instance === null || !ready || measure !== null) return;
+    if (instance === null || !ready || measure !== null || picking !== null) return;
 
     const onClick = (event: maplibregl.MapMouseEvent) => {
       const clickable = [...FEED_LAYERS.map((l) => l.id), "osint"].filter(
@@ -664,7 +776,7 @@ export function GlobeMap({
         instance.off("mouseleave", def.id, onLeave);
       }
     };
-  }, [ready, onSelect, measure, active, redraw]);
+  }, [ready, onSelect, measure, picking, active, redraw]);
 
   return <div ref={container} className="globe" />;
 }

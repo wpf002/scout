@@ -15,6 +15,7 @@ import { OsintPanel } from "@/components/OsintPanel";
 import { Ticker, ZuluClock, type TickerItem } from "@/components/Hud";
 import { Search } from "@/components/Search";
 import { Detail } from "@/components/Detail";
+import { Directions, type Route, type Stop } from "@/components/Directions";
 import { useAlerts, ago } from "@/lib/alerts";
 import type { Shape } from "@/lib/measure";
 
@@ -31,6 +32,7 @@ const TOOLS = [
   { id: "osint", glyph: "◎", name: "OSINT Search" },
   { id: "alerts", glyph: "⚠", name: "Live Alerts" },
   { id: "measure", glyph: "⊹", name: "Measure" },
+  { id: "directions", glyph: "⇄", name: "Directions" },
   { id: "layers", glyph: "≡", name: "All Layers" },
 ];
 
@@ -67,6 +69,9 @@ export default function Page() {
   const [measure, setMeasure] = useState<Shape | null>(null);
   const [reading, setReading] = useState<string | null>(null);
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [route, setRoute] = useState<Route | null>(null);
+  const [stops, setStops] = useState<Array<Stop | null>>([null, null]);
+  const [picking, setPicking] = useState<number | null>(null);
   const [kp, setKp] = useState<{ kp: number | null; level: string } | null>(null);
 
   // ── URL is the source of truth ───────────────────────────────────────────
@@ -123,6 +128,36 @@ export default function Page() {
     setSeeded(value);
     setTool("osint");
   }, []);
+
+  /**
+   * A stop picked off the map is named by reverse geocoding it, so the panel
+   * reads "Greenwood County, Kansas" rather than a coordinate pair the
+   * operator has to decode.
+   */
+  const onPick = useCallback(
+    async (index: number, lngLat: { lat: number; lon: number }) => {
+      let label = `${lngLat.lat.toFixed(4)}, ${lngLat.lon.toFixed(4)}`;
+      try {
+        const response = await fetch(
+          `/api/geo/reverse?lat=${lngLat.lat.toFixed(4)}&lon=${lngLat.lon.toFixed(4)}`,
+          { cache: "no-store" },
+        );
+        const data = (await response.json()) as { label?: string | null };
+        if (typeof data.label === "string" && data.label.length > 0) {
+          label = data.label;
+        }
+      } catch {
+        // The coordinate is a perfectly good name for a place.
+      }
+      setStops((current) => {
+        const next = [...current];
+        next[index] = { label, lat: lngLat.lat, lon: lngLat.lon };
+        return next;
+      });
+      setPicking(null);
+    },
+    [],
+  );
 
   const alerts = useAlerts(active);
 
@@ -245,6 +280,10 @@ export default function Page() {
         onCentre={onCentre}
         measure={measure}
         onMeasure={setReading}
+        route={route}
+        stops={stops}
+        picking={picking}
+        onPick={onPick}
       />
 
       {/* ── Top HUD ────────────────────────────────────────────────────── */}
@@ -331,6 +370,9 @@ export default function Page() {
                   // Leaving the measure panel leaves measure mode. A crosshair
                   // that outlives its panel eats clicks meant for features.
                   if (next !== "measure") setMeasure(null);
+                  // A pick mode that outlives its panel eats clicks meant for
+                  // features, exactly as a stray crosshair does.
+                  if (next !== "directions") setPicking(null);
                   return next;
                 })
               }
@@ -439,6 +481,31 @@ export default function Page() {
               <p className="measure-reading">{reading}</p>
             ) : null}
           </div>
+        </section>
+      ) : null}
+
+      {tool === "directions" ? (
+        <section className="tool-panel">
+          <div className="tool-panel-head">
+            <h2>Directions</h2>
+            <button
+              className="link"
+              onClick={() => {
+                setTool(null);
+                setPicking(null);
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <Directions
+            stops={stops}
+            setStops={setStops}
+            picking={picking}
+            setPicking={setPicking}
+            onRoute={setRoute}
+            onFly={setFlyTo}
+          />
         </section>
       ) : null}
 

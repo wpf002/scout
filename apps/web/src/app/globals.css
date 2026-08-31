@@ -2086,3 +2086,158 @@ a:hover {
 .tool-rail::-webkit-scrollbar {
   display: none;
 }
+
+/* ── Directions ───────────────────────────────────────────────────────── */
+
+.directions {
+  padding: 10px;
+}
+
+.stops {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stops li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.stop-pin {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ok);
+  color: #06210f;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.stops input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  outline: none;
+}
+
+.stops input:focus {
+  border-color: var(--border-strong);
+}
+
+.pick {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pick:hover {
+  color: var(--text);
+}
+
+.pick.on {
+  background: rgba(53, 196, 106, 0.18);
+  border-color: var(--ok);
+  color: var(--text);
+}
+
+.directions-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.directions-actions button {
+  flex: 1;
+  padding: 6px 0;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.directions-actions button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.directions-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.directions-actions .primary {
+  background: rgba(53, 196, 106, 0.16);
+  border-color: var(--ok);
+  color: var(--text);
+}
+
+.directions-error {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.route-steps {
+  margin: 8px 0 0;
+  padding: 0 0 0 2px;
+  list-style: none;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.route-steps li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.step-manoeuvre {
+  flex: none;
+  width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.step-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.step-distance {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}

@@ -96,6 +96,106 @@ export async function registerGeoRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  /**
+   * Routing, via the OSRM demo server.
+   *
+   * Keyless and public, which also means it is a shared courtesy service with
+   * no uptime promise — so a failure here returns a reason rather than an
+   * error page, and the panel says the route could not be planned instead of
+   * looking broken.
+   *
+   * Waypoints arrive as `lon,lat;lon,lat[;...]` and are validated before being
+   * put in a URL. This proxies to a fixed host with a fixed path shape; the
+   * only thing from the request that reaches it is a list of numbers.
+   */
+  app.get("/geo/route", async (request) => {
+    const query = z
+      .object({
+        profile: z.enum(["driving", "bike", "foot"]).default("driving"),
+        waypoints: z.string().min(3).max(2000),
+      })
+      .safeParse(request.query);
+    if (!query.success) throw badRequest("A profile and waypoints are required.");
+
+    const points = query.data.waypoints.split(";").map((pair) => {
+      const parts = pair.split(",");
+      return { lon: Number(parts[0]), lat: Number(parts[1]) };
+    });
+
+    if (points.length < 2 || points.length > 12) {
+      throw badRequest("Give between two and twelve waypoints.");
+    }
+    for (const { lon, lat } of points) {
+      if (
+        !Number.isFinite(lon) ||
+        !Number.isFinite(lat) ||
+        Math.abs(lon) > 180 ||
+        Math.abs(lat) > 90
+      ) {
+        throw badRequest("Waypoints must be lon,lat pairs on Earth.");
+      }
+    }
+
+    const path = points.map((p) => `${p.lon},${p.lat}`).join(";");
+    try {
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/${query.data.profile}/${path}?overview=full&geometries=geojson&steps=true&alternatives=false`,
+        {
+          headers: { accept: "application/json", "user-agent": UA },
+          signal: AbortSignal.timeout(25_000),
+        },
+      );
+      if (!response.ok) {
+        return { route: null, error: `Router responded ${response.status}` };
+      }
+
+      const data = (await response.json()) as {
+        code?: string;
+        routes?: Array<{
+          distance?: number;
+          duration?: number;
+          geometry?: { coordinates?: [number, number][] };
+          legs?: Array<{
+            steps?: Array<{
+              name?: string;
+              distance?: number;
+              maneuver?: { type?: string; modifier?: string };
+            }>;
+          }>;
+        }>;
+      };
+
+      const route = data.routes?.[0];
+      if (data.code !== "Ok" || route === undefined) {
+        return { route: null, error: "No route between those points." };
+      }
+
+      return {
+        route: {
+          distanceM: route.distance ?? 0,
+          durationS: route.duration ?? 0,
+          coordinates: route.geometry?.coordinates ?? [],
+          steps: (route.legs ?? []).flatMap((leg) =>
+            (leg.steps ?? [])
+              .filter((step) => (step.name ?? "").length > 0)
+              .map((step) => ({
+                name: step.name ?? "",
+                distanceM: step.distance ?? 0,
+                maneuver: [step.maneuver?.type, step.maneuver?.modifier]
+                  .filter(Boolean)
+                  .join(" "),
+              })),
+          ),
+        },
+      };
+    } catch (error) {
+      return {
+        route: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
   app.get("/geo/reverse", async (request) => {
     const query = z
       .object({ lat: z.coerce.number(), lon: z.coerce.number() })
