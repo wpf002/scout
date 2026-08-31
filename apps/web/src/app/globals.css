@@ -1777,6 +1777,7 @@ a:hover {
 
 .search input {
   width: 100%;
+  padding-right: 28px;
   height: 26px;
   padding: 0 10px;
   background: var(--bg-inset);
@@ -1796,12 +1797,28 @@ a:hover {
   color: var(--text-faint);
 }
 
-.search-busy {
+.search button[type="submit"] {
   position: absolute;
-  top: 9px;
-  right: 9px;
-  width: 8px;
-  height: 8px;
+  top: 1px;
+  right: 1px;
+  width: 26px;
+  height: 24px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-faint);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.search button[type="submit"]:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.search-busy {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--text-faint);
   animation: pulse 1s ease-in-out infinite;

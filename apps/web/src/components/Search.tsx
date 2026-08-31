@@ -45,8 +45,8 @@ export function Search({
   const request = useRef(0);
 
   const submit = useCallback(
-    async (event: React.FormEvent) => {
-      event.preventDefault();
+    async (event?: React.FormEvent) => {
+      event?.preventDefault();
       const value = term.trim();
       if (value.length === 0) return;
 
@@ -77,7 +77,19 @@ export function Search({
         const data = (await response.json()) as { results?: Place[] };
         // A slower earlier search must not overwrite a faster later one.
         if (id !== request.current) return;
-        setResults(data.results ?? []);
+
+        const found = data.results ?? [];
+        // One unambiguous answer needs no menu — go there.
+        if (found.length === 1) {
+          const only = found[0];
+          if (only !== undefined) {
+            setResults(null);
+            setTerm(only.label);
+            onFly({ lat: only.lat, lon: only.lon, zoom: 8 });
+            return;
+          }
+        }
+        setResults(found);
       } catch {
         if (id === request.current) setResults([]);
       } finally {
@@ -90,6 +102,18 @@ export function Search({
   return (
     <form className="search" onSubmit={submit}>
       <input
+        /*
+         * Enter is handled explicitly. Implicit form submission from a single
+         * text input is the kind of behaviour that quietly stops working, and
+         * a search box that ignores Enter reads as broken however good the
+         * button next to it is.
+         */
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void submit();
+          }
+        }}
         value={term}
         onChange={(event) => {
           setTerm(event.target.value);
@@ -100,7 +124,14 @@ export function Search({
         autoComplete="off"
         aria-label="Search"
       />
-      {busy ? <span className="search-busy" aria-hidden /> : null}
+      {/*
+        * An explicit submit button, not decoration. A form whose only control
+        * is a text input relies on implicit submission, which is easy to lose
+        * to a stray focus change — and there is then nothing to click.
+        */}
+      <button type="submit" aria-label="Search" disabled={busy}>
+        {busy ? <span className="search-busy" aria-hidden /> : "⌕"}
+      </button>
 
       {results !== null ? (
         <ul className="search-results">
