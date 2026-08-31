@@ -2009,3 +2009,80 @@ a:hover {
   font-size: 12px;
   color: var(--text);
 }
+
+/* ── Detail card additions ────────────────────────────────────────────── */
+
+.detail-alarm {
+  margin: 0;
+  padding: 6px 10px;
+  background: rgba(255, 59, 82, 0.14);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--deny);
+}
+
+.detail-still {
+  display: block;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+.detail-actions button,
+.detail-actions a {
+  padding: 5px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 11px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.detail-actions button:hover,
+.detail-actions a:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* A layer whose upstream failed says so where its count would be, rather
+ * than showing a silent zero that reads as "nothing there". */
+.cat-panel li.failed .switch-count,
+.layer-list li.failed .switch-count {
+  color: var(--warn);
+  font-size: 9px;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-panel {
+  overflow: auto;
+}
+
+.layer-list li,
+.cat-panel li {
+  min-height: 30px;
+}
+
+/* Long rosters need the rail to scroll rather than run off the screen. */
+.cat-rail,
+.tool-rail {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.cat-rail::-webkit-scrollbar,
+.tool-rail::-webkit-scrollbar {
+  display: none;
+}

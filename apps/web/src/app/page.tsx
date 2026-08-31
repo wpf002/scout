@@ -14,6 +14,7 @@ import type { Selection } from "@/components/GlobeMap";
 import { OsintPanel } from "@/components/OsintPanel";
 import { Ticker, ZuluClock, type TickerItem } from "@/components/Hud";
 import { Search } from "@/components/Search";
+import { Detail } from "@/components/Detail";
 import { useAlerts, ago } from "@/lib/alerts";
 import type { Shape } from "@/lib/measure";
 
@@ -30,7 +31,7 @@ const TOOLS = [
   { id: "osint", glyph: "◎", name: "OSINT Search" },
   { id: "alerts", glyph: "⚠", name: "Live Alerts" },
   { id: "measure", glyph: "⊹", name: "Measure" },
-  { id: "layers", glyph: "≡", name: "Layers" },
+  { id: "layers", glyph: "≡", name: "All Layers" },
 ];
 
 const SHAPES: Array<{ id: Shape; name: string; hint: string }> = [
@@ -38,6 +39,13 @@ const SHAPES: Array<{ id: Shape; name: string; hint: string }> = [
   { id: "box", name: "Box", hint: "Two opposite corners." },
   { id: "path", name: "Path", hint: "Click each leg." },
 ];
+
+interface Quote {
+  symbol: string;
+  name: string;
+  price: number;
+  changePercent: number | null;
+}
 
 export default function Page() {
   const [active, setActive] = useState<string[]>([]);
@@ -48,7 +56,7 @@ export default function Page() {
   const [tool, setTool] = useState<string | null>(null);
   const [basemap, setBasemap] = useState<BasemapId>("sat");
   const [projection, setProjection] = useState<"globe" | "mercator">("globe");
-  const [cursor, setCursor] = useState({ lat: 0, lon: 0, zoom: 3.2 });
+  const [cursor, setCursor] = useState({ lat: 0, lon: 0, zoom: 2.2 });
   const [flyTo, setFlyTo] = useState<{
     lat: number;
     lon: number;
@@ -58,6 +66,8 @@ export default function Page() {
   const [seeded, setSeeded] = useState("");
   const [measure, setMeasure] = useState<Shape | null>(null);
   const [reading, setReading] = useState<string | null>(null);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [kp, setKp] = useState<{ kp: number | null; level: string } | null>(null);
 
   // ── URL is the source of truth ───────────────────────────────────────────
   useEffect(() => {
@@ -91,11 +101,9 @@ export default function Page() {
   );
 
   /**
-   * Where the camera is pointed, in words.
-   *
-   * Keyed off the settled centre rather than the cursor: this is a geocoder
-   * call, and one per mouse move would be both useless and a good way to be
-   * blocked.
+   * Where the camera is pointed, in words. Keyed off the settled centre rather
+   * than the cursor: this is a geocoder call, and one per mouse move would be
+   * both useless and a good way to be blocked.
    */
   const onCentre = useCallback(async (centre: { lat: number; lon: number }) => {
     try {
@@ -116,16 +124,44 @@ export default function Page() {
     setTool("osint");
   }, []);
 
-  /*
-   * Both the panel and the ticker read the alert stream, which reads the same
-   * feeds the map draws — so the list, the crawl and the dots cannot disagree
-   * about what is happening.
-   */
   const alerts = useAlerts(active);
 
+  // ── Ticker and HUD readings ──────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const [marketResult, spaceResult] = await Promise.allSettled([
+        fetch("/api/live/markets", { cache: "no-store" }).then((r) => r.json()),
+        fetch("/api/live/space_weather", { cache: "no-store" }).then((r) => r.json()),
+      ]);
+      if (cancelled) return;
+
+      if (marketResult.status === "fulfilled") {
+        setQuotes((marketResult.value as { quotes?: Quote[] }).quotes ?? []);
+      }
+      if (spaceResult.status === "fulfilled") {
+        const meta = (spaceResult.value as { meta?: { kp?: number | null; stormLevel?: string } }).meta;
+        if (meta !== undefined) {
+          setKp({ kp: meta.kp ?? null, level: meta.stormLevel ?? "Unknown" });
+        }
+      }
+    };
+    void load();
+    const timer = setInterval(load, 5 * 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  /*
+   * One crawl, two kinds of thing. Alerts first because they are the reason to
+   * look at it; markets after, because an operator watching an incident still
+   * wants to know oil moved.
+   */
   const ticker: TickerItem[] = useMemo(
-    () =>
-      alerts.slice(0, 24).map((alert) => ({
+    () => [
+      ...alerts.slice(0, 20).map((alert) => ({
         id: alert.id,
         label: `${alert.detail}  ${alert.label}`,
         tone:
@@ -135,7 +171,22 @@ export default function Page() {
               ? ("warn" as const)
               : ("ok" as const),
       })),
-    [alerts],
+      ...quotes.map((quote) => ({
+        id: `q-${quote.symbol}`,
+        label: `${quote.name} ${quote.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}${
+          quote.changePercent === null
+            ? ""
+            : `  ${quote.changePercent >= 0 ? "+" : ""}${quote.changePercent.toFixed(2)}%`
+        }`,
+        tone:
+          quote.changePercent === null
+            ? undefined
+            : quote.changePercent >= 0
+              ? ("ok" as const)
+              : ("deny" as const),
+      })),
+    ],
+    [alerts, quotes],
   );
 
   const entities = useMemo(
@@ -148,13 +199,37 @@ export default function Page() {
     [status, active],
   );
 
-  const countFor = (layerId: string) => {
-    const value = status[layerId];
-    return typeof value === "number" ? value : null;
-  };
-
+  const countFor = (layerId: string) => status[layerId];
   const activeInCategory = (ids: string[]) =>
     ids.filter((id) => active.includes(id)).length;
+
+  const switchRow = (layerId: string) => {
+    const layer = LAYER_BY_ID.get(layerId);
+    if (layer === undefined) return null;
+    const on = active.includes(layerId);
+    const count = countFor(layerId);
+    const failed = typeof count === "string";
+
+    return (
+      <li key={layerId} className={failed && on ? "failed" : undefined}>
+        <button
+          className={`switch${on ? " on" : ""}`}
+          onClick={() => toggle(layerId)}
+          aria-pressed={on}
+          aria-label={layer.name}
+        >
+          <span className="knob" />
+        </button>
+        <span className="swatch-dot" style={{ background: layer.colour }} />
+        <span className="switch-name" title={layer.description}>
+          {layer.name}
+        </span>
+        <span className="switch-count">
+          {!on ? "" : count === undefined ? "…" : failed ? String(count) : count.toLocaleString()}
+        </span>
+      </li>
+    );
+  };
 
   return (
     <div className="osiris">
@@ -176,8 +251,9 @@ export default function Page() {
       <header className="hud-top">
         <div className="brand">
           <span className="brand-mark">SCOUT</span>
-          <span className="brand-sub">Open Source Intelligence</span>
+          <span className="brand-sub">Global Intelligence</span>
         </div>
+
         <Search onFly={setFlyTo} onIndicator={onIndicator} />
 
         <div className="hud-readout">
@@ -191,11 +267,16 @@ export default function Page() {
           <span>
             <b>{entities.toLocaleString()}</b> ENTITIES
           </span>
+          {kp !== null ? (
+            <span title={`Geomagnetic activity: ${kp.level}`}>
+              SOLAR <b>Kp {kp.kp ?? "?"}</b>
+            </span>
+          ) : null}
         </div>
       </header>
 
       {/* ── Left category rail ─────────────────────────────────────────── */}
-      <nav className="cat-rail">
+      <nav className="cat-rail" aria-label="Layer categories">
         {CATEGORIES.map((category) => {
           const on = activeInCategory(category.layerIds);
           return (
@@ -227,35 +308,14 @@ export default function Page() {
           </div>
           <ul>
             {(CATEGORIES.find((c) => c.id === openCategory)?.layerIds ?? []).map(
-              (layerId) => {
-                const layer = LAYER_BY_ID.get(layerId);
-                if (layer === undefined) return null;
-                const on = active.includes(layerId);
-                const count = countFor(layerId);
-                return (
-                  <li key={layerId}>
-                    <button
-                      className={`switch${on ? " on" : ""}`}
-                      onClick={() => toggle(layerId)}
-                      aria-pressed={on}
-                      title={layer.description}
-                    >
-                      <span className="knob" />
-                    </button>
-                    <span className="switch-name">{layer.name}</span>
-                    <span className="switch-count">
-                      {on ? (count?.toLocaleString() ?? "…") : ""}
-                    </span>
-                  </li>
-                );
-              },
+              switchRow,
             )}
           </ul>
         </section>
       ) : null}
 
       {/* ── Right tool rail ────────────────────────────────────────────── */}
-      <nav className="tool-rail">
+      <nav className="tool-rail" aria-label="Tools">
         {TOOLS.map((item) => {
           const high =
             item.id === "alerts"
@@ -336,28 +396,7 @@ export default function Page() {
             <h2>All Layers</h2>
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
-          <ul className="layer-list">
-            {LAYERS.map((layer) => {
-              const on = active.includes(layer.id);
-              const count = countFor(layer.id);
-              return (
-                <li key={layer.id}>
-                  <button
-                    className={`switch${on ? " on" : ""}`}
-                    onClick={() => toggle(layer.id)}
-                    aria-pressed={on}
-                  >
-                    <span className="knob" />
-                  </button>
-                  <span className="swatch-dot" style={{ background: layer.colour }} />
-                  <span className="switch-name">{layer.name}</span>
-                  <span className="switch-count">
-                    {on ? (count?.toLocaleString() ?? "…") : ""}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+          <ul className="layer-list">{LAYERS.map((layer) => switchRow(layer.id))}</ul>
         </section>
       ) : null}
 
@@ -422,9 +461,7 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           {alerts.length === 0 ? (
-            <p className="panel-empty">
-              No alerts from the layers currently on.
-            </p>
+            <p className="panel-empty">No alerts from the layers currently on.</p>
           ) : (
             <ul className="alert-list">
               {alerts.map((alert) => (
@@ -448,31 +485,12 @@ export default function Page() {
         </section>
       ) : null}
 
-      {/* ── Feature detail ─────────────────────────────────────────────── */}
       {selection !== null ? (
-        <aside className="hud-detail">
-          <div className="hud-detail-head">
-            <span
-              className="hud-dot"
-              style={{
-                background: LAYER_BY_ID.get(selection.layer)?.colour ?? "#8e8e93",
-              }}
-            />
-            <h2>{selection.label}</h2>
-            <button className="link" onClick={() => setSelection(null)}>×</button>
-          </div>
-          <dl>
-            {Object.entries(selection.properties)
-              .filter(([key]) => key !== "label" && key !== "layer")
-              .slice(0, 12)
-              .map(([key, value]) => (
-                <div key={key}>
-                  <dt>{key}</dt>
-                  <dd>{String(value)}</dd>
-                </div>
-              ))}
-          </dl>
-        </aside>
+        <Detail
+          selection={selection}
+          onClose={() => setSelection(null)}
+          onFly={setFlyTo}
+        />
       ) : null}
 
       <Ticker items={ticker} />

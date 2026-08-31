@@ -1,83 +1,130 @@
 import type { StyleSpecification } from "maplibre-gl";
 
 /**
- * Basemaps, built as raster styles rather than fetched as vector styles.
+ * Basemaps, and the terrain source that sits under them.
  *
- * The vector route failed in a way worth recording: a hosted style references
- * glyph, sprite and TileJSON URLs on shard hostnames the proxy allowlist did
- * not anticipate, and when any one of them is refused the style never reaches
- * `load`. Nothing throws — the map simply sits black forever with no error.
+ * Two styles, built differently on purpose.
  *
- * A raster style has one dependency: image tiles. There is no glyph server, no
- * sprite sheet, and no TileJSON indirection, so there is nothing to half-load.
- * The cost is that place labels come from a second raster layer rather than
- * being rendered from data.
+ * SAT is a self-authored raster style over Esri imagery. Raster has exactly
+ * one dependency — image tiles — so there is nothing to half-load.
+ *
+ * MAP is CARTO's dark-matter vector style, fetched whole. Vector gives real
+ * label placement, roads that stay sharp at every zoom, and a `building` layer
+ * that can be extruded. It also has three more things that can fail: glyphs,
+ * a sprite sheet, and a TileJSON indirection — and when any of them is refused
+ * the style never reaches `load` and nothing throws. The map simply sits black
+ * forever. That is why every host it touches has to be in the proxy allowlist,
+ * and why SAT is the default.
  */
 
-/*
- * The upstream URL is encoded so it survives as one query parameter, but the
- * `{z}/{y}/{x}` placeholders are put back verbatim: MapLibre substitutes those
- * by literal text match, and percent-encoded braces sail straight past it. The
- * proxy then receives a real tile URL rather than a request for a tile named
- * "{z}" — which upstream answers with an HTML error page, so the map stays
- * black while every request reports 200.
- */
-const proxied = (url: string) =>
+const proxy = (url: string) =>
   `/api/proxy-tiles?url=${encodeURIComponent(url)
+    // MapLibre substitutes `{z}`/`{x}`/`{y}` by literal text match, and
+    // percent-encoded braces sail straight past it — the proxy would then be
+    // asked for a tile named "{z}", which upstream answers with an HTML error
+    // page at HTTP 200 while the map stays black.
     .replace(/%7B/g, "{")
     .replace(/%7D/g, "}")}`;
 
 const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services";
-
 const IMAGERY = `${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`;
-const DARK = `${ESRI}/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`;
 const LABELS = `${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`;
+
+export const CARTO_DARK =
+  "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+
+/** AWS's open terrain tiles. Terrarium encoding, not Mapbox's. */
+export const TERRAIN_TILES =
+  "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
 
 export type BasemapId = "sat" | "map";
 
-function rasterStyle(base: string, labels: boolean): StyleSpecification {
+function satelliteStyle(): StyleSpecification {
   return {
     version: 8,
-    // Esri's tiles are XYZ with y before x in the path, which the template
-    // above already accounts for.
     sources: {
       base: {
         type: "raster",
-        tiles: [proxied(base)],
+        // Esri's scheme puts y before x in the path, which the template above
+        // already accounts for.
+        tiles: [proxy(IMAGERY)],
         tileSize: 256,
         maxzoom: 18,
         attribution: "Esri, Maxar, Earthstar Geographics",
       },
-      ...(labels
-        ? {
-            labels: {
-              type: "raster" as const,
-              tiles: [proxied(LABELS)],
-              tileSize: 256,
-              maxzoom: 18,
-            },
-          }
-        : {}),
+      labels: {
+        type: "raster",
+        tiles: [proxy(LABELS)],
+        tileSize: 256,
+        maxzoom: 18,
+      },
     },
     layers: [
       // Space, not a grey void — the globe reads as a body in it.
       { id: "space", type: "background", paint: { "background-color": "#03030a" } },
       { id: "base", type: "raster", source: "base" },
-      ...(labels
-        ? [
-            {
-              id: "labels",
-              type: "raster" as const,
-              source: "labels",
-              paint: { "raster-opacity": 0.85 },
-            },
-          ]
-        : []),
+      {
+        id: "labels",
+        type: "raster",
+        source: "labels",
+        paint: { "raster-opacity": 0.85 },
+      },
     ],
-  } as StyleSpecification;
+  };
 }
 
-export const BASEMAPS: Record<BasemapId, () => StyleSpecification> = {
-  sat: () => rasterStyle(IMAGERY, true),
-  map: () => rasterStyle(DARK, true),
+export const BASEMAPS: Record<BasemapId, () => StyleSpecification | string> = {
+  sat: satelliteStyle,
+  // The whole style is proxied, and every URL inside it is rewritten to go
+  // back through the proxy — see rewriteStyle below.
+  map: () => proxy(CARTO_DARK),
 };
+
+/**
+ * Point a fetched vector style back through the proxy.
+ *
+ * A hosted style is a document full of absolute URLs to other hosts. Loading
+ * it directly would have the browser reach CARTO for tiles, sprites and glyphs
+ * — which works, and gives up the single-origin property that makes the
+ * allowlist worth having. Rewriting them keeps every request on Scout's own
+ * origin.
+ */
+export function rewriteStyle(style: StyleSpecification): StyleSpecification {
+  const rewritten: StyleSpecification = {
+    ...style,
+    glyphs: typeof style.glyphs === "string" ? proxy(style.glyphs) : style.glyphs,
+    sprite:
+      typeof style.sprite === "string"
+        ? proxy(style.sprite)
+        : Array.isArray(style.sprite)
+          ? style.sprite.map((s) => ({ ...s, url: proxy(s.url) }))
+          : style.sprite,
+    sources: Object.fromEntries(
+      Object.entries(style.sources ?? {}).map(([id, source]) => {
+        const s = source as Record<string, unknown>;
+        if (typeof s["url"] === "string") {
+          return [id, { ...s, url: proxy(s["url"]) }];
+        }
+        if (Array.isArray(s["tiles"])) {
+          return [
+            id,
+            { ...s, tiles: (s["tiles"] as string[]).map((t) => proxy(t)) },
+          ];
+        }
+        return [id, source];
+      }),
+    ) as StyleSpecification["sources"],
+  };
+  return rewritten;
+}
+
+export const terrainSource = () => ({
+  type: "raster-dem" as const,
+  tiles: [proxy(TERRAIN_TILES)],
+  tileSize: 256,
+  maxzoom: 13,
+  // Terrarium, not Mapbox. Reading it as Mapbox's encoding produces terrain
+  // that is wrong by kilometres and looks like a rendering bug.
+  encoding: "terrarium" as const,
+  attribution: "Mapzen, USGS, SRTM",
+});

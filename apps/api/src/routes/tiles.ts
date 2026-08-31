@@ -18,26 +18,43 @@ import { badRequest } from "../errors.js";
  * behalf. Only these hosts, only https, no redirects followed.
  */
 /**
- * The basemap domain, matched by suffix.
+ * The hosts this proxy will fetch from. This list is the entire security
+ * boundary — everything else about the route is plumbing.
  *
- * An exact host list looked tighter and was wrong: the style's TileJSON hands
- * back shard hostnames — `tiles-a` through `tiles-d` — that no hand-written
- * list anticipated. Every tile request was refused, so the source never
- * loaded, the style never finished, `load` never fired, and the map sat black
- * with no error anywhere. A basemap CDN that shards is normal; a proxy that
- * has to be edited each time it adds a shard is not.
+ * Two kinds of entry, because two kinds of host.
  *
- * Suffix matching stays safe because the leading dot is required: `cartocdn.com`
- * and `evil-cartocdn.com` do not match, and neither does
- * `cartocdn.com.attacker.test`.
+ * Suffixes, written with a leading dot, cover CDNs that shard. An exact host
+ * list looked tighter and was wrong: the vector style's TileJSON hands back
+ * `tiles-a` through `tiles-d`, which no hand-written list anticipated. Every
+ * tile was refused, so the source never loaded, the style never finished,
+ * `load` never fired, and the map sat black with no error anywhere. The
+ * leading dot is what keeps this safe: `cartocdn.com` and `evil-cartocdn.com`
+ * do not match `.cartocdn.com`, and neither does `cartocdn.com.attacker.test`.
+ *
+ * Exact hosts cover the ones where a suffix would be far too wide. Terrain
+ * tiles come from `s3.amazonaws.com`, and allowing `.amazonaws.com` would open
+ * this proxy onto every AWS service endpoint there is.
  */
 const ALLOWED_SUFFIXES = [".cartocdn.com", ".arcgisonline.com"];
 
+const ALLOWED_HOSTS = new Set([
+  "basemaps.cartocdn.com",
+  "cartocdn.com",
+  "arcgisonline.com",
+  "server.arcgisonline.com",
+  // AWS's open terrain tiles, for the 3D elevation layer.
+  "s3.amazonaws.com",
+  "elevation-tiles-prod.s3.amazonaws.com",
+]);
+
+/** Exposed for the allowlist tests; the boundary deserves a test run. */
+export const allowedHostForTest = (hostname: string): boolean =>
+  allowedHost(hostname);
+
 function allowedHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  return ALLOWED_SUFFIXES.some(
-    (suffix) => host === suffix.slice(1) || host.endsWith(suffix),
-  );
+  if (ALLOWED_HOSTS.has(host)) return true;
+  return ALLOWED_SUFFIXES.some((suffix) => host.endsWith(suffix));
 }
 
 const REQUEST_TIMEOUT_MS = 15_000;

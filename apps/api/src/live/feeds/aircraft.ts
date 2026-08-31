@@ -233,9 +233,30 @@ const HOTSPOTS: Array<[number, number, string]> = [
   [-26.2, 28.0, "Johannesburg"],
 ];
 
+/**
+ * Rotating, not all at once.
+ *
+ * Eighteen requests every twenty seconds is fifty-four a minute to one
+ * provider, which is exactly how adsb.fi starts answering 429 — and when it
+ * does, the military endpoint goes with it and that whole tier silently
+ * empties while the map still shows nine thousand aircraft. Each refresh takes
+ * one slice of the list and the results are held long enough for the whole
+ * rotation to stay on the map.
+ */
+const HOTSPOT_BATCH = 4;
+let rotation = 0;
+
 async function adsbHotspots(): Promise<Track[]> {
+  const start = (rotation * HOTSPOT_BATCH) % HOTSPOTS.length;
+  rotation += 1;
+
+  const slice = Array.from({ length: HOTSPOT_BATCH }, (_, i) => {
+    const entry = HOTSPOTS[(start + i) % HOTSPOTS.length];
+    return entry;
+  }).filter((e): e is [number, number, string] => e !== undefined);
+
   const { items } = await merge(
-    HOTSPOTS.map(([lat, lon]) => async () => {
+    slice.map(([lat, lon]) => async () => {
       const parsed = z
         .object({ aircraft: ADSB_SCHEMA.shape.ac })
         .or(ADSB_SCHEMA.transform((v) => ({ aircraft: v.ac })))
@@ -246,44 +267,69 @@ async function adsbHotspots(): Promise<Track[]> {
   return items;
 }
 
+/**
+ * Enrichment is held longer than the positions it decorates.
+ *
+ * A type designator does not change; a position does. Keeping the last
+ * rotation's type codes lets the private-jet tier stay populated between
+ * sweeps instead of flickering as the rotation moves on.
+ */
+const enrichment = new Map<string, { type: string | null; registration: string | null; military: boolean }>();
+
 async function loadTracks(): Promise<Track[]> {
-  const { items, failures } = await merge<Track>([
-    openSky,
-    adsbMilitary,
-    adsbHotspots,
+  /*
+   * Three providers on three cadences, because they cost different amounts.
+   *
+   * OpenSky is one request for the world and can be asked often. adsb.fi's
+   * military endpoint is one request and is the only source for that tier, so
+   * it gets its own cache rather than sharing a failure with anything else.
+   * The hotspot sweep is several requests and is only enrichment, so it runs
+   * slowest.
+   */
+  const [global, mil, hot] = await Promise.allSettled([
+    cached("aircraft:opensky", 20_000, openSky),
+    cached("aircraft:mil", 45_000, adsbMilitary),
+    cached("aircraft:hotspots", 120_000, adsbHotspots),
   ]);
-  if (items.length === 0) {
-    throw new Error(`every aircraft provider failed (${failures})`);
+
+  const items: Track[] = [];
+  for (const result of [global, mil, hot]) {
+    if (result.status === "fulfilled") items.push(...result.value);
+  }
+  if (items.length === 0) throw new Error("every aircraft provider failed");
+
+  // Remember what the type-bearing providers said, so the tiers survive a
+  // rotation that has moved on or a provider that is briefly refusing.
+  for (const track of items) {
+    if (track.type === null && !(track.tier === "military")) continue;
+    enrichment.set(track.hex, {
+      type: track.type,
+      registration: track.registration,
+      military: track.tier === "military",
+    });
   }
 
-  /*
-   * Merge on the ICAO address. adsb.fi wins on the fields it has, because a
-   * real type designator beats an inferred tier — that is the entire reason
-   * for asking two providers.
-   */
   const byHex = new Map<string, Track>();
   for (const track of items) {
     const existing = byHex.get(track.hex);
-    if (existing === undefined) {
-      byHex.set(track.hex, track);
+    if (existing !== undefined && existing.type !== null && track.type === null) {
       continue;
     }
-    const richer = track.type !== null ? track : existing;
-    const other = track.type !== null ? existing : track;
-    byHex.set(track.hex, {
-      ...other,
-      ...richer,
-      callsign: richer.callsign.length > 0 ? richer.callsign : other.callsign,
-      origin: richer.origin ?? other.origin,
-      // Military is a fact one provider knows and the other does not, so it
-      // survives the merge whichever side carried it.
-      tier:
-        existing.tier === "military" || track.tier === "military"
-          ? "military"
-          : richer.tier,
-    });
+    byHex.set(track.hex, existing === undefined ? track : { ...existing, ...track });
   }
-  return [...byHex.values()];
+
+  // Apply what is known about each aircraft to whatever position won.
+  return [...byHex.values()].map((track) => {
+    const known = enrichment.get(track.hex);
+    if (known === undefined) return track;
+    const type = track.type ?? known.type;
+    return {
+      ...track,
+      type,
+      registration: track.registration ?? known.registration,
+      tier: tierFor(track.callsign, type, known.military || track.tier === "military"),
+    };
+  });
 }
 
 /** 7500 hijack, 7600 radio failure, 7700 general emergency. */
@@ -318,14 +364,14 @@ function toFeature(track: Track): Feature {
 }
 
 /**
- * One fetch feeds all four tiers. Toggling on Military must not cost another
- * round trip to every provider.
+ * One assembly feeds all four tiers. Toggling on Military must not cost
+ * another round trip to every provider — the providers are cached
+ * individually inside loadTracks, and this holds the merged result just long
+ * enough that four toggled-on tiers are one pass rather than four.
  */
-const TTL_MS = 20_000;
-
 export function aircraftIn(tier: Tier) {
   return async (): Promise<FeatureCollection> => {
-    const tracks = await cached("aircraft", TTL_MS, loadTracks);
+    const tracks = await cached("aircraft:merged", 10_000, loadTracks);
     const mine = tracks.filter((t) => t.tier === tier);
     return {
       type: "FeatureCollection",

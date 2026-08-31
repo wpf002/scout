@@ -1,46 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
+import type { StyleSpecification } from "maplibre-gl";
 import { LAYERS, LAYER_BY_ID } from "@/lib/layers";
 import { nightPolygon } from "@/lib/terminator";
-import { BASEMAPS, type BasemapId } from "@/lib/basemap";
+import {
+  BASEMAPS,
+  rewriteStyle,
+  terrainSource,
+  type BasemapId,
+} from "@/lib/basemap";
 import { build, type Point as MeasurePoint, type Shape } from "@/lib/measure";
-
-/**
- * The map.
- *
- * Every basemap request goes through Scout's own proxy. That keeps the tile
- * provider from learning which part of the world an investigator is looking
- * at, which for this tool is the whole point of not linking straight to it.
- */
-
-export interface Selection {
-  layer: string;
-  label: string;
-  properties: Record<string, unknown>;
-}
-
-interface Props {
-  active: string[];
-  basemap: BasemapId;
-  projection: "globe" | "mercator";
-  onCursor: (position: { lat: number; lon: number; zoom: number }) => void;
-  /** Set by the search box. Changing it moves the camera. */
-  flyTo: { lat: number; lon: number; zoom?: number } | null;
-  /** Fired when the camera settles, for the reverse-geocoded readout. */
-  onCentre: (centre: { lat: number; lon: number }) => void;
-  /** Active measurement tool, or null when the map is in normal use. */
-  measure: Shape | null;
-  /** The current reading, so the shell can display it. */
-  onMeasure: (reading: string | null) => void;
-  /** Extra points contributed by the OSINT panel. */
-  osintFeatures: GeoJSON.Feature[];
-  onSelect: (selection: Selection | null) => void;
-  onStatus: (status: Record<string, number | string>) => void;
-}
-
-const FEED_LAYERS = LAYERS.filter((layer) => layer.kind === "feed");
 
 /*
  * Point MapLibre at the worker copied into `public/` — see
@@ -49,6 +20,40 @@ const FEED_LAYERS = LAYERS.filter((layer) => layer.kind === "feed");
  * the pool is created lazily on that call and the URL is read then.
  */
 maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
+
+export interface Selection {
+  layer: string;
+  label: string;
+  properties: Record<string, unknown>;
+  lngLat: { lng: number; lat: number };
+}
+
+export interface Props {
+  active: string[];
+  basemap: BasemapId;
+  projection: "globe" | "mercator";
+  osintFeatures: GeoJSON.Feature[];
+  onSelect: (selection: Selection | null) => void;
+  onStatus: (status: Record<string, number | string>) => void;
+  onCursor: (position: { lat: number; lon: number; zoom: number }) => void;
+  flyTo: { lat: number; lon: number; zoom?: number } | null;
+  onCentre: (centre: { lat: number; lon: number }) => void;
+  measure: Shape | null;
+  onMeasure: (reading: string | null) => void;
+}
+
+const FEED_LAYERS = LAYERS.filter((layer) => layer.kind === "feed");
+
+/**
+ * How many features a heavy layer draws at once.
+ *
+ * Some of these feeds are tens of thousands of points. MapLibre will render
+ * that, but it stops being a map and becomes a texture — and every one of
+ * those points had to cross the wire. Heavy layers are therefore drawn from
+ * what is in view, thinned to this ceiling, and the rail reports the true
+ * total rather than the drawn count so nobody mistakes the cap for the data.
+ */
+const HEAVY_CEILING = 6_000;
 
 export function GlobeMap({
   active,
@@ -67,6 +72,10 @@ export function GlobeMap({
   const map = useRef<maplibregl.Map | null>(null);
   const [ready, setReady] = useState(false);
   const [redraw, setRedraw] = useState(0);
+  const [viewport, setViewport] = useState(0);
+
+  /** Every feature a layer returned, before viewport thinning. */
+  const raw = useRef(new Map<string, GeoJSON.Feature[]>());
 
   // ── Create the map once ──────────────────────────────────────────────────
   useEffect(() => {
@@ -74,23 +83,34 @@ export function GlobeMap({
 
     const instance = new maplibregl.Map({
       container: container.current,
-      style: BASEMAPS[basemap](),
-      center: [-96, 38],
-      zoom: 3.2,
+      style: BASEMAPS[basemap]() as StyleSpecification,
+      center: [-40, 25],
+      zoom: 2.2,
       attributionControl: false,
+      maxPitch: 75,
       // A globe reads as a world view rather than a wall chart, and it is what
       // makes polar coverage legible at all.
       ...({ projection: { type: projection } } as object),
     });
 
     instance.addControl(
-      new maplibregl.NavigationControl({ showCompass: false }),
+      new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }),
       "bottom-right",
     );
     instance.addControl(
       new maplibregl.ScaleControl({ unit: "metric" }),
       "bottom-left",
     );
+
+    /*
+     * MapLibre measures the container once, at construction. This component is
+     * imported dynamically, so on the first pass the div is in the document but
+     * not yet laid out — MapLibre falls back to 400x300 and never revisits it.
+     * The symptom is a map that loads its style and its tiles correctly and
+     * paints them into the top-left corner of a full-screen div.
+     */
+    const observer = new ResizeObserver(() => instance.resize());
+    observer.observe(container.current);
 
     instance.on("load", () => {
       // Ready first. Setting the projection is a nice-to-have, and when it
@@ -118,6 +138,7 @@ export function GlobeMap({
     instance.on("moveend", () => {
       const centre = instance.getCenter();
       onCentre({ lat: centre.lat, lon: centre.lng });
+      setViewport((n) => n + 1);
     });
 
     instance.on("error", (event) => {
@@ -128,22 +149,7 @@ export function GlobeMap({
       console.warn("map:", event.error?.message ?? event);
     });
 
-    /*
-     * MapLibre measures the container once, at construction. This component is
-     * imported dynamically, so on the first pass the div is in the document but
-     * not yet laid out — MapLibre falls back to 400x300 and never revisits it.
-     * The symptom is a map that loads its style and its tiles correctly and
-     * paints them into the top-left corner of a full-screen div.
-     *
-     * Observing the container fixes it for every later cause too: opening a
-     * side panel, rotating a tablet, dragging a window between displays.
-     */
-    const observer = new ResizeObserver(() => instance.resize());
-    observer.observe(container.current);
-
     map.current = instance;
-    // Dev aid: lets the map be inspected from the console when a layer does
-    // not appear and the question is whether the style ever finished loading.
     (window as unknown as { __scoutMap?: unknown }).__scoutMap = instance;
     return () => {
       observer.disconnect();
@@ -154,8 +160,7 @@ export function GlobeMap({
 
   /**
    * Switching basemap replaces the style, which discards every layer added on
-   * top of it — so the layer effect has to rerun and redraw them, or changing
-   * SAT to MAP silently empties the map.
+   * top of it — so the layer effect has to rerun and redraw them.
    *
    * `applied` is why this does not fire on mount. The map is already built
    * with the right style, and replacing it with an identical one raced the
@@ -167,8 +172,29 @@ export function GlobeMap({
     const instance = map.current;
     if (instance === null || !ready || applied.current === basemap) return;
     applied.current = basemap;
-    instance.setStyle(BASEMAPS[basemap]());
-    instance.once("styledata", () => setRedraw((n) => n + 1));
+
+    const style = BASEMAPS[basemap]();
+    const swap = (spec: StyleSpecification) => {
+      instance.setStyle(spec);
+      instance.once("styledata", () => setRedraw((n) => n + 1));
+    };
+
+    if (typeof style === "string") {
+      // A hosted vector style is a document full of absolute URLs to other
+      // hosts. It is fetched here so every one of them can be pointed back
+      // through the proxy before MapLibre starts requesting them.
+      void fetch(style)
+        .then((r) => r.json() as Promise<StyleSpecification>)
+        .then((spec) => swap(rewriteStyle(spec)))
+        .catch(() => {
+          // Falling back to the style that has one dependency beats a black
+          // map with no explanation.
+          applied.current = "sat";
+          swap(BASEMAPS.sat() as StyleSpecification);
+        });
+    } else {
+      swap(style);
+    }
   }, [basemap, ready]);
 
   useEffect(() => {
@@ -181,6 +207,27 @@ export function GlobeMap({
     }
   }, [projection, ready]);
 
+  // ── Terrain ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+    const on = active.includes("terrain_3d");
+
+    try {
+      if (on) {
+        if (instance.getSource("terrain") === undefined) {
+          instance.addSource("terrain", terrainSource());
+        }
+        instance.setTerrain({ source: "terrain", exaggeration: 1.4 });
+      } else {
+        instance.setTerrain(null);
+      }
+    } catch {
+      // Terrain is a garnish. A renderer that cannot do it still draws a map.
+    }
+  }, [active, ready, redraw]);
+
+  // ── Fly to ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const instance = map.current;
     if (instance === null || flyTo === null) return;
@@ -191,13 +238,12 @@ export function GlobeMap({
     });
   }, [flyTo]);
 
-  /**
-   * Measurement.
-   *
+  // ── Measurement ──────────────────────────────────────────────────────────
+  /*
    * The click handler is registered per tool rather than always-on and
-   * filtered, so with no tool selected the map has exactly the handlers it
-   * had before this existed — a measurement mode that quietly eats clicks
-   * meant for a feature is worse than not having one.
+   * filtered, so with no tool selected the map has exactly the handlers it had
+   * before this existed — a measurement mode that quietly eats clicks meant
+   * for a feature is worse than not having one.
    *
    * Points live in a ref as well as in state: the handler is registered once
    * per tool and would otherwise close over the empty array it was created
@@ -221,8 +267,7 @@ export function GlobeMap({
       ];
       // A circle and a box are defined by two points; a third starts over
       // rather than silently ignoring the click.
-      const capped =
-        measure !== "path" && next.length > 2 ? next.slice(-1) : next;
+      const capped = measure !== "path" && next.length > 2 ? next.slice(-1) : next;
       pointsRef.current = capped;
       setPoints(capped);
     };
@@ -287,38 +332,33 @@ export function GlobeMap({
     onMeasure(measure === null ? null : reading);
   }, [points, measure, ready, redraw, onMeasure]);
 
-  // ── Draw and update layers ───────────────────────────────────────────────
-  useEffect(() => {
-    const instance = map.current;
-    if (instance === null || !ready) return;
+  // ── Layer painting ───────────────────────────────────────────────────────
 
-    let cancelled = false;
-
-    const ensureSource = (id: string, data: GeoJSON.FeatureCollection) => {
-      const existing = instance.getSource(id) as maplibregl.GeoJSONSource | undefined;
-      if (existing === undefined) {
-        instance.addSource(id, { type: "geojson", data });
-      } else {
-        existing.setData(data);
-      }
-    };
-
-    const paintFor = (layerId: string) => {
+  const paintFor = useCallback(
+    (layerId: string): maplibregl.AddLayerObject => {
       const def = LAYER_BY_ID.get(layerId);
       const colour = def?.colour ?? "#ffffff";
+      const base = { id: layerId, source: layerId } as const;
 
-      if (def?.draw === "line") {
+      if (def?.draw === "line" || def?.draw === "arc") {
         return {
-          type: "line" as const,
-          paint: { "line-color": colour, "line-width": 1.1, "line-opacity": 0.6 },
+          ...base,
+          type: "line",
+          filter: ["!=", ["geometry-type"], "Point"],
+          paint: {
+            "line-color": ["coalesce", ["get", "colour"], colour],
+            "line-width": def.draw === "arc" ? 1.4 : 1.1,
+            "line-opacity": def.draw === "arc" ? 0.55 : 0.6,
+          },
         };
       }
 
-      // Aurora is a probability field sampled on a grid, so it reads as a
-      // haze rather than a set of events: soft, large, and unstroked.
-      if (layerId === "aurora") {
+      // Aurora is a probability field sampled on a grid, so it reads as a haze
+      // rather than a set of events: soft, large, and unstroked.
+      if (def?.draw === "glow") {
         return {
-          type: "circle" as const,
+          ...base,
+          type: "circle",
           paint: {
             "circle-radius": 7,
             "circle-color": colour,
@@ -329,9 +369,12 @@ export function GlobeMap({
       }
 
       return {
-        type: "circle" as const,
+        ...base,
+        type: "circle",
+        filter: ["==", ["geometry-type"], "Point"],
         paint: {
-          // Earthquakes size by magnitude; everything else is a fixed dot.
+          // Earthquakes size by magnitude; ports by rank; everything else is a
+          // fixed dot that grows a little with zoom so it stays clickable.
           "circle-radius":
             layerId === "earthquakes"
               ? ([
@@ -343,63 +386,137 @@ export function GlobeMap({
                   8,
                   14,
                 ] as unknown as number)
-              : 3.6,
-          "circle-color": colour,
+              : ([
+                  "interpolate",
+                  ["linear"],
+                  ["zoom"],
+                  2,
+                  2.4,
+                  8,
+                  5,
+                ] as unknown as number),
+          "circle-color": ["coalesce", ["get", "colour"], colour] as unknown as string,
           "circle-opacity": 0.85,
           "circle-stroke-color": "#05050a",
           "circle-stroke-width": 0.6,
         },
       };
-    };
+    },
+    [],
+  );
+
+  /** The extra line layer an arc layer needs for its endpoint dots. */
+  const endpointLayerId = (layerId: string) => `${layerId}-endpoints`;
+
+  const ensure = useCallback(
+    (
+      instance: maplibregl.Map,
+      layerId: string,
+      data: GeoJSON.FeatureCollection,
+    ) => {
+      const source = instance.getSource(layerId) as
+        | maplibregl.GeoJSONSource
+        | undefined;
+      if (source === undefined) {
+        instance.addSource(layerId, { type: "geojson", data });
+      } else {
+        source.setData(data);
+      }
+
+      if (instance.getLayer(layerId) === undefined) {
+        instance.addLayer(paintFor(layerId));
+
+        // An arc layer draws lines; its endpoints need their own circle layer
+        // or the C2 servers themselves would be invisible.
+        if (LAYER_BY_ID.get(layerId)?.draw === "arc") {
+          instance.addLayer({
+            id: endpointLayerId(layerId),
+            source: layerId,
+            type: "circle",
+            filter: ["==", ["geometry-type"], "Point"],
+            paint: {
+              "circle-radius": 4,
+              "circle-color": ["coalesce", ["get", "colour"], "#e0173a"],
+              "circle-opacity": 0.9,
+              "circle-stroke-color": "#05050a",
+              "circle-stroke-width": 0.8,
+            },
+          });
+        }
+      }
+    },
+    [paintFor],
+  );
+
+  /** Thin a heavy layer to what is in view, up to the ceiling. */
+  const inView = useCallback(
+    (instance: maplibregl.Map, features: GeoJSON.Feature[]) => {
+      const bounds = instance.getBounds();
+      const visible = features.filter((feature) => {
+        if (feature.geometry.type !== "Point") return true;
+        const [lon, lat] = feature.geometry.coordinates;
+        return (
+          typeof lon === "number" &&
+          typeof lat === "number" &&
+          bounds.contains([lon, lat])
+        );
+      });
+
+      if (visible.length <= HEAVY_CEILING) return visible;
+      // Evenly sampled rather than truncated: a truncated set is whatever the
+      // feed happened to list first, which is usually one region.
+      const step = Math.ceil(visible.length / HEAVY_CEILING);
+      return visible.filter((_, index) => index % step === 0);
+    },
+    [],
+  );
+
+  // Fetch and draw.
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+
+    let cancelled = false;
 
     const drawFeed = async (layerId: string) => {
       const def = LAYER_BY_ID.get(layerId);
       if (def === undefined) return;
 
-      let url = `/api/live/${layerId}`;
-      if (def.needsBbox === true) {
-        const b = instance.getBounds();
-        url += `?bbox=${b.getSouth().toFixed(3)},${b.getWest().toFixed(3)},${b.getNorth().toFixed(3)},${b.getEast().toFixed(3)}`;
-      }
-
       try {
-        const response = await fetch(url, { cache: "no-store" });
+        const response = await fetch(`/api/live/${layerId}`, { cache: "no-store" });
         const data = (await response.json()) as GeoJSON.FeatureCollection & {
           error?: string;
+          meta?: Record<string, unknown>;
         };
         if (cancelled) return;
 
-        ensureSource(layerId, data);
-        if (instance.getLayer(layerId) === undefined) {
-          const paint = paintFor(layerId);
-          instance.addLayer({
-            id: layerId,
-            source: layerId,
-            ...paint,
-          } as never);
-        }
+        raw.current.set(layerId, data.features);
+        const drawn =
+          def.heavy === true ? inView(instance, data.features) : data.features;
+        ensure(instance, layerId, { type: "FeatureCollection", features: drawn });
+
+        // The rail reports the true total, never the drawn count — a ceiling
+        // that reads as the data is worse than no number.
         onStatus({ [layerId]: data.error ?? data.features.length });
       } catch {
-        // A layer that cannot load must not take the map down. It reports zero
-        // and every other layer keeps drawing.
+        // A layer that cannot load must not take the map down. It reports as
+        // unavailable and every other layer keeps drawing.
         if (!cancelled) onStatus({ [layerId]: "unavailable" });
       }
     };
 
     // Remove anything switched off, so toggling actually clears the map.
     for (const def of LAYERS) {
-      const isOn = active.includes(def.id);
-      if (!isOn && instance.getLayer(def.id) !== undefined) {
-        instance.removeLayer(def.id);
-        if (instance.getSource(def.id) !== undefined) {
-          instance.removeSource(def.id);
-        }
+      if (active.includes(def.id)) continue;
+      for (const id of [def.id, endpointLayerId(def.id)]) {
+        if (instance.getLayer(id) !== undefined) instance.removeLayer(id);
       }
+      if (instance.getSource(def.id) !== undefined) instance.removeSource(def.id);
+      raw.current.delete(def.id);
     }
 
     // Day/night first, so the feeds that follow are drawn on top of it. Night
-    // shading over the marks would dim exactly what the operator is reading.
-    // Day/night is local maths rather than a fetch.
+    // shading over the marks would dim exactly what is being read.
     if (active.includes("day_night")) {
       const data: GeoJSON.FeatureCollection = {
         type: "FeatureCollection",
@@ -411,14 +528,19 @@ export function GlobeMap({
           },
         ],
       };
-      ensureSource("day_night", data);
-      if (instance.getLayer("day_night") === undefined) {
+      const source = instance.getSource("day_night") as
+        | maplibregl.GeoJSONSource
+        | undefined;
+      if (source === undefined) {
+        instance.addSource("day_night", { type: "geojson", data });
         instance.addLayer({
           id: "day_night",
           type: "fill",
           source: "day_night",
           paint: { "fill-color": "#000010", "fill-opacity": 0.42 },
         });
+      } else {
+        source.setData(data);
       }
     }
 
@@ -429,7 +551,38 @@ export function GlobeMap({
     return () => {
       cancelled = true;
     };
-  }, [active, ready, onStatus, redraw]);
+  }, [active, ready, onStatus, redraw, ensure, inView]);
+
+  /**
+   * Re-thin heavy layers when the view moves.
+   *
+   * This deliberately does not refetch — the whole feed is already held, so
+   * panning costs a filter rather than a request.
+   */
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+
+    for (const def of FEED_LAYERS) {
+      if (def.heavy !== true || !active.includes(def.id)) continue;
+      const features = raw.current.get(def.id);
+      if (features === undefined) continue;
+      const source = instance.getSource(def.id) as
+        | maplibregl.GeoJSONSource
+        | undefined;
+      source?.setData({
+        type: "FeatureCollection",
+        features: inView(instance, features),
+      });
+    }
+  }, [viewport, active, ready, inView]);
+
+  // Refresh live feeds on a timer, so the map stays live without a reload.
+  useEffect(() => {
+    if (!ready) return;
+    const timer = setInterval(() => setRedraw((n) => n + 1), 60_000);
+    return () => clearInterval(timer);
+  }, [ready]);
 
   // ── OSINT results as a layer ─────────────────────────────────────────────
   useEffect(() => {
@@ -441,7 +594,9 @@ export function GlobeMap({
       features: osintFeatures,
     };
 
-    const source = instance.getSource("osint") as maplibregl.GeoJSONSource | undefined;
+    const source = instance.getSource("osint") as
+      | maplibregl.GeoJSONSource
+      | undefined;
     if (source === undefined) {
       instance.addSource("osint", { type: "geojson", data });
       instance.addLayer({
@@ -461,69 +616,55 @@ export function GlobeMap({
     }
   }, [osintFeatures, ready, redraw]);
 
-  // ── Refresh on a timer and on pan ────────────────────────────────────────
+  // ── Selection ────────────────────────────────────────────────────────────
   useEffect(() => {
     const instance = map.current;
-    if (instance === null || !ready) return;
-
-    // Bounded feeds need re-fetching when the viewport moves; unbounded ones
-    // do not, so panning does not re-request the whole world.
-    const onMoveEnd = () => {
-      for (const def of FEED_LAYERS) {
-        if (def.needsBbox === true && active.includes(def.id)) {
-          void (async () => {
-            const b = instance.getBounds();
-            const response = await fetch(
-              `/api/live/${def.id}?bbox=${b.getSouth().toFixed(3)},${b.getWest().toFixed(3)},${b.getNorth().toFixed(3)},${b.getEast().toFixed(3)}`,
-              { cache: "no-store" },
-            );
-            const data = (await response.json()) as GeoJSON.FeatureCollection;
-            const source = instance.getSource(def.id) as
-              | maplibregl.GeoJSONSource
-              | undefined;
-            source?.setData(data);
-            onStatus({ [def.id]: data.features.length });
-          })().catch(() => undefined);
-        }
-      }
-    };
-
-    instance.on("moveend", onMoveEnd);
-    return () => {
-      instance.off("moveend", onMoveEnd);
-    };
-  }, [active, ready, onStatus]);
-
-  // ── Clicking a feature ───────────────────────────────────────────────────
-  useEffect(() => {
-    const instance = map.current;
-    if (instance === null || !ready) return;
+    if (instance === null || !ready || measure !== null) return;
 
     const onClick = (event: maplibregl.MapMouseEvent) => {
-      const drawn = [...LAYERS.map((l) => l.id), "osint"].filter(
+      const clickable = [...FEED_LAYERS.map((l) => l.id), "osint"].filter(
         (id) => instance.getLayer(id) !== undefined,
       );
-      const hits = instance.queryRenderedFeatures(event.point, { layers: drawn });
+      const hits = instance.queryRenderedFeatures(event.point, {
+        layers: clickable,
+      });
       const hit = hits[0];
-
       if (hit === undefined) {
         onSelect(null);
         return;
       }
 
-      const properties = hit.properties ?? {};
+      const properties = (hit.properties ?? {}) as Record<string, unknown>;
       onSelect({
         layer: String(properties["layer"] ?? hit.layer.id),
         label: String(properties["label"] ?? "Feature"),
-        properties: properties as Record<string, unknown>,
+        properties,
+        lngLat: { lng: event.lngLat.lng, lat: event.lngLat.lat },
       });
     };
 
+    const onEnter = () => {
+      instance.getCanvas().style.cursor = "pointer";
+    };
+    const onLeave = () => {
+      instance.getCanvas().style.cursor = "";
+    };
+
     instance.on("click", onClick);
+    for (const def of FEED_LAYERS) {
+      if (instance.getLayer(def.id) === undefined) continue;
+      instance.on("mouseenter", def.id, onEnter);
+      instance.on("mouseleave", def.id, onLeave);
+    }
+
     return () => {
       instance.off("click", onClick);
+      for (const def of FEED_LAYERS) {
+        instance.off("mouseenter", def.id, onEnter);
+        instance.off("mouseleave", def.id, onLeave);
+      }
     };
-  }, [ready, onSelect]);
+  }, [ready, onSelect, measure, active, redraw]);
 
   return <div ref={container} className="globe" />;
 }
