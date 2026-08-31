@@ -48,7 +48,46 @@ of the invariants stand, because none of them cost anything at the surface:
 | Epieos | API | Not built — access model unverified |
 | Maltego | — | Graph view substitutes; no integration planned |
 
+## The Surface
+
+Scout is a live map with the indicator search inside it.
+
+Phase C put the whole application on one page — an indicator field, a run
+button, and a table. That page still exists, unchanged in behaviour, but it is
+now a panel on a full-screen world view rather than the whole screen. The
+reason is that most of what an investigation needs is already geographic: a
+host has a location, an incident has a location, and a page that shows a table
+next to a map an operator has to imagine is doing half the work.
+
+Nothing about invariants 1 to 6 changes. The map does not touch the scope gate,
+the audit log, or where keys live. Located hosts from a run are plotted as one
+more layer, and every other layer is a public feed.
+
 ## Phases
+
+### Phase G — The Map Surface ✅ Shipped
+
+- Full-screen MapLibre globe on Esri raster imagery, proxied server-side
+  through a host allowlist. The proxy is an allowlist, not an open relay.
+- Live layers, all keyless: earthquakes (USGS), natural events (NASA EONET),
+  air traffic (OpenSky), vessel traffic (Digitraffic, Baltic), geocoded news
+  (GDELT), submarine cables, traffic cameras (NYC, London), aurora forecast
+  (NOAA OVATION), and a solar terminator computed in the browser.
+- Every feed is normalised to GeoJSON server-side, cached with a TTL matched to
+  how fast the thing actually moves, and a dead upstream reports empty with a
+  reason rather than taking the map down.
+- The URL is the source of truth for which layers are on, so a view is a link.
+- Search takes a place, a coordinate pair, or an indicator. An indicator opens
+  the OSINT panel seeded with it; the split happens in the browser so a
+  coordinate never leaves the machine to be told it is a coordinate.
+- Alerts across feeds, with severity derived from what each feed measures
+  rather than asserted.
+- Measurement: radius, box and path, computed on the sphere.
+
+**Done when:** the map draws every layer live, the OSINT run still works
+unchanged inside it, and a link restores a view. ✅
+
+
 
 ### Phase A — Subprocess Seam ✅ Shipped
 
