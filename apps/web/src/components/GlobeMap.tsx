@@ -177,10 +177,24 @@ export function GlobeMap({
       const def = LAYER_BY_ID.get(layerId);
       const colour = def?.colour ?? "#ffffff";
 
-      if (layerId === "space_weather") {
+      if (def?.draw === "line") {
         return {
           type: "line" as const,
-          paint: { "line-color": colour, "line-width": 1.4, "line-opacity": 0.7 },
+          paint: { "line-color": colour, "line-width": 1.1, "line-opacity": 0.6 },
+        };
+      }
+
+      // Aurora is a probability field sampled on a grid, so it reads as a
+      // haze rather than a set of events: soft, large, and unstroked.
+      if (layerId === "aurora") {
+        return {
+          type: "circle" as const,
+          paint: {
+            "circle-radius": 7,
+            "circle-color": colour,
+            "circle-opacity": 0.16,
+            "circle-blur": 1,
+          },
         };
       }
 

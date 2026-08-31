@@ -15,6 +15,8 @@ export interface LayerDef {
   colour: string;
   /** Live feeds are fetched; the rest are drawn client-side. */
   kind: "feed" | "overlay" | "panel";
+  /** How the feed is drawn. Points unless stated. */
+  draw?: "point" | "line";
   /** Feeds needing the current viewport rather than the whole world. */
   needsBbox?: boolean;
   description: string;
@@ -34,8 +36,26 @@ export interface CategoryDef {
 
 export const CATEGORIES: CategoryDef[] = [
   { id: "aviation", name: "Aviation", glyph: "✈", layerIds: ["flights"] },
-  { id: "hazards", name: "Natural Hazards", glyph: "◎", layerIds: ["earthquakes", "global_incidents"] },
-  { id: "space", name: "Space Weather", glyph: "☉", layerIds: ["space_weather"] },
+  { id: "maritime", name: "Maritime", glyph: "⚓", layerIds: ["vessels"] },
+  {
+    id: "hazards",
+    name: "Natural Hazards",
+    glyph: "◎",
+    layerIds: ["earthquakes", "global_incidents"],
+  },
+  { id: "news", name: "News & Events", glyph: "◈", layerIds: ["live_news"] },
+  {
+    id: "space",
+    name: "Space Weather",
+    glyph: "☉",
+    layerIds: ["space_weather", "aurora"],
+  },
+  {
+    id: "infrastructure",
+    name: "Infrastructure",
+    glyph: "⌁",
+    layerIds: ["cables", "cameras"],
+  },
   { id: "osint", name: "Network Intel", glyph: "⌗", layerIds: ["osint"] },
   { id: "display", name: "Display", glyph: "◐", layerIds: ["day_night"] },
 ];
@@ -72,6 +92,7 @@ export const LAYERS: LayerDef[] = [
     glyph: "☀",
     colour: "#9b6bff",
     kind: "feed",
+    draw: "line",
     description: "Planetary K-index and the approximate auroral bands, from NOAA.",
   },
   {
@@ -81,6 +102,49 @@ export const LAYERS: LayerDef[] = [
     colour: "#8e8e93",
     kind: "overlay",
     description: "The solar terminator, computed in the browser.",
+  },
+  {
+    id: "vessels",
+    name: "Vessel Traffic",
+    glyph: "⚓",
+    colour: "#30d0c0",
+    kind: "feed",
+    description:
+      "Live AIS positions in Finnish waters and the northern Baltic, from Digitraffic — the one authority publishing AIS without a key.",
+  },
+  {
+    id: "live_news",
+    name: "Live News",
+    glyph: "◈",
+    colour: "#ffd60a",
+    kind: "feed",
+    description:
+      "Geocoded news on protest, armed conflict and disaster, from GDELT.",
+  },
+  {
+    id: "aurora",
+    name: "Aurora Forecast",
+    glyph: "≋",
+    colour: "#5ce68a",
+    kind: "feed",
+    description: "Probability of visible aurora, from NOAA's OVATION model.",
+  },
+  {
+    id: "cameras",
+    name: "Traffic Cameras",
+    glyph: "▣",
+    colour: "#c8b0ff",
+    kind: "feed",
+    description: "Public transport-authority camera positions in NYC and London.",
+  },
+  {
+    id: "cables",
+    name: "Submarine Cables",
+    glyph: "⌁",
+    colour: "#4a9eff",
+    kind: "feed",
+    draw: "line",
+    description: "The submarine fibre that carries the internet between continents.",
   },
   {
     id: "osint",
