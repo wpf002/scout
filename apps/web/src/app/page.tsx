@@ -13,6 +13,7 @@ import type { BasemapId } from "@/lib/basemap";
 import type { Selection } from "@/components/GlobeMap";
 import { OsintPanel } from "@/components/OsintPanel";
 import { Ticker, ZuluClock, type TickerItem } from "@/components/Hud";
+import { Search } from "@/components/Search";
 
 /**
  * MapLibre touches `window` at import time, so it cannot be server-rendered.
@@ -40,6 +41,13 @@ export default function Page() {
   const [projection, setProjection] = useState<"globe" | "mercator">("globe");
   const [cursor, setCursor] = useState({ lat: 0, lon: 0, zoom: 3.2 });
   const [quakes, setQuakes] = useState<TickerItem[]>([]);
+  const [flyTo, setFlyTo] = useState<{
+    lat: number;
+    lon: number;
+    zoom?: number;
+  } | null>(null);
+  const [place, setPlace] = useState<string | null>(null);
+  const [seeded, setSeeded] = useState("");
 
   // ── URL is the source of truth ───────────────────────────────────────────
   useEffect(() => {
@@ -71,6 +79,32 @@ export default function Page() {
     (position: { lat: number; lon: number; zoom: number }) => setCursor(position),
     [],
   );
+
+  /**
+   * Where the camera is pointed, in words.
+   *
+   * Keyed off the settled centre rather than the cursor: this is a geocoder
+   * call, and one per mouse move would be both useless and a good way to be
+   * blocked.
+   */
+  const onCentre = useCallback(async (centre: { lat: number; lon: number }) => {
+    try {
+      const response = await fetch(
+        `/api/geo/reverse?lat=${centre.lat.toFixed(3)}&lon=${centre.lon.toFixed(3)}`,
+        { cache: "no-store" },
+      );
+      const data = (await response.json()) as { label?: string | null };
+      setPlace(data.label ?? null);
+    } catch {
+      setPlace(null);
+    }
+  }, []);
+
+  // An indicator typed into the map's search box belongs to the OSINT panel.
+  const onIndicator = useCallback((value: string) => {
+    setSeeded(value);
+    setTool("osint");
+  }, []);
 
   // The ticker reads the same feed the map draws, so it cannot disagree with
   // what is on screen.
@@ -132,6 +166,8 @@ export default function Page() {
         onSelect={setSelection}
         onStatus={onStatus}
         onCursor={onCursor}
+        flyTo={flyTo}
+        onCentre={onCentre}
       />
 
       {/* ── Top HUD ────────────────────────────────────────────────────── */}
@@ -140,6 +176,8 @@ export default function Page() {
           <span className="brand-mark">SCOUT</span>
           <span className="brand-sub">Open Source Intelligence</span>
         </div>
+        <Search onFly={setFlyTo} onIndicator={onIndicator} />
+
         <div className="hud-readout">
           <ZuluClock />
           <span>
@@ -261,8 +299,16 @@ export default function Page() {
       {/* ── Cursor readout ─────────────────────────────────────────────── */}
       <div className="cursor-readout">
         <span>
-          CURSOR <b>{cursor.lat.toFixed(4)}, {cursor.lon.toFixed(4)}</b>
+          CURSOR{" "}
+          <b>
+            {cursor.lat.toFixed(4)}, {cursor.lon.toFixed(4)}
+          </b>
         </span>
+        {place !== null ? (
+          <span>
+            LOCATION <b>{place}</b>
+          </span>
+        ) : null}
         <span>
           ZOOM <b>{cursor.zoom.toFixed(1)}</b>
         </span>
@@ -307,7 +353,7 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <div className="tool-panel-body">
-            <OsintPanel onLocated={onLocated} />
+            <OsintPanel onLocated={onLocated} initialQuery={seeded} />
           </div>
         </section>
       ) : null}

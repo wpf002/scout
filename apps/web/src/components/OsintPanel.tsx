@@ -78,10 +78,17 @@ function statusLabel(row: RunResultRow): string {
   return STATUS_LABEL[row.status];
 }
 
-export function OsintPanel({ onLocated }: { onLocated: (features: GeoJSON.Feature[]) => void }) {
+export function OsintPanel({
+  onLocated,
+  initialQuery = "",
+}: {
+  onLocated: (features: GeoJSON.Feature[]) => void;
+  /** Seeded from the map's search box when it recognises an indicator. */
+  initialQuery?: string;
+}) {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [caseId, setCaseId] = useState("");
-  const [indicator, setIndicator] = useState("");
+  const [indicator, setIndicator] = useState(initialQuery);
   const [kind, setKind] = useState<SubjectKind | "">("");
   const [detection, setDetection] = useState<Detection | null>(null);
   const [result, setResult] = useState<RunResponse | null>(null);
@@ -123,6 +130,10 @@ export function OsintPanel({ onLocated }: { onLocated: (features: GeoJSON.Featur
   useEffect(() => {
     void refreshWatches();
   }, [refreshWatches]);
+
+  useEffect(() => {
+    if (initialQuery.trim().length > 0) setIndicator(initialQuery);
+  }, [initialQuery]);
 
   useEffect(() => {
     const term = indicator.trim();

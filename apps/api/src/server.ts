@@ -7,6 +7,7 @@ import { registerQueryRoutes } from "./routes/query.js";
 import { registerRunRoutes } from "./routes/run.js";
 import { registerTileRoutes } from "./routes/tiles.js";
 import { registerLiveRoutes } from "./routes/live.js";
+import { registerGeoRoutes } from "./routes/geo.js";
 import { registerHistoryRoutes } from "./routes/history.js";
 import { registerCaseRoutes } from "./routes/cases.js";
 import { registerScopedRoutes } from "./routes/scoped.js";
@@ -60,6 +61,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerRunRoutes(app);
   await registerTileRoutes(app);
   await registerLiveRoutes(app);
+  await registerGeoRoutes(app);
   await registerHistoryRoutes(app);
   await registerCaseRoutes(app);
   await registerScopedRoutes(app);

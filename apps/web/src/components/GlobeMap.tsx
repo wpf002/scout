@@ -25,6 +25,10 @@ interface Props {
   basemap: BasemapId;
   projection: "globe" | "mercator";
   onCursor: (position: { lat: number; lon: number; zoom: number }) => void;
+  /** Set by the search box. Changing it moves the camera. */
+  flyTo: { lat: number; lon: number; zoom?: number } | null;
+  /** Fired when the camera settles, for the reverse-geocoded readout. */
+  onCentre: (centre: { lat: number; lon: number }) => void;
   /** Extra points contributed by the OSINT panel. */
   osintFeatures: GeoJSON.Feature[];
   onSelect: (selection: Selection | null) => void;
@@ -49,6 +53,8 @@ export function GlobeMap({
   onSelect,
   onStatus,
   onCursor,
+  flyTo,
+  onCentre,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -74,6 +80,10 @@ export function GlobeMap({
       new maplibregl.NavigationControl({ showCompass: false }),
       "bottom-right",
     );
+    instance.addControl(
+      new maplibregl.ScaleControl({ unit: "metric" }),
+      "bottom-left",
+    );
 
     instance.on("load", () => {
       // Ready first. Setting the projection is a nice-to-have, and when it
@@ -94,6 +104,13 @@ export function GlobeMap({
         lon: event.lngLat.lng,
         zoom: instance.getZoom(),
       });
+    });
+
+    // `moveend`, not `move`: the readout behind this is a geocoder call, and
+    // one per frame of a drag would be both useless and abusive.
+    instance.on("moveend", () => {
+      const centre = instance.getCenter();
+      onCentre({ lat: centre.lat, lon: centre.lng });
     });
 
     instance.on("error", (event) => {
@@ -156,6 +173,16 @@ export function GlobeMap({
       // Older renderers only do mercator.
     }
   }, [projection, ready]);
+
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || flyTo === null) return;
+    instance.flyTo({
+      center: [flyTo.lon, flyTo.lat],
+      zoom: flyTo.zoom ?? instance.getZoom(),
+      speed: 1.4,
+    });
+  }, [flyTo]);
 
   // ── Draw and update layers ───────────────────────────────────────────────
   useEffect(() => {
