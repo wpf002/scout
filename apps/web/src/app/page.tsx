@@ -14,6 +14,7 @@ import type { Selection } from "@/components/GlobeMap";
 import { OsintPanel } from "@/components/OsintPanel";
 import { Ticker, ZuluClock, type TickerItem } from "@/components/Hud";
 import { Search } from "@/components/Search";
+import { useAlerts, ago } from "@/lib/alerts";
 
 /**
  * MapLibre touches `window` at import time, so it cannot be server-rendered.
@@ -40,7 +41,6 @@ export default function Page() {
   const [basemap, setBasemap] = useState<BasemapId>("sat");
   const [projection, setProjection] = useState<"globe" | "mercator">("globe");
   const [cursor, setCursor] = useState({ lat: 0, lon: 0, zoom: 3.2 });
-  const [quakes, setQuakes] = useState<TickerItem[]>([]);
   const [flyTo, setFlyTo] = useState<{
     lat: number;
     lon: number;
@@ -106,37 +106,27 @@ export default function Page() {
     setTool("osint");
   }, []);
 
-  // The ticker reads the same feed the map draws, so it cannot disagree with
-  // what is on screen.
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const response = await fetch("/api/live/earthquakes", { cache: "no-store" });
-        const data = (await response.json()) as GeoJSON.FeatureCollection;
-        if (cancelled) return;
-        setQuakes(
-          data.features.slice(0, 20).map((feature, index) => {
-            const properties = (feature.properties ?? {}) as Record<string, unknown>;
-            const magnitude = Number(properties["magnitude"] ?? 0);
-            return {
-              id: String(properties["id"] ?? index),
-              label: `M${magnitude.toFixed(1)}  ${String(properties["label"] ?? "")}`,
-              tone: magnitude >= 5 ? ("deny" as const) : ("warn" as const),
-            };
-          }),
-        );
-      } catch {
-        // A quiet ticker beats an error bar across the bottom of the map.
-      }
-    };
-    void load();
-    const timer = setInterval(load, 120_000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
+  /*
+   * Both the panel and the ticker read the alert stream, which reads the same
+   * feeds the map draws — so the list, the crawl and the dots cannot disagree
+   * about what is happening.
+   */
+  const alerts = useAlerts(active);
+
+  const ticker: TickerItem[] = useMemo(
+    () =>
+      alerts.slice(0, 24).map((alert) => ({
+        id: alert.id,
+        label: `${alert.detail}  ${alert.label}`,
+        tone:
+          alert.severity === "high"
+            ? ("deny" as const)
+            : alert.severity === "medium"
+              ? ("warn" as const)
+              : ("ok" as const),
+      })),
+    [alerts],
+  );
 
   const entities = useMemo(
     () =>
@@ -254,18 +244,25 @@ export default function Page() {
 
       {/* ── Right tool rail ────────────────────────────────────────────── */}
       <nav className="tool-rail">
-        {TOOLS.map((item) => (
-          <button
-            key={item.id}
-            className={`tool-icon${tool === item.id ? " on" : ""}`}
-            onClick={() =>
-              setTool((current) => (current === item.id ? null : item.id))
-            }
-            title={item.name}
-          >
-            {item.glyph}
-          </button>
-        ))}
+        {TOOLS.map((item) => {
+          const high =
+            item.id === "alerts"
+              ? alerts.filter((alert) => alert.severity === "high").length
+              : 0;
+          return (
+            <button
+              key={item.id}
+              className={`tool-icon${tool === item.id ? " on" : ""}`}
+              onClick={() =>
+                setTool((current) => (current === item.id ? null : item.id))
+              }
+              title={item.name}
+            >
+              {item.glyph}
+              {high > 0 ? <span className="cat-badge">{high}</span> : null}
+            </button>
+          );
+        })}
       </nav>
 
       {/* ── View controls ──────────────────────────────────────────────── */}
@@ -364,14 +361,30 @@ export default function Page() {
             <h2>Live Alerts</h2>
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
-          <ul className="alert-list">
-            {quakes.slice(0, 12).map((item) => (
-              <li key={item.id}>
-                <span className={`tick-dot ${item.tone ?? ""}`} />
-                {item.label}
-              </li>
-            ))}
-          </ul>
+          {alerts.length === 0 ? (
+            <p className="panel-empty">
+              No alerts from the layers currently on.
+            </p>
+          ) : (
+            <ul className="alert-list">
+              {alerts.map((alert) => (
+                <li key={`${alert.layer}:${alert.id}`}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFlyTo({ lat: alert.lat, lon: alert.lon, zoom: 7 })
+                    }
+                    title={alert.label}
+                  >
+                    <span className={`sev ${alert.severity}`} />
+                    <span className="alert-detail">{alert.detail}</span>
+                    <span className="alert-label">{alert.label}</span>
+                    <span className="alert-age">{ago(alert.at)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       ) : null}
 
@@ -402,7 +415,7 @@ export default function Page() {
         </aside>
       ) : null}
 
-      <Ticker items={quakes} />
+      <Ticker items={ticker} />
     </div>
   );
 }
