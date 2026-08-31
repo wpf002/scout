@@ -1,3 +1,5 @@
+@import "maplibre-gl/dist/maplibre-gl.css";
+
 /*
  * Scout — one surface.
  *
@@ -1159,4 +1161,608 @@ a:hover {
 
 .rail li.s-not-applicable .s-status {
   color: var(--text-faint);
+}
+
+
+/* ── The map shell ────────────────────────────────────────────────────── */
+
+/*
+ * The map is the application, not a panel in it. Everything else floats over
+ * it as a heads-up layer, which is what makes a full-screen world view work:
+ * chrome that took space away from the map would defeat the point of having
+ * one.
+ */
+.osiris {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #05050a;
+}
+
+.globe {
+  position: absolute;
+  inset: 0;
+}
+
+/* MapLibre paints its own background; keep it in the app's palette. */
+.maplibregl-map {
+  background: #05050a;
+}
+
+.maplibregl-ctrl-group {
+  background: rgba(16, 16, 25, 0.9) !important;
+  border: 1px solid var(--border) !important;
+}
+
+.maplibregl-ctrl-group button {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Floating chrome shares one treatment so the layer reads as a single HUD
+ * rather than a pile of unrelated boxes. */
+.hud-top,
+.cat-rail,
+.cat-panel,
+.tool-rail,
+.tool-panel,
+.view-switch,
+.cursor-readout,
+.hud-detail,
+.ticker {
+  background: rgba(9, 9, 16, 0.86);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+}
+
+/* ── Top HUD ──────────────────────────────────────────────────────────── */
+
+.hud-top {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 6px;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.brand-mark {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--text);
+}
+
+.brand-sub {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.hud-readout {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.hud-readout b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hud-clock {
+  color: var(--text-dim);
+}
+
+/* The one green thing on the screen, so "is it live" is answerable from
+ * across the room. */
+.hud-readout .live {
+  color: var(--ok);
+}
+
+.hud-readout .live::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 6px var(--ok);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ── Left category rail ───────────────────────────────────────────────── */
+
+.cat-rail {
+  position: absolute;
+  top: 56px;
+  left: 8px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 6px;
+}
+
+.cat-icon {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.cat-icon:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.cat-icon.lit {
+  color: var(--text);
+}
+
+.cat-icon.open {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.cat-glyph {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* The badge is the count of layers on in that group — the rail answers
+ * "what is running" without opening anything. */
+.cat-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--brand);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 14px;
+}
+
+/* ── Category panel ───────────────────────────────────────────────────── */
+
+.cat-panel {
+  position: absolute;
+  top: 56px;
+  left: 58px;
+  z-index: 8;
+  width: 272px;
+  max-height: calc(100vh - 132px);
+  overflow: auto;
+  border-radius: 6px;
+}
+
+.cat-panel-head,
+.tool-panel-head {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cat-panel-head h2,
+.tool-panel-head h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-dim);
+}
+
+.cat-panel-head .link,
+.tool-panel-head .link {
+  margin-left: auto;
+  border: none;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.cat-panel ul,
+.layer-list,
+.alert-list {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.cat-panel li,
+.layer-list li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.cat-panel li:hover,
+.layer-list li:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Toggle ───────────────────────────────────────────────────────────── */
+
+.switch {
+  flex: none;
+  width: 26px;
+  height: 15px;
+  padding: 0;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.switch.on {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
+.knob {
+  display: block;
+  width: 9px;
+  height: 9px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition:
+    transform 0.14s ease,
+    background 0.14s ease;
+}
+
+.switch.on .knob {
+  background: #06210f;
+  transform: translateX(11px);
+}
+
+.swatch-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.switch-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.switch.on ~ .switch-name {
+  color: var(--text);
+}
+
+.switch-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* ── Right tool rail ──────────────────────────────────────────────────── */
+
+.tool-rail {
+  position: absolute;
+  top: 56px;
+  right: 8px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 6px;
+}
+
+.tool-icon {
+  width: 38px;
+  height: 38px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-faint);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.tool-icon:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.tool-icon.on {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.tool-panel {
+  position: absolute;
+  top: 56px;
+  right: 58px;
+  bottom: 62px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  border-radius: 6px;
+}
+
+/* The OSINT surface was the whole application before this; it keeps every bit
+ * of its behaviour and gives up the screen. */
+.tool-panel.wide {
+  width: min(44vw, 680px);
+}
+
+.tool-panel-body {
+  flex: 1;
+  overflow: auto;
+}
+
+.tool-panel-body .app {
+  max-width: none;
+  padding: 0 10px 16px;
+}
+
+.tool-panel-body .split,
+.tool-panel-body .split.with-detail {
+  grid-template-columns: 180px minmax(0, 1fr);
+}
+
+.tool-panel-body .detail {
+  display: none;
+}
+
+.alert-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.alert-list li:last-child {
+  border-bottom: none;
+}
+
+/* ── Bottom-left controls ─────────────────────────────────────────────── */
+
+.view-switch {
+  position: absolute;
+  left: 8px;
+  bottom: 62px;
+  z-index: 8;
+  display: flex;
+  padding: 3px;
+  border-radius: 6px;
+}
+
+.view-switch button {
+  padding: 5px 11px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.view-switch button:hover {
+  color: var(--text);
+}
+
+.view-switch button.on {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.cursor-readout {
+  position: absolute;
+  left: 8px;
+  bottom: 34px;
+  z-index: 8;
+  display: flex;
+  gap: 16px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.cursor-readout b {
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+/* ── Feature detail ───────────────────────────────────────────────────── */
+
+.hud-detail {
+  position: absolute;
+  left: 58px;
+  bottom: 96px;
+  z-index: 9;
+  width: 320px;
+  max-height: 42vh;
+  overflow: auto;
+  border-color: var(--border-strong);
+  border-radius: 6px;
+}
+
+.hud-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hud-detail-head h2 {
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hud-detail-head .link {
+  border: none;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.hud-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.hud-detail dl {
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.hud-detail dl div {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.hud-detail dt {
+  width: 96px;
+  flex: none;
+  color: var(--text-faint);
+}
+
+.hud-detail dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
+/* ── Ticker ───────────────────────────────────────────────────────────── */
+
+.ticker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8;
+  display: flex;
+  height: 26px;
+  overflow: hidden;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.ticker-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 32px;
+  padding-right: 32px;
+  white-space: nowrap;
+  animation: marquee 90s linear infinite;
+}
+
+.ticker:hover .ticker-row {
+  animation-play-state: paused;
+}
+
+@keyframes marquee {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.tick {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.tick-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.tick.warn .tick-dot,
+.tick-dot.warn {
+  background: var(--warn);
+}
+
+.tick.deny .tick-dot,
+.tick-dot.deny {
+  background: var(--deny);
+}
+
+/* Motion is decoration here; the content is legible without it. */
+@media (prefers-reduced-motion: reduce) {
+  .ticker-row,
+  .hud-readout .live::before {
+    animation: none;
+  }
 }

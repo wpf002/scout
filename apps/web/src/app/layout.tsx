@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Scout",
-  description: "OSINT indicator lookup across every configured source.",
+  description: "Live global intelligence map with OSINT indicator search.",
 };
 
 export default function RootLayout({
