@@ -16,6 +16,7 @@ import { Ticker, ZuluClock, type TickerItem } from "@/components/Hud";
 import { Search } from "@/components/Search";
 import { Detail } from "@/components/Detail";
 import { Directions, type Route, type Stop } from "@/components/Directions";
+import { Minimap } from "@/components/Minimap";
 import { useAlerts, ago } from "@/lib/alerts";
 import type { Shape } from "@/lib/measure";
 
@@ -33,6 +34,7 @@ const TOOLS = [
   { id: "alerts", glyph: "⚠", name: "Live Alerts" },
   { id: "measure", glyph: "⊹", name: "Measure" },
   { id: "directions", glyph: "⇄", name: "Directions" },
+  { id: "intel", glyph: "◫", name: "Intel Feed" },
   { id: "layers", glyph: "≡", name: "All Layers" },
 ];
 
@@ -41,6 +43,15 @@ const SHAPES: Array<{ id: Shape; name: string; hint: string }> = [
   { id: "box", name: "Box", hint: "Two opposite corners." },
   { id: "path", name: "Path", hint: "Click each leg." },
 ];
+
+interface Headline {
+  id: string;
+  title: string;
+  url: string | null;
+  source: string;
+  category: string;
+  at: number | null;
+}
 
 interface Quote {
   symbol: string;
@@ -72,6 +83,8 @@ export default function Page() {
   const [route, setRoute] = useState<Route | null>(null);
   const [stops, setStops] = useState<Array<Stop | null>>([null, null]);
   const [picking, setPicking] = useState<number | null>(null);
+  const [headlines, setHeadlines] = useState<Headline[]>([]);
+  const [centre, setCentre] = useState({ lat: 25, lon: -40 });
   const [kp, setKp] = useState<{ kp: number | null; level: string } | null>(null);
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({});
 
@@ -112,6 +125,7 @@ export default function Page() {
    * both useless and a good way to be blocked.
    */
   const onCentre = useCallback(async (centre: { lat: number; lon: number }) => {
+    setCentre(centre);
     try {
       const response = await fetch(
         `/api/geo/reverse?lat=${centre.lat.toFixed(3)}&lon=${centre.lon.toFixed(3)}`,
@@ -181,6 +195,26 @@ export default function Page() {
     [capabilities],
   );
 
+  // Headlines are only fetched while the panel that shows them is open. A
+  // crawl nobody is reading should not be pulling six RSS feeds on a timer.
+  useEffect(() => {
+    if (tool !== "intel") return;
+    let cancelled = false;
+    const load = () =>
+      fetch("/api/live/news", { cache: "no-store" })
+        .then((r) => r.json() as Promise<{ headlines?: Headline[] }>)
+        .then((d) => {
+          if (!cancelled) setHeadlines(d.headlines ?? []);
+        })
+        .catch(() => undefined);
+    void load();
+    const timer = setInterval(() => void load(), 5 * 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [tool]);
+
   const alerts = useAlerts(active);
 
   // ── Ticker and HUD readings ──────────────────────────────────────────────
@@ -245,6 +279,127 @@ export default function Page() {
     ],
     [alerts, quotes],
   );
+
+  /**
+   * Everything currently on screen, as a file.
+   *
+   * The export is the layers that are on, their counts, the view, and any
+   * measurement or route — enough for someone to reconstruct what was being
+   * looked at. It is written from state already held rather than by refetching,
+   * so it always matches the screen it came from.
+   */
+  const exportView = useCallback(() => {
+    const snapshot = {
+      exportedAt: new Date().toISOString(),
+      view: {
+        centre,
+        zoom: cursor.zoom,
+        projection,
+        basemap,
+        place,
+      },
+      layers: active.map((id) => ({
+        id,
+        name: LAYER_BY_ID.get(id)?.name ?? id,
+        features: status[id] ?? null,
+      })),
+      alerts: alerts.slice(0, 50),
+      measurement: reading,
+      route:
+        route === null
+          ? null
+          : {
+              distanceM: route.distanceM,
+              durationS: route.durationS,
+              stops: stops.filter(Boolean),
+            },
+      url: window.location.href,
+    };
+
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `scout-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}Z.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [active, alerts, basemap, centre, cursor.zoom, place, projection, reading, route, status, stops]);
+
+  /**
+   * Keyboard shortcuts.
+   *
+   * Deliberately ignored while a field has focus — an operator typing a place
+   * name into the search box should not toggle a layer with every letter.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target !== null &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      switch (event.key) {
+        case "Escape":
+          setTool(null);
+          setOpenCategory(null);
+          setSelection(null);
+          setMeasure(null);
+          setPicking(null);
+          break;
+        case "l":
+          setTool((c) => (c === "layers" ? null : "layers"));
+          break;
+        case "a":
+          setTool((c) => (c === "alerts" ? null : "alerts"));
+          break;
+        case "i":
+          setTool((c) => (c === "intel" ? null : "intel"));
+          break;
+        case "m":
+          setTool((c) => (c === "measure" ? null : "measure"));
+          break;
+        case "d":
+          setTool((c) => (c === "directions" ? null : "directions"));
+          break;
+        case "o":
+          setTool((c) => (c === "osint" ? null : "osint"));
+          break;
+        case "3":
+          setProjection("globe");
+          break;
+        case "2":
+          setProjection("mercator");
+          break;
+        case "s":
+          setBasemap((c) => (c === "sat" ? "map" : "sat"));
+          break;
+        case "f":
+          if (document.fullscreenElement === null) {
+            void document.documentElement.requestFullscreen().catch(() => undefined);
+          } else {
+            void document.exitFullscreen().catch(() => undefined);
+          }
+          break;
+        case "e":
+          exportView();
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [exportView]);
 
   const entities = useMemo(
     () =>
@@ -574,6 +729,40 @@ export default function Page() {
         </section>
       ) : null}
 
+      {tool === "intel" ? (
+        <section className="tool-panel">
+          <div className="tool-panel-head">
+            <h2>Intel Feed</h2>
+            <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          {headlines.length === 0 ? (
+            <p className="panel-empty">Loading headlines…</p>
+          ) : (
+            <ul className="intel-list">
+              {headlines.slice(0, 80).map((item) => (
+                <li key={item.id}>
+                  <a
+                    href={item.url ?? "#"}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    <span className="intel-title">{item.title}</span>
+                    <span className="intel-meta">
+                      <span
+                        className={`intel-source${item.category === "security" ? " security" : ""}`}
+                      >
+                        {item.source}
+                      </span>
+                      <span>{ago(item.at)}</span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
+
       {selection !== null ? (
         <Detail
           selection={selection}
@@ -581,6 +770,31 @@ export default function Page() {
           onFly={setFlyTo}
         />
       ) : null}
+
+      <div className="corner-tools">
+        <Minimap
+          centre={centre}
+          zoom={cursor.zoom}
+          onJump={(place) => setFlyTo({ ...place, zoom: 4 })}
+        />
+        <div className="corner-buttons">
+          <button
+            onClick={() => {
+              if (document.fullscreenElement === null) {
+                void document.documentElement.requestFullscreen().catch(() => undefined);
+              } else {
+                void document.exitFullscreen().catch(() => undefined);
+              }
+            }}
+            title="Full screen (F)"
+          >
+            ⛶
+          </button>
+          <button onClick={exportView} title="Export this view (E)">
+            ↧
+          </button>
+        </div>
+      </div>
 
       <Ticker items={ticker} />
     </div>

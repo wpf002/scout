@@ -2241,3 +2241,106 @@ a:hover {
   font-size: 10px;
   color: var(--text-faint);
 }
+
+/* ── Intel feed ───────────────────────────────────────────────────────── */
+
+.intel-list {
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+
+.intel-list li {
+  border-bottom: 1px solid var(--border);
+}
+
+.intel-list li:last-child {
+  border-bottom: none;
+}
+
+.intel-list a {
+  display: block;
+  padding: 7px 6px;
+  border: none;
+  border-radius: 3px;
+  text-decoration: none;
+}
+
+.intel-list a:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.intel-title {
+  display: block;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-dim);
+}
+
+.intel-list a:hover .intel-title {
+  color: var(--text);
+}
+
+.intel-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* CISA advisories are a different kind of item from a wire headline, and
+ * reading a feed is easier when that is visible rather than remembered. */
+.intel-source.security {
+  color: var(--warn);
+}
+
+/* ── Minimap and corner controls ──────────────────────────────────────── */
+
+.corner-tools {
+  position: absolute;
+  right: 8px;
+  bottom: 62px;
+  z-index: 8;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.minimap {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(9, 9, 16, 0.86);
+  backdrop-filter: blur(14px);
+  cursor: crosshair;
+}
+
+.corner-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.corner-buttons button {
+  width: 28px;
+  height: 28px;
+  background: rgba(9, 9, 16, 0.86);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.corner-buttons button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* MapLibre's own controls sit above the minimap rather than under it. */
+.maplibregl-ctrl-bottom-right {
+  bottom: 152px !important;
+}

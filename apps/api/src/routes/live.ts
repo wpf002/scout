@@ -4,6 +4,7 @@ import { badRequest } from "../errors.js";
 import { cached } from "../live/cache.js";
 import { BY_ID, availableLayers, capabilities } from "../live/registry.js";
 import { markets } from "../live/feeds/markets.js";
+import { news } from "../live/feeds/news.js";
 
 export { clearLiveCache } from "../live/cache.js";
 
@@ -39,6 +40,18 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
     } catch (error) {
       return reply.status(200).send({
         quotes: [],
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  /** Wire headlines. Not geographic, so not a layer. */
+  app.get("/live/news", async (_request, reply) => {
+    try {
+      return reply.header("cache-control", "no-store").send(await news());
+    } catch (error) {
+      return reply.status(200).send({
+        headlines: [],
         error: error instanceof Error ? error.message : String(error),
       });
     }
