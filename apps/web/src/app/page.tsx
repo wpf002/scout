@@ -627,10 +627,58 @@ export default function Page() {
       {tool === "layers" ? (
         <section className="tool-panel">
           <div className="tool-panel-head">
-            <h2>All Layers</h2>
+            <h2>Layers &amp; Sources</h2>
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <ul className="layer-list">{LAYERS.map((layer) => switchRow(layer.id))}</ul>
+
+          {/*
+            * Every layer, named with who publishes it. A reading an operator
+            * is going to act on should be traceable to its source without
+            * having to ask, and a source list is also the honest place to say
+            * what a layer does not cover.
+            */}
+          <div className="sources">
+            <h3>Sources</h3>
+            <dl>
+              {LAYERS.filter((layer) => offered(layer.id)).map((layer) => (
+                <div key={layer.id}>
+                  <dt style={{ color: layer.colour }}>{layer.name}</dt>
+                  <dd>{layer.source}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="sources-note">
+              Every source here is public and keyless except Cloudflare Radar,
+              which is only offered when a token is configured. Satellite
+              positions are computed from orbital elements, not observed.
+              Threat-feed positions are IP geolocation and are approximate.
+            </p>
+          </div>
+
+          <div className="sources">
+            <h3>Shortcuts</h3>
+            <ul className="shortcuts">
+              {[
+                ["L", "Layers and sources"],
+                ["A", "Live alerts"],
+                ["I", "Intel feed"],
+                ["M", "Measure"],
+                ["D", "Directions"],
+                ["O", "OSINT search"],
+                ["3 / 2", "Globe or flat"],
+                ["S", "Satellite or map"],
+                ["F", "Full screen"],
+                ["E", "Export this view"],
+                ["Esc", "Close everything"],
+              ].map(([key, what]) => (
+                <li key={key}>
+                  <kbd>{key}</kbd>
+                  <span>{what}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </section>
       ) : null}
 

@@ -29,6 +29,8 @@ export interface LayerDef {
   requires?: string;
   /** A modifier on another layer rather than a layer of its own. */
   parent?: string;
+  /** Who publishes the data. Shown wherever the layer is, so a reading can be traced. */
+  source: string;
   description: string;
 }
 
@@ -112,6 +114,7 @@ export const LAYERS: LayerDef[] = [
   // ── Aviation ────────────────────────────────────────────────────────────
   {
     id: "flights",
+    source: "OpenSky and adsb.fi",
     name: "Commercial",
     glyph: "✈",
     colour: "#5ac8fa",
@@ -121,6 +124,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "private",
+    source: "OpenSky and adsb.fi",
     name: "Private",
     glyph: "✈",
     colour: "#ffd60a",
@@ -130,6 +134,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "jets",
+    source: "adsb.fi type designators",
     name: "Private Jets",
     glyph: "✈",
     colour: "#ff9f0a",
@@ -139,6 +144,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "military",
+    source: "adsb.fi military feed",
     name: "Military",
     glyph: "✦",
     colour: "#ff3b52",
@@ -150,6 +156,7 @@ export const LAYERS: LayerDef[] = [
   // ── Maritime ────────────────────────────────────────────────────────────
   {
     id: "maritime",
+    source: "Kystverket, Fintraffic, EIA, port authorities",
     name: "Maritime / Naval",
     glyph: "⚓",
     colour: "#30d0c0",
@@ -161,6 +168,7 @@ export const LAYERS: LayerDef[] = [
   // ── Space ───────────────────────────────────────────────────────────────
   {
     id: "satellites",
+    source: "CelesTrak elements, propagated with SGP4",
     name: "All Satellites",
     glyph: "◇",
     colour: "#8e8e93",
@@ -171,6 +179,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "sat_comms",
+    source: "CelesTrak elements, propagated with SGP4",
     name: "Starlink / Comms",
     glyph: "◇",
     colour: "#00e676",
@@ -180,6 +189,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "sat_military",
+    source: "CelesTrak elements, propagated with SGP4",
     name: "Military / Intel",
     glyph: "◆",
     colour: "#ff3b52",
@@ -189,6 +199,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "sat_navigation",
+    source: "CelesTrak elements, propagated with SGP4",
     name: "GPS / Navigation",
     glyph: "◈",
     colour: "#5ac8fa",
@@ -197,6 +208,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "sat_earth",
+    source: "CelesTrak elements, propagated with SGP4",
     name: "Earth Observation",
     glyph: "◉",
     colour: "#ffd60a",
@@ -205,6 +217,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "sat_science",
+    source: "CelesTrak elements, propagated with SGP4",
     name: "Stations / Telescopes",
     glyph: "✧",
     colour: "#c8b0ff",
@@ -215,6 +228,7 @@ export const LAYERS: LayerDef[] = [
   // ── Surveillance ────────────────────────────────────────────────────────
   {
     id: "cctv",
+    source: "Caltrans, DriveBC, 511 Ontario, TfL, NYC DOT, Ottawa, LTA",
     name: "CCTV Cameras",
     glyph: "▣",
     colour: "#c8b0ff",
@@ -225,6 +239,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "cctv_previews",
+    source: "The same agencies, one image each",
     name: "Live Previews",
     glyph: "▤",
     colour: "#c8b0ff",
@@ -235,6 +250,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "live_news",
+    source: "Curated broadcaster list",
     name: "Live News Feeds",
     glyph: "◈",
     colour: "#ffd60a",
@@ -246,6 +262,7 @@ export const LAYERS: LayerDef[] = [
   // ── Natural hazards ─────────────────────────────────────────────────────
   {
     id: "earthquakes",
+    source: "USGS",
     name: "Earthquakes",
     glyph: "◎",
     colour: "#ff9f0a",
@@ -254,6 +271,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "fires",
+    source: "NASA FIRMS (VIIRS)",
     name: "Active Fires",
     glyph: "▲",
     colour: "#ff6b35",
@@ -264,6 +282,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "weather",
+    source: "NASA EONET and the US National Weather Service",
     name: "Severe Weather",
     glyph: "◍",
     colour: "#4fc3f7",
@@ -276,6 +295,7 @@ export const LAYERS: LayerDef[] = [
   {
     id: "infrastructure",
     name: "Nuclear Facilities",
+    source: "Wikidata",
     glyph: "☢",
     colour: "#35c46a",
     kind: "feed",
@@ -284,6 +304,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "global_incidents",
+    source: "GDACS",
     name: "Global Incidents",
     glyph: "▲",
     colour: "#ff3b52",
@@ -293,6 +314,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "gdelt_events",
+    source: "GDELT",
     name: "GDELT Events",
     glyph: "◈",
     colour: "#ffd60a",
@@ -305,6 +327,7 @@ export const LAYERS: LayerDef[] = [
   // ── Network intel ───────────────────────────────────────────────────────
   {
     id: "malware",
+    source: "abuse.ch URLhaus",
     name: "Live Malware",
     glyph: "⌗",
     colour: "#ff3b52",
@@ -315,6 +338,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "cyber_attacks",
+    source: "abuse.ch ThreatFox and URLhaus",
     name: "Attack Infrastructure",
     glyph: "⌁",
     colour: "#e0173a",
@@ -328,6 +352,7 @@ export const LAYERS: LayerDef[] = [
   {
     id: "space_weather",
     name: "Space Weather",
+    source: "NOAA Space Weather Prediction Center",
     glyph: "☉",
     colour: "#9b6bff",
     kind: "feed",
@@ -336,6 +361,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "aurora",
+    source: "NOAA OVATION model",
     name: "Aurora Forecast",
     glyph: "≋",
     colour: "#5ce68a",
@@ -347,6 +373,7 @@ export const LAYERS: LayerDef[] = [
   // ── Infrastructure ──────────────────────────────────────────────────────
   {
     id: "cables",
+    source: "TeleGeography Submarine Cable Map",
     name: "Submarine Cables",
     glyph: "⌁",
     colour: "#4a9eff",
@@ -358,6 +385,7 @@ export const LAYERS: LayerDef[] = [
   // ── Cloudflare Radar ────────────────────────────────────────────────────
   {
     id: "cf_outages",
+    source: "Cloudflare Radar",
     name: "Internet Outages",
     glyph: "⊘",
     colour: "#ff3b52",
@@ -368,6 +396,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "cf_attacks",
+    source: "Cloudflare Radar",
     name: "Attack Origins",
     glyph: "◬",
     colour: "#ff9f0a",
@@ -380,6 +409,7 @@ export const LAYERS: LayerDef[] = [
   // ── Display ─────────────────────────────────────────────────────────────
   {
     id: "day_night",
+    source: "Computed in the browser",
     name: "Day / Night Cycle",
     glyph: "◐",
     colour: "#8e8e93",
@@ -388,6 +418,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "terrain_3d",
+    source: "AWS terrain tiles",
     name: "3D Terrain",
     glyph: "△",
     colour: "#8e8e93",

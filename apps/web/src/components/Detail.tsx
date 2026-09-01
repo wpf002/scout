@@ -171,6 +171,10 @@ export function Detail({
         </div>
       </dl>
 
+      {def !== undefined ? (
+        <p className="detail-source">{def.source}</p>
+      ) : null}
+
       <div className="detail-actions">
         <button
           onClick={() =>

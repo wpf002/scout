@@ -2398,3 +2398,84 @@ a:hover {
 .switch:disabled {
   cursor: default;
 }
+
+/* ── Sources and shortcuts ────────────────────────────────────────────── */
+
+.sources {
+  padding: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.sources h3 {
+  margin: 0 0 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+}
+
+.sources dl {
+  margin: 0;
+}
+
+.sources dl div {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.sources dt {
+  width: 108px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sources dd {
+  margin: 0;
+  color: var(--text-faint);
+}
+
+.sources-note {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.shortcuts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shortcuts li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.shortcuts kbd {
+  min-width: 34px;
+  padding: 2px 5px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-align: center;
+  color: var(--text);
+}
+
+.detail-source {
+  margin: 0;
+  padding: 0 10px 8px;
+  font-size: 10px;
+  color: var(--text-faint);
+}

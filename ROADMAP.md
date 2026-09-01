@@ -67,84 +67,62 @@ more layer, and every other layer is a public feed.
 
 ### Phase G — The Map Surface ✅ Shipped
 
-- Full-screen MapLibre globe on Esri raster imagery, proxied server-side
-  through a host allowlist. The proxy is an allowlist, not an open relay.
-- Live layers, all keyless: earthquakes (USGS), natural events (NASA EONET),
-  air traffic (OpenSky), vessel traffic (Digitraffic, Baltic), geocoded news
-  (GDELT), submarine cables, traffic cameras (NYC, London), aurora forecast
-  (NOAA OVATION), and a solar terminator computed in the browser.
-- Every feed is normalised to GeoJSON server-side, cached with a TTL matched to
-  how fast the thing actually moves, and a dead upstream reports empty with a
-  reason rather than taking the map down.
-- The URL is the source of truth for which layers are on, so a view is a link.
-- Search takes a place, a coordinate pair, or an indicator. An indicator opens
-  the OSINT panel seeded with it; the split happens in the browser so a
-  coordinate never leaves the machine to be told it is a coordinate.
-- Alerts across feeds, with severity derived from what each feed measures
-  rather than asserted.
-- Measurement: radius, box and path, computed on the sphere.
+Twenty-four live layers in ten categories, every one of them keyless.
 
-**Done when:** the map draws every layer live, the OSINT run still works
-unchanged inside it, and a link restores a view. ✅
+| Category | Layers |
+|---|---|
+| Aviation | Commercial, Private, Private Jets, Military |
+| Maritime | Vessels, ports, chokepoints |
+| Space | All satellites, Comms, Military, Navigation, Earth observation, Stations |
+| Surveillance | CCTV cameras, live previews, live news |
+| Natural hazards | Earthquakes, active fires, severe weather |
+| Threats | Nuclear facilities, global incidents, GDELT events |
+| Network intel | Live malware, attack infrastructure |
+| Cloudflare Radar | Internet outages, attack origins (needs a token) |
+| Space weather | Planetary K-index, aurora forecast |
+| Infrastructure, display | Submarine cables, day/night, 3D terrain |
 
+Plus: search that takes a place, a coordinate or an indicator; route planning
+with turn-by-turn steps; radius, box and path measurement on the sphere;
+alerts aggregated across active layers; a wire-headline intel feed; a markets
+crawl; a minimap; view export; and keyboard shortcuts.
 
+**Done when:** every layer draws live, the OSINT run still works unchanged
+inside it, and a link restores a view. ✅
 
-### Phase A — Subprocess Seam ✅ Shipped
+Things that are true about this and worth not forgetting:
 
-Five of the target tools are local programs, not services. Scout's adapter model
-was HTTP-and-a-key only, so there was no way to reach them.
+- Satellite positions are *propagated* from CelesTrak orbital elements with
+  SGP4. They are computed, not observed. CelesTrak refuses a refetch inside
+  its two-hour window and firewalls an address that accumulates fifty HTTP
+  errors in one, so elements are cached to disk and the whole catalogue is one
+  request rather than twenty.
+- Threat-feed positions are IP geolocation. A dot is where an address is
+  registered, not where a machine stands.
+- The attack layer draws command-and-control servers and payload hosts of the
+  same family, both currently observed. It is infrastructure, not observed
+  attacks — there is no keyless feed of those with both endpoints, and drawing
+  one would mean inventing the coordinates.
+- Live AIS is regional. No keyless global feed exists; the layer names the
+  authority that saw each vessel, and always carries the ports and chokepoints,
+  which are the globally meaningful part.
+- CCTV is agency-published only. Nothing here comes from scanning for exposed
+  devices.
+- Cloudflare Radar is the only source needing a key, and its layers are hidden
+  rather than shown permanently failing.
 
-- `apps/api/src/adapters/cli/run.ts` — `execFile` with an argv array and no
-  shell, PATH resolution, timeouts, output caps, and a typed distinction between
-  "not installed" and "ran and failed".
-- `mode: "cli"` and `binary` on `Source`; a missing binary reports `inert` with
-  reason `missing-binary`, matching how a missing key behaves.
-- theHarvester (infra, ungated), Sherlock and Maigret (people, gated).
-- Parser tests that run without any of the tools installed.
+### Phase H — Global AIS and FIRMS at full resolution
 
-**Done when:** the three CLI sources appear in the registry, report `inert`
-cleanly on a machine that lacks them, and the parsers are covered. ✅
+The two places where a free key would buy real coverage, both deferred until
+someone decides the key is worth having.
 
-### Phase B — Run Everything ✅ Shipped
+- `aisstream.io` gives global live AIS. The key is free and self-serve, but it
+  is still a key, and the layer is honest about its regional coverage without
+  one.
+- `FIRMS_MAP_KEY` is not needed — the keyless CSV archive carries the same
+  detections — but the API would allow bbox queries instead of a Range read.
 
-The endpoint behind the single box.
-
-- Indicator type detection: domain, IP, email, username, hash, company, person.
-- `POST /run` — takes an indicator, resolves its kind, runs every applicable
-  source, returns one consolidated result set with per-source status.
-- Sources run concurrently with a bounded pool, and one slow or failing tool
-  never holds or sinks the run.
-- Every source that did not run appears with a reason: no key, not installed,
-  out of scope, wrong subject kind.
-
-**Done when:** one call against a domain returns normalized results from every
-keyed and installed source, plus an honest account of everything that did not
-run. ✅
-
-`POST /run` and `GET /run/detect` in `apps/api/src/routes/run.ts`, detection in
-`packages/sources/src/detect.ts`. A scope denial comes back as a `blocked` row
-with its reason and the run continues — a 403 for the whole request would throw
-away every other source's results.
-
-### Phase C — The Single Surface ✅ Shipped
-
-One page. Indicator field, run, results.
-
-- Results as one dense table: source, type, value, first seen, provenance.
-  Grouped by result type, not by which tool produced it.
-- Per-source status strip showing what ran, what was inert, what was blocked.
-- Deeplink sources render as links to open, since they never run server-side.
-- Delete the watch floor, cases index, and sources pages. Case selection becomes
-  a control in the header.
-- Remove the operator token component. Keys are backend-only.
-- Copy pass: labels not sentences, correct title case, no editorial voice.
-
-**Done when:** paste an indicator, press one button, read one table. No other
-page is needed to run an investigation. ✅
-
-One route (`apps/web/src/app/page.tsx`), a source rail, and a results table
-grouped by observation type in `apps/web/src/lib/flatten.ts`. The cases,
-sources, and watch-floor pages are gone, along with the token component.
+**Done when:** either is configurable and the layer says which mode it is in.
 
 ### Phase D — Recon-ng and SpiderFoot
 
