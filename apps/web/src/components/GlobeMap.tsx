@@ -90,6 +90,24 @@ export function GlobeMap({
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
+
+  /**
+   * Is this map still the live one?
+   *
+   * React runs effects twice in development, so the map is built, torn down
+   * and built again. Anything asynchronous started by the first map — a style
+   * fetch, a layer fetch — can land after `remove()` has destroyed its WebGL
+   * painter, and MapLibre then fails deep inside itself with errors that name
+   * nothing recognisable: "undefined is not an object (evaluating
+   * 'a.shaderPreludeCode')" and "Attempting to run(), but is already running".
+   *
+   * Every async continuation checks this before touching the map.
+   */
+  const alive = useCallback(
+    (instance: maplibregl.Map | null): instance is maplibregl.Map =>
+      instance !== null && map.current === instance,
+    [],
+  );
   const [ready, setReady] = useState(false);
   const [redraw, setRedraw] = useState(0);
   const [viewport, setViewport] = useState(0);
@@ -118,6 +136,19 @@ export function GlobeMap({
       zoom: 2.2,
       attributionControl: false,
       maxPitch: 75,
+      /*
+       * A floor on how far out the map will go.
+       *
+       * MapLibre's default is -2, and on a globe the projection saturates
+       * somewhere around zero: the view stops changing but the zoom level
+       * keeps dropping. Scrolling out past that point spends several notches
+       * doing nothing visible, and scrolling back in then appears dead until
+       * they are spent again — which reads exactly like a stuck map.
+       *
+       * One is where the globe still fills the viewport, so every notch of the
+       * wheel moves the picture.
+       */
+      minZoom: 1,
       // A globe reads as a world view rather than a wall chart, and it is what
       // makes polar coverage legible at all.
       ...({ projection: { type: projection } } as object),
@@ -183,8 +214,21 @@ export function GlobeMap({
     (window as unknown as { __scoutMap?: unknown }).__scoutMap = instance;
     return () => {
       observer.disconnect();
-      instance.remove();
+      // Null first: any async work already in flight sees a dead map through
+      // `alive()` and stops before `remove()` pulls the painter out from
+      // under it.
       map.current = null;
+      try {
+        instance.remove();
+      } catch {
+        /*
+         * A teardown that throws halfway leaves its canvas attached, and the
+         * next map is then constructed over the wreckage — which is what
+         * "Attempting to run(), but is already running" actually is. Clearing
+         * the container by hand makes the remount clean regardless.
+         */
+        if (container.current !== null) container.current.innerHTML = "";
+      }
     };
   }, []);
 
@@ -205,6 +249,7 @@ export function GlobeMap({
 
     const style = BASEMAPS[basemap]();
     const swap = (spec: StyleSpecification) => {
+      if (!alive(instance)) return;
       instance.setStyle(spec);
       instance.once("styledata", () => setRedraw((n) => n + 1));
     };
@@ -225,7 +270,7 @@ export function GlobeMap({
     } else {
       swap(style);
     }
-  }, [basemap, ready]);
+  }, [basemap, ready, alive]);
 
   useEffect(() => {
     const instance = map.current;
@@ -263,6 +308,7 @@ export function GlobeMap({
     }
 
     const update = () => {
+      if (!alive(instance)) return;
       if (instance.getZoom() < 9) {
         setPreviews([]);
         return;
@@ -301,7 +347,7 @@ export function GlobeMap({
     return () => {
       instance.off("moveend", update);
     };
-  }, [active, ready, redraw, dataVersion]);
+  }, [active, ready, redraw, dataVersion, alive]);
 
   // ── Terrain ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -729,7 +775,7 @@ export function GlobeMap({
           error?: string;
           meta?: Record<string, unknown>;
         };
-        if (cancelled) return;
+        if (cancelled || !alive(instance)) return;
 
         raw.current.set(layerId, data.features);
         setDataVersion((n) => n + 1);
@@ -743,7 +789,7 @@ export function GlobeMap({
       } catch {
         // A layer that cannot load must not take the map down. It reports as
         // unavailable and every other layer keeps drawing.
-        if (!cancelled) onStatus({ [layerId]: "unavailable" });
+        if (!cancelled && alive(instance)) onStatus({ [layerId]: "unavailable" });
       }
     };
 
@@ -793,7 +839,7 @@ export function GlobeMap({
     return () => {
       cancelled = true;
     };
-  }, [active, ready, onStatus, redraw, ensure, inView]);
+  }, [active, ready, onStatus, redraw, ensure, inView, alive]);
 
   /**
    * Re-thin heavy layers when the view moves.

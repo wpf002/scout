@@ -138,8 +138,24 @@ export async function news(): Promise<{ headlines: Headline[] }> {
       }),
     );
 
+    /*
+     * Deduplicated by URL.
+     *
+     * Publishers list the same article under several sections — France 24 puts
+     * one story in both its topic feed and its regional one — so the same link
+     * arrives twice with the same id. That is a duplicate in the data, not a
+     * rendering problem, and fixing it here rather than in a React key means
+     * the feed shows one entry instead of two identical ones.
+     */
+    const seen = new Set<string>();
     const headlines = settled
       .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+      .filter((headline) => {
+        const key = headline.url ?? headline.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
       .sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
 
     return { headlines };

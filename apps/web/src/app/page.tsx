@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   CATEGORIES,
@@ -96,14 +96,31 @@ export default function Page() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
+  /**
+   * `active`, mirrored into a ref.
+   *
+   * The toggle below needs to read the current set and also write to the URL.
+   * Doing both inside a `setActive` updater looked tidy and was wrong: React
+   * runs updaters during the render phase, so `history.replaceState` fired
+   * mid-render and Next's Router set state while Page was still rendering —
+   * "Cannot update a component (Router) while rendering a different component
+   * (Page)". Reading from a ref keeps the URL write in the event handler,
+   * where a side effect belongs.
+   */
+  const activeRef = useRef<string[]>([]);
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
   const toggle = useCallback((id: string) => {
-    setActive((current) => {
-      const next = current.includes(id)
-        ? current.filter((layer) => layer !== id)
-        : [...current, id];
-      window.history.replaceState(null, "", layersToSearch(next));
-      return next;
-    });
+    const current = activeRef.current;
+    const next = current.includes(id)
+      ? current.filter((layer) => layer !== id)
+      : [...current, id];
+
+    activeRef.current = next;
+    setActive(next);
+    window.history.replaceState(null, "", layersToSearch(next));
   }, []);
 
   const onStatus = useCallback((patch: Record<string, number | string>) => {

@@ -30,7 +30,15 @@ export interface Alert {
   url: string | null;
 }
 
-const FEEDS = ["earthquakes", "global_incidents", "live_news"] as const;
+/*
+ * `gdelt_events`, not `live_news`.
+ *
+ * These were the same layer once. `live_news` is now the curated list of
+ * broadcasters — eighteen newsrooms with no tone and no timestamp — so every
+ * one of them was silently dropped by the tone filter and the alert stream
+ * quietly lost its entire news dimension while still looking like it had one.
+ */
+const FEEDS = ["earthquakes", "global_incidents", "gdelt_events"] as const;
 
 /** Quakes below this are constant background and would drown everything else. */
 const MIN_MAGNITUDE = 2.5;
