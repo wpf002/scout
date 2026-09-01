@@ -758,6 +758,24 @@ export function GlobeMap({
         } as maplibregl.AddLayerObject;
       }
 
+      /**
+       * Hazard areas: a translucent fill so the traffic and terrain under
+       * them stay readable, and a firm edge so the boundary is exact. A solid
+       * fill would hide the very thing the polygon is there to qualify.
+       */
+      if (def?.draw === "area") {
+        return {
+          ...base,
+          type: "fill",
+          filter: ["!=", ["geometry-type"], "Point"],
+          paint: {
+            "fill-color": ["coalesce", ["get", "colour"], colour],
+            "fill-opacity": 0.18,
+            "fill-outline-color": ["coalesce", ["get", "colour"], colour],
+          },
+        };
+      }
+
       if (def?.draw === "line" || def?.draw === "arc") {
         return {
           ...base,
@@ -844,6 +862,24 @@ export function GlobeMap({
       if (instance.getLayer(layerId) === undefined) {
         ensureSymbols(instance);
         instance.addLayer(paintFor(layerId));
+
+        // An area layer draws polygons; a cyclone's centre point needs its
+        // own circle layer or the storm itself would be invisible inside its
+        // own cone.
+        if (LAYER_BY_ID.get(layerId)?.draw === "area") {
+          instance.addLayer({
+            id: endpointLayerId(layerId),
+            source: layerId,
+            type: "circle",
+            filter: ["==", ["geometry-type"], "Point"],
+            paint: {
+              "circle-radius": 5,
+              "circle-color": ["coalesce", ["get", "colour"], "#5ac8fa"],
+              "circle-stroke-color": "#05050a",
+              "circle-stroke-width": 1,
+            },
+          });
+        }
 
         // An arc layer draws lines; its endpoints need their own circle layer
         // or the C2 servers themselves would be invisible.

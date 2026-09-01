@@ -9,7 +9,7 @@ import { IMAGERY } from "./imagery";
  * views rather than between pages.
  */
 
-export type Draw = "point" | "line" | "glow" | "arc" | "aircraft" | "vessel";
+export type Draw = "point" | "line" | "glow" | "arc" | "aircraft" | "vessel" | "area";
 
 export interface LayerDef {
   id: string;
@@ -58,7 +58,7 @@ export const CATEGORIES: CategoryDef[] = [
     id: "aviation",
     name: "Aviation",
     glyph: "✈",
-    layerIds: ["flights", "private", "jets", "military"],
+    layerIds: ["flights", "private", "jets", "military", "sigmets", "gnss_interference"],
   },
   { id: "maritime", name: "Maritime", glyph: "⚓", layerIds: ["maritime"] },
   {
@@ -84,7 +84,7 @@ export const CATEGORIES: CategoryDef[] = [
     id: "hazards",
     name: "Natural Hazards",
     glyph: "◎",
-    layerIds: ["earthquakes", "fires", "weather"],
+    layerIds: ["earthquakes", "fires", "weather", "cyclones", "volcanoes"],
   },
   {
     id: "threats",
@@ -211,6 +211,29 @@ export const LAYERS: LayerDef[] = [
     kind: "feed",
     description:
       "Military aircraft and vessels whose AIS transponder reports a military ship type. What the transponder says, not an inference from a name.",
+  },
+
+  {
+    id: "sigmets",
+    name: "Airspace Hazards",
+    source: "NOAA Aviation Weather Center",
+    glyph: "◭",
+    colour: "#ff9f0a",
+    kind: "feed",
+    draw: "area",
+    description:
+      "SIGMET polygons — volcanic ash, severe turbulence, thunderstorms, icing, mountain wave and tropical cyclone — with the flight levels each applies between.",
+  },
+  {
+    id: "gnss_interference",
+    name: "GNSS Interference",
+    source: "GPSJAM (John Wiseman)",
+    glyph: "◈",
+    colour: "#ff3b52",
+    kind: "feed",
+    draw: "area",
+    description:
+      "Where aircraft report degraded GPS accuracy, aggregated over a UTC day. This is where the effect was observed, not where a transmitter is.",
   },
 
   // ── Maritime ────────────────────────────────────────────────────────────
@@ -350,6 +373,29 @@ export const LAYERS: LayerDef[] = [
     kind: "feed",
     description:
       "Named storms from NASA EONET, plus active extreme and severe warnings from the US National Weather Service.",
+  },
+
+  {
+    id: "cyclones",
+    name: "Tropical Cyclones",
+    source: "US National Hurricane Center",
+    glyph: "◉",
+    colour: "#5ac8fa",
+    kind: "feed",
+    draw: "area",
+    description:
+      "Active storms with the official five-day forecast cone. The cone is where the centre is likely to go, not the extent of the storm.",
+  },
+  {
+    id: "volcanoes",
+    name: "Volcanoes",
+    source: "Smithsonian GVP and USGS",
+    glyph: "▲",
+    colour: "#6b5b4a",
+    kind: "feed",
+    heavy: true,
+    description:
+      "Every volcano active in the last twelve thousand years, coloured by its published aviation alert code where one is in force.",
   },
 
   // ── Threats and intel ───────────────────────────────────────────────────

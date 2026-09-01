@@ -8,6 +8,10 @@ import { maritime } from "./feeds/maritime.js";
 import { cables, gdeltEvents, infrastructure, liveNews } from "./feeds/reference.js";
 import { aurora, spaceWeather } from "./feeds/space.js";
 import { sdkDomain } from "./feeds/sdk.js";
+import { sigmets } from "./feeds/aviation-hazards.js";
+import { volcanoes } from "./feeds/volcanoes.js";
+import { cyclones } from "./feeds/cyclones.js";
+import { gnssInterference } from "./feeds/gnss.js";
 import {
   cloudflareAttackOrigins,
   cloudflareConfigured,
@@ -66,10 +70,21 @@ export const LAYERS: LayerDef[] = [
   { id: "cctv", name: "CCTV Cameras", ttlMs: 6 * HOUR, load: cctv },
   { id: "live_news", name: "Live News Feeds", ttlMs: 24 * HOUR, load: liveNews },
 
+  // Aviation hazards, under the traffic they affect.
+  { id: "sigmets", name: "Airspace Hazards", ttlMs: 10 * MINUTE, load: sigmets },
+  {
+    id: "gnss_interference",
+    name: "GNSS Interference",
+    ttlMs: 6 * HOUR,
+    load: gnssInterference,
+  },
+
   // Natural hazards.
   { id: "earthquakes", name: "Earthquakes", ttlMs: MINUTE, load: earthquakes },
   { id: "fires", name: "Active Fires", ttlMs: 15 * MINUTE, load: fires },
   { id: "weather", name: "Severe Weather", ttlMs: 10 * MINUTE, load: weather },
+  { id: "cyclones", name: "Tropical Cyclones", ttlMs: 15 * MINUTE, load: cyclones },
+  { id: "volcanoes", name: "Volcanoes", ttlMs: 30 * MINUTE, load: volcanoes },
 
   // Threats and intel.
   { id: "infrastructure", name: "Nuclear Facilities", ttlMs: 24 * HOUR, load: infrastructure },
