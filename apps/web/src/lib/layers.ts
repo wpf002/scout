@@ -47,6 +47,12 @@ export interface CategoryDef {
  */
 export const CATEGORIES: CategoryDef[] = [
   {
+    id: "sdk",
+    name: "Cross-Domain",
+    glyph: "⌗",
+    layerIds: ["sdk_air", "sdk_sea", "sdk_naval"],
+  },
+  {
     id: "aviation",
     name: "Aviation",
     glyph: "✈",
@@ -151,6 +157,38 @@ export const LAYERS: LayerDef[] = [
     kind: "feed",
     description:
       "Aircraft flagged military in the shared ADS-B database, from adsb.fi. Transponder-equipped traffic only.",
+  },
+
+  // ── Cross-domain entities ───────────────────────────────────────────────
+  {
+    id: "sdk_air",
+    name: "Air Entities",
+    source: "A sample of the Aviation layers",
+    glyph: "⌁",
+    colour: "#5ac8fa",
+    kind: "feed",
+    description:
+      "A thinned cross-domain view of air tracks already carried by the Aviation layers. Activity at a glance, not a tracking layer.",
+  },
+  {
+    id: "sdk_sea",
+    name: "Sea Entities",
+    source: "A sample of the Maritime layer",
+    glyph: "⌁",
+    colour: "#30d0c0",
+    kind: "feed",
+    description:
+      "A thinned cross-domain view of vessels already carried by the Maritime layer.",
+  },
+  {
+    id: "sdk_naval",
+    name: "Naval Entities",
+    source: "Military ADS-B flag and AIS ship type 35",
+    glyph: "⌁",
+    colour: "#ff3b52",
+    kind: "feed",
+    description:
+      "Military aircraft and vessels whose AIS transponder reports a military ship type. What the transponder says, not an inference from a name.",
   },
 
   // ── Maritime ────────────────────────────────────────────────────────────

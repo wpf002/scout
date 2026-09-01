@@ -46,6 +46,8 @@ interface Track {
   tier: Tier;
   origin: string | null;
   source: string;
+  /** How stale this position is. Zero means it was just fetched. */
+  seenSecondsAgo?: number;
 }
 
 /**
@@ -264,8 +266,27 @@ const SWEEPS: Array<[number, number, string]> = [
  * still shows nine thousand aircraft. Each refresh takes one slice, and the
  * type codes are remembered between rotations so the tiers stay populated.
  */
-const SWEEP_BATCH = 2;
+const SWEEP_BATCH = 3;
 let rotation = 0;
+
+/**
+ * Each region's last sweep, kept separately.
+ *
+ * Caching the *pass* rather than the regions made the aircraft count swing
+ * between three thousand and six hundred as the rotation moved: whichever
+ * three regions had just been swept were the only ones on the map, and the
+ * other four vanished until their turn came round. Aircraft blinked in and
+ * out of existence every minute.
+ *
+ * Holding each region's last result means the union is always all seven. A
+ * region not swept this pass is up to a rotation old, which is why every
+ * track carries the time it was seen — a stale dot in the wrong place is
+ * worse than no dot, because it looks current.
+ */
+const regionSweeps = new Map<string, { at: number; tracks: Track[] }>();
+
+/** A region's tracks are dropped once they are older than a full rotation. */
+const SWEEP_MAX_AGE_MS = 4 * 60_000;
 
 async function adsbSweeps(): Promise<Track[]> {
   const start = (rotation * SWEEP_BATCH) % SWEEPS.length;
@@ -275,19 +296,34 @@ async function adsbSweeps(): Promise<Track[]> {
     SWEEPS[(start + i) % SWEEPS.length],
   ).filter((e): e is [number, number, string] => e !== undefined);
 
-  const out: Track[] = [];
-  for (const [lat, lon] of slice) {
+  for (const [lat, lon, name] of slice) {
     try {
       const body = await getJson(`${ADSBLOL}/lat/${lat}/lon/${lon}/dist/1000`, {
         timeoutMs: 45_000,
       });
-      out.push(...aircraftIn_(body).flatMap((row) => fromAdsb(row, false)));
+      regionSweeps.set(name, {
+        at: Date.now(),
+        tracks: aircraftIn_(body).flatMap((row) => fromAdsb(row, false)),
+      });
     } catch {
-      // One region thins the enrichment, not the layer.
+      // One region keeps its previous result rather than emptying.
     }
     // Sequential and spaced. These are megabyte responses, and a burst of
     // them is what draws a 429.
     await new Promise((resolve) => setTimeout(resolve, 2_500));
+  }
+
+  const now = Date.now();
+  const out: Track[] = [];
+  for (const [name, entry] of regionSweeps) {
+    if (now - entry.at > SWEEP_MAX_AGE_MS) {
+      regionSweeps.delete(name);
+      continue;
+    }
+    const seenSecondsAgo = Math.round((now - entry.at) / 1000);
+    for (const track of entry.tracks) {
+      out.push({ ...track, seenSecondsAgo });
+    }
   }
   return out;
 }
@@ -299,6 +335,9 @@ async function adsbSweeps(): Promise<Track[]> {
  * type-bearing providers said lets the private-jet tier stay populated
  * between sweeps instead of collapsing as the rotation moves on.
  */
+/** Whether OpenSky answered on the last pass. */
+let globalBackfill = true;
+
 const enrichment = new Map<
   string,
   { type: string | null; registration: string | null; military: boolean }
@@ -315,9 +354,24 @@ async function loadTracks(): Promise<Track[]> {
    * slowest.
    */
   const [global, mil, hot] = await Promise.allSettled([
-    cached("aircraft:opensky", 20_000, openSky),
+    /*
+     * OpenSky is asked once every twenty minutes, and that is a hard
+     * constraint rather than a tuning choice.
+     *
+     * Its anonymous tier is about four hundred credits a day and a whole-world
+     * call costs four of them — a hundred calls, total. A twenty-second TTL,
+     * which is right for the other providers, is a hundred and eighty calls an
+     * hour: it spends the entire day's budget in under forty minutes and then
+     * answers 429 until midnight. Twenty minutes is seventy-two calls a day,
+     * comfortably inside it.
+     *
+     * That makes OpenSky a slow global backfill rather than the live picture.
+     * The adsb.lol sweeps carry the live picture, and they also carry the type
+     * codes OpenSky has never had.
+     */
+    cached("aircraft:opensky", 20 * 60_000, openSky),
     cached("aircraft:mil", 45_000, adsbMilitary),
-    cached("aircraft:sweeps", 90_000, adsbSweeps),
+    cached("aircraft:sweeps", 60_000, adsbSweeps),
   ]);
 
   const items: Track[] = [];
@@ -325,6 +379,10 @@ async function loadTracks(): Promise<Track[]> {
     if (result.status === "fulfilled") items.push(...result.value);
   }
   if (items.length === 0) throw new Error("every aircraft provider failed");
+
+  // A thin sky and a refused provider look identical on a map, so the
+  // difference is recorded rather than left to be inferred from the count.
+  globalBackfill = global.status === "fulfilled";
 
   // Remember what the type-bearing providers said, so the tiers survive a
   // rotation that has moved on or a provider that is briefly refusing.
@@ -337,13 +395,30 @@ async function loadTracks(): Promise<Track[]> {
     });
   }
 
+  /*
+   * Merge on the ICAO address, preferring the fresher provider for position.
+   *
+   * OpenSky's snapshot can be twenty minutes old by the time it is used, and
+   * an aircraft covers two hundred miles in that time. Where a sweep has seen
+   * the same aircraft, its position wins — an out-of-date dot in the right
+   * place on the list is worse than no dot, because it looks current.
+   */
   const byHex = new Map<string, Track>();
   for (const track of items) {
     const existing = byHex.get(track.hex);
-    if (existing !== undefined && existing.type !== null && track.type === null) {
+    if (existing === undefined) {
+      byHex.set(track.hex, track);
       continue;
     }
-    byHex.set(track.hex, existing === undefined ? track : { ...existing, ...track });
+    const fresher = track.source === "adsb.fi" ? track : existing;
+    const other = track.source === "adsb.fi" ? existing : track;
+    byHex.set(track.hex, {
+      ...other,
+      ...fresher,
+      type: fresher.type ?? other.type,
+      registration: fresher.registration ?? other.registration,
+      origin: fresher.origin ?? other.origin,
+    });
   }
 
   // Apply what is known about each aircraft to whatever position won.
@@ -387,6 +462,7 @@ function toFeature(track: Track): Feature {
     grounded: track.grounded,
     origin: track.origin,
     source: track.source,
+    seenSecondsAgo: track.seenSecondsAgo ?? 0,
     colour: TIER_COLOUR[track.tier],
   });
 }
@@ -407,6 +483,10 @@ export function aircraftIn(tier: Tier) {
       meta: {
         tier,
         total: tracks.length,
+        globalBackfill,
+        coverage: globalBackfill
+          ? "Global snapshot plus regional sweeps."
+          : "Regional sweeps only — OpenSky's anonymous daily budget is spent. It returns at UTC midnight.",
         emergencies: mine.filter((t) => t.squawk !== null && t.squawk in EMERGENCY_SQUAWKS).length,
       },
     };

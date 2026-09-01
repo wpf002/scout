@@ -7,6 +7,7 @@ import { cctv } from "./feeds/cctv.js";
 import { maritime } from "./feeds/maritime.js";
 import { cables, gdeltEvents, infrastructure, liveNews } from "./feeds/reference.js";
 import { aurora, spaceWeather } from "./feeds/space.js";
+import { sdkDomain } from "./feeds/sdk.js";
 import {
   cloudflareAttackOrigins,
   cloudflareConfigured,
@@ -47,6 +48,11 @@ export const LAYERS: LayerDef[] = [
 
   // Maritime.
   { id: "maritime", name: "Maritime / Naval", ttlMs: MINUTE, load: maritime },
+
+  // Cross-domain entities. A view over the two above, not a fifth provider.
+  { id: "sdk_air", name: "Air Entities", ttlMs: 30_000, load: sdkDomain("AIR") },
+  { id: "sdk_sea", name: "Sea Entities", ttlMs: 30_000, load: sdkDomain("SEA") },
+  { id: "sdk_naval", name: "Naval Entities", ttlMs: 30_000, load: sdkDomain("NAVAL") },
 
   // Space — all six share one propagation pass over cached elements.
   { id: "satellites", name: "All Satellites", ttlMs: 30_000, load: satellites },
