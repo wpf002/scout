@@ -54,15 +54,11 @@ export interface Props {
 const FEED_LAYERS = LAYERS.filter((layer) => layer.kind === "feed");
 
 /**
- * How many features a heavy layer draws at once.
- *
- * Some of these feeds are tens of thousands of points. MapLibre will render
- * that, but it stops being a map and becomes a texture — and every one of
- * those points had to cross the wire. Heavy layers are therefore drawn from
- * what is in view, thinned to this ceiling, and the rail reports the true
- * total rather than the drawn count so nobody mistakes the cap for the data.
+ * Below this zoom a heavy layer aggregates into counted bubbles; above it,
+ * individual marks. Around seven is where a continent stops being a wall of
+ * overlapping dots and individual events become worth reading.
  */
-const HEAVY_CEILING = 6_000;
+const CLUSTER_MAX_ZOOM = 7;
 
 /**
  * How many camera stills to show at once.
@@ -807,7 +803,10 @@ export function GlobeMap({
       return {
         ...base,
         type: "circle",
-        filter: ["==", ["geometry-type"], "Point"],
+        filter:
+          def?.heavy === true
+            ? ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "point_count"]]]
+            : ["==", ["geometry-type"], "Point"],
         paint: {
           // Earthquakes size by magnitude; ports by rank; everything else is a
           // fixed dot that grows a little with zoom so it stays clickable.
@@ -850,11 +849,37 @@ export function GlobeMap({
       layerId: string,
       data: GeoJSON.FeatureCollection,
     ) => {
+      const def = LAYER_BY_ID.get(layerId);
+      const clustered = def?.heavy === true;
+
       const source = instance.getSource(layerId) as
         | maplibregl.GeoJSONSource
         | undefined;
       if (source === undefined) {
-        instance.addSource(layerId, { type: "geojson", data });
+        instance.addSource(layerId, {
+          type: "geojson",
+          data,
+          ...(clustered
+            ? {
+                cluster: true,
+                clusterRadius: 48,
+                clusterMaxZoom: CLUSTER_MAX_ZOOM,
+                clusterMinPoints: 4,
+                /*
+                 * Summed into each bubble so the aggregate can say something
+                 * beyond "how many". Only fields the feed actually measures —
+                 * a total of an invented number would be an invented total.
+                 */
+                ...(def?.weight !== undefined
+                  ? {
+                      clusterProperties: {
+                        weight: ["+", ["coalesce", ["get", def.weight], 0]],
+                      },
+                    }
+                  : {}),
+              }
+            : {}),
+        });
       } else {
         source.setData(data);
       }
@@ -862,6 +887,60 @@ export function GlobeMap({
       if (instance.getLayer(layerId) === undefined) {
         ensureSymbols(instance);
         instance.addLayer(paintFor(layerId));
+
+        if (clustered) {
+          // The bubble, sized by how many it stands for.
+          instance.addLayer({
+            id: `${layerId}-cluster`,
+            type: "circle",
+            source: layerId,
+            filter: ["has", "point_count"],
+            paint: {
+              // Where the feed publishes an intensity, the bubble is coloured
+              // by the summed value rather than by count alone — a hundred
+              // smouldering detections and a hundred conflagrations are the
+              // same count and very different events.
+              "circle-color":
+                def?.weight !== undefined
+                  ? ([
+                      "interpolate",
+                      ["linear"],
+                      ["coalesce", ["get", "weight"], 0],
+                      0, "#ffd60a",
+                      500, "#ff9f0a",
+                      5000, "#ff3b52",
+                    ] as unknown as string)
+                  : ["coalesce", ["get", "colour"], def?.colour ?? "#8e8e93"],
+              "circle-opacity": 0.55,
+              "circle-radius": [
+                "step",
+                ["get", "point_count"],
+                12, 50, 17, 500, 23, 5000, 30,
+              ],
+              "circle-stroke-color": "#05050a",
+              "circle-stroke-width": 1,
+            },
+          });
+          // And the count itself. A bubble without its number is just a
+          // bigger dot, which is the problem thinning had.
+          instance.addLayer({
+            id: `${layerId}-count`,
+            type: "symbol",
+            source: layerId,
+            filter: ["has", "point_count"],
+            layout: {
+              "text-field": ["get", "point_count_abbreviated"],
+              "text-size": 11,
+              "text-allow-overlap": true,
+              "text-ignore-placement": true,
+            },
+            paint: {
+              "text-color": "#05050a",
+              "text-halo-color": "#ffffff",
+              "text-halo-width": 1.2,
+            },
+          });
+        }
 
         // An area layer draws polygons; a cyclone's centre point needs its
         // own circle layer or the storm itself would be invisible inside its
@@ -903,11 +982,23 @@ export function GlobeMap({
     [paintFor],
   );
 
-  /** Thin a heavy layer to what is in view, up to the ceiling. */
+  /**
+   * Everything in view, unthinned.
+   *
+   * This used to sample heavy layers down to a ceiling, which meant an
+   * operator looking at global fire activity saw about three per cent of it
+   * presented as if it were the picture — and the map never said so. Worse,
+   * the sampler took every nth feature by array position, so it discarded an
+   * emergency squawk exactly as readily as a parked light aircraft.
+   *
+   * Clustering replaces it: the source aggregates, the bubbles carry the true
+   * count, and nothing is thrown away. The viewport filter stays, because
+   * there is no reason to hand the renderer the other hemisphere.
+   */
   const inView = useCallback(
     (instance: maplibregl.Map, features: GeoJSON.Feature[]) => {
       const bounds = instance.getBounds();
-      const visible = features.filter((feature) => {
+      return features.filter((feature) => {
         if (feature.geometry.type !== "Point") return true;
         const [lon, lat] = feature.geometry.coordinates;
         return (
@@ -916,12 +1007,6 @@ export function GlobeMap({
           bounds.contains([lon, lat])
         );
       });
-
-      if (visible.length <= HEAVY_CEILING) return visible;
-      // Evenly sampled rather than truncated: a truncated set is whatever the
-      // feed happened to list first, which is usually one region.
-      const step = Math.ceil(visible.length / HEAVY_CEILING);
-      return visible.filter((_, index) => index % step === 0);
     },
     [],
   );
@@ -964,7 +1049,7 @@ export function GlobeMap({
     // Remove anything switched off, so toggling actually clears the map.
     for (const def of LAYERS) {
       if (active.includes(def.id)) continue;
-      for (const id of [def.id, endpointLayerId(def.id)]) {
+      for (const id of [def.id, endpointLayerId(def.id), `${def.id}-cluster`, `${def.id}-count`]) {
         if (instance.getLayer(id) !== undefined) instance.removeLayer(id);
       }
       if (instance.getSource(def.id) !== undefined) instance.removeSource(def.id);
@@ -1078,6 +1163,48 @@ export function GlobeMap({
     if (instance === null || !ready || measure !== null || picking !== null) return;
 
     const onClick = (event: maplibregl.MapMouseEvent) => {
+      /*
+       * A cluster is checked first and separately. Clicking one has to zoom
+       * into it — a bubble that opens a detail card saying "1,204" would be
+       * a dead end where the obvious gesture does nothing.
+       */
+      const clusterLayers = FEED_LAYERS.filter((l) => l.heavy === true)
+        .map((l) => `${l.id}-cluster`)
+        .filter((id) => instance.getLayer(id) !== undefined);
+
+      if (clusterLayers.length > 0) {
+        const cluster = instance.queryRenderedFeatures(event.point, {
+          layers: clusterLayers,
+        })[0];
+        if (cluster !== undefined) {
+          const layerId = cluster.layer.id.replace(/-cluster$/, "");
+          const source = instance.getSource(layerId) as
+            | maplibregl.GeoJSONSource
+            | undefined;
+          const clusterId = cluster.properties?.["cluster_id"];
+          const [lon, lat] =
+            cluster.geometry.type === "Point"
+              ? cluster.geometry.coordinates
+              : [event.lngLat.lng, event.lngLat.lat];
+
+          if (source !== undefined && typeof clusterId === "number") {
+            void source
+              .getClusterExpansionZoom(clusterId)
+              .then((zoom) => {
+                instance.easeTo({
+                  center: [lon as number, lat as number],
+                  zoom,
+                  duration: 500,
+                });
+              })
+              .catch(() => {
+                instance.easeTo({ center: [lon as number, lat as number], zoom: instance.getZoom() + 2 });
+              });
+          }
+          return;
+        }
+      }
+
       const clickable = [...FEED_LAYERS.map((l) => l.id), "osint"].filter(
         (id) => instance.getLayer(id) !== undefined,
       );

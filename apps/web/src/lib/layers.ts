@@ -21,8 +21,18 @@ export interface LayerDef {
   kind: "feed" | "overlay" | "imagery";
   /** How the feed is drawn. Points unless stated. */
   draw?: Draw;
-  /** Heavy layers are only drawn in, and fetched for, the current view. */
+  /**
+   * Heavy layers are drawn from what is in view. Above the cluster zoom they
+   * aggregate into counted bubbles rather than being thinned away, so the
+   * number on screen is the true number.
+   */
   heavy?: boolean;
+  /**
+   * A published intensity to weight a heat map by. Only set where the feed
+   * actually measures one — a heat map weighted by nothing is a density plot
+   * pretending to be a severity plot.
+   */
+  weight?: string;
   /**
    * A server capability this layer needs. Layers whose capability is absent
    * are not offered at all — a map switch that can never draw is a dead
@@ -361,6 +371,10 @@ export const LAYERS: LayerDef[] = [
     colour: "#ff6b35",
     kind: "feed",
     heavy: true,
+    // Fire radiative power, in megawatts. A cluster of a hundred smouldering
+    // detections and a cluster of a hundred conflagrations are the same count
+    // and very different events.
+    weight: "frp",
     description:
       "Active fire detections from NASA FIRMS where a key is configured, and named fire events from EONET otherwise.",
   },
