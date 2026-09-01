@@ -5,6 +5,7 @@ import { getInfraAdapter } from "../adapters/infra/index.js";
 import { getDatasetAdapter } from "../adapters/datasets/index.js";
 import { executeUnscopedSource } from "../adapters/base.js";
 import { badRequest } from "../errors.js";
+import { areaOf, observeArea } from "./geo.js";
 
 export interface MonitorAdapter {
   source: Source;
@@ -208,15 +209,7 @@ export async function runMonitor(
   const monitor = await prisma.monitor.findUnique({ where: { id: monitorId } });
   if (monitor === null) throw badRequest(`No monitor ${monitorId}.`);
 
-  const subject: Subject = {
-    kind: monitor.subjectKind.toLowerCase() as Subject["kind"],
-    value: monitor.subjectValue,
-  };
-
-  // Re-validated on every run, not just at creation: the registry can change
-  // under a stored monitor, and a source that becomes gated must stop being
-  // watched rather than keep running under an old decision.
-  const adapters = assertMonitorable(monitor.sourceIds, subject);
+  const area = areaOf(monitor);
 
   const previous = await prisma.monitorRun.findFirst({
     where: { monitorId, errorMessage: null },
@@ -226,6 +219,41 @@ export async function runMonitor(
   const startedAt = Date.now();
   const seen = new Map<string, { kind: string; detail: Record<string, unknown>; sourceIds: string[] }>();
   const errors: { sourceId: string; message: string }[] = [];
+
+  /**
+   * A geofence watches a place; everything below watches an indicator.
+   *
+   * The two diverge only in where observations come from. The baseline rule,
+   * the diff, the outage guard, the run record and the alert feed are shared,
+   * which is the point — a geofence is a new question asked of the machine
+   * that already exists, not a second machine.
+   */
+  const sourceCount = area === null ? monitor.sourceIds.length : monitor.layerIds.length;
+
+  if (area !== null) {
+    const { observations, errors: geoErrors } = await observeArea(
+      area,
+      monitor.layerIds,
+    );
+    errors.push(...geoErrors);
+    for (const observation of observations) {
+      seen.set(observation.key, {
+        kind: observation.kind,
+        detail: observation.detail,
+        sourceIds: [observation.layerId],
+      });
+    }
+  } else {
+
+  const subject: Subject = {
+    kind: monitor.subjectKind.toLowerCase() as Subject["kind"],
+    value: monitor.subjectValue,
+  };
+
+  // Re-validated on every run, not just at creation: the registry can change
+  // under a stored monitor, and a source that becomes gated must stop being
+  // watched rather than keep running under an old decision.
+  const adapters = assertMonitorable(monitor.sourceIds, subject);
 
   for (const adapter of adapters) {
     const result = await executeUnscopedSource(
@@ -260,6 +288,8 @@ export async function runMonitor(
     }
   }
 
+  }
+
   const currentKeys = [...seen.keys()].sort();
   const previousKeys = new Set(
     Array.isArray(previous?.snapshot) ? (previous.snapshot as string[]) : [],
@@ -276,7 +306,7 @@ export async function runMonitor(
   // A run that reached no source successfully is not evidence that everything
   // disappeared. Recording those removals would raise an alert storm out of an
   // outage.
-  const upstreamAllFailed = errors.length === adapters.length;
+  const upstreamAllFailed = sourceCount > 0 && errors.length === sourceCount;
   const safeRemoved = upstreamAllFailed ? [] : removed;
 
   const run = await prisma.monitorRun.create({

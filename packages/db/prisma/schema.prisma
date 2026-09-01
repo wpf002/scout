@@ -334,6 +334,18 @@ model Monitor {
   /// Validated at creation: every entry must be ungated for `subjectKind`.
   sourceIds    String[]
 
+  /// A geofence: `{south, west, north, east}`, watched instead of an
+  /// indicator. Exactly one of `subjectValue` and `area` is meaningful, which
+  /// is enforced at creation — a monitor that watched both would be two
+  /// monitors wearing one name.
+  ///
+  /// Geofences watch places and platforms. They never watch people: the live
+  /// layers a geofence can name carry aircraft, vessels, fires and incidents,
+  /// and the person-facing tiers are unreachable from here by construction.
+  area      Json?
+  /// Live layer ids this geofence watches. Empty for an indicator monitor.
+  layerIds  String[] @default([])
+
   intervalMinutes Int     @default(1440)
   enabled         Boolean @default(true)
 

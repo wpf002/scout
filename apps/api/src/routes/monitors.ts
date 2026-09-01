@@ -3,17 +3,45 @@ import { z } from "zod";
 import { subjectSchema } from "@scout/sources";
 import { jsonSafe, prisma, recordAuditEvent, toPrismaSubjectKind } from "@scout/db";
 import { assertMonitorable, runDueMonitors, runMonitor } from "../monitor/run.js";
+import { assertArea, assertWatchableLayers } from "../monitor/geo.js";
 import { operatorOf } from "../auth.js";
 import { logEvent } from "../observability.js";
 import { badRequest, notFound } from "../errors.js";
 
-const createSchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  subject: subjectSchema,
-  sourceIds: z.array(z.string().min(1)).nonempty(),
-  /** Hourly at the fastest. Anything tighter is rude to the upstreams. */
-  intervalMinutes: z.number().int().min(60).max(43_200).default(1440),
-});
+/**
+ * A monitor watches one of two things, never both.
+ *
+ * An indicator monitor asks "has anything changed about this domain". A
+ * geofence asks "has anything entered this box". They share every piece of
+ * machinery below and differ only in where their observations come from, so
+ * one schema covers both — with exactly one of `subject` and `area` required.
+ */
+const createSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    subject: subjectSchema.optional(),
+    sourceIds: z.array(z.string().min(1)).default([]),
+    /** A geofence: the box to watch, and the live layers to watch inside it. */
+    area: z
+      .object({
+        south: z.number(),
+        west: z.number(),
+        north: z.number(),
+        east: z.number(),
+      })
+      .optional(),
+    layerIds: z.array(z.string().min(1)).default([]),
+    /**
+     * Hourly at the fastest for an indicator, because each run is an upstream
+     * call. A geofence reads layers the map has already cached, so it may run
+     * every five minutes without costing anyone anything.
+     */
+    intervalMinutes: z.number().int().min(5).max(43_200).default(1440),
+  })
+  .refine(
+    (value) => (value.subject === undefined) !== (value.area === undefined),
+    "Give either a subject or an area, not both and not neither.",
+  );
 
 export async function registerMonitorRoutes(
   app: FastifyInstance,
@@ -37,16 +65,38 @@ export async function registerMonitorRoutes(
       });
       if (record === null) throw notFound(`Case ${request.params.id} does not exist.`);
 
-      // Throws with a specific reason if any source is gated for this kind.
-      assertMonitorable(body.sourceIds, body.subject);
+      const geofence = body.area !== undefined;
 
+      if (geofence) {
+        // Throws if the box is malformed or a layer has no fixed position.
+        assertArea(body.area);
+        assertWatchableLayers(body.layerIds);
+      } else if (body.subject !== undefined) {
+        // Throws with a specific reason if any source is gated for this kind.
+        assertMonitorable(body.sourceIds, body.subject);
+      }
+
+      /*
+       * A geofence still needs a subject kind and value in the row, because
+       * the column is not nullable and every other part of the system reads
+       * it. It gets the box as its value and `keyword` as its kind — the
+       * least privileged kind there is, and the honest description of what a
+       * bounding box is. Nothing dispatches on it for a geofence; `area`
+       * being set is what decides the run path.
+       */
       const monitor = await prisma.monitor.create({
         data: {
           caseId: record.id,
           name: body.name,
-          subjectKind: toPrismaSubjectKind(body.subject.kind),
-          subjectValue: body.subject.value,
-          sourceIds: body.sourceIds,
+          subjectKind: geofence
+            ? toPrismaSubjectKind("keyword")
+            : toPrismaSubjectKind(body.subject!.kind),
+          subjectValue: geofence
+            ? `${body.area!.south},${body.area!.west},${body.area!.north},${body.area!.east}`
+            : body.subject!.value,
+          sourceIds: geofence ? [] : body.sourceIds,
+          area: geofence ? body.area! : undefined,
+          layerIds: geofence ? body.layerIds : [],
           intervalMinutes: body.intervalMinutes,
           createdBy: operatorOf(request),
         },
@@ -58,8 +108,11 @@ export async function registerMonitorRoutes(
         actor: operatorOf(request),
         detail: {
           monitorId: monitor.id,
-          subjectKind: body.subject.kind,
+          kind: geofence ? "geofence" : "indicator",
+          subjectKind: body.subject?.kind ?? null,
           sourceIds: body.sourceIds,
+          area: body.area ?? null,
+          layerIds: body.layerIds,
           intervalMinutes: body.intervalMinutes,
         },
       });
