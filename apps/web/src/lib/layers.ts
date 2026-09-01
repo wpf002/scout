@@ -1,3 +1,5 @@
+import { IMAGERY } from "./imagery";
+
 /**
  * The layer roster.
  *
@@ -16,7 +18,7 @@ export interface LayerDef {
   glyph: string;
   colour: string;
   /** Live feeds are fetched; the rest are drawn client-side. */
-  kind: "feed" | "overlay";
+  kind: "feed" | "overlay" | "imagery";
   /** How the feed is drawn. Points unless stated. */
   draw?: Draw;
   /** Heavy layers are only drawn in, and fetched for, the current view. */
@@ -107,6 +109,19 @@ export const CATEGORIES: CategoryDef[] = [
     name: "Infrastructure",
     glyph: "⌁",
     layerIds: ["cables"],
+  },
+  {
+    id: "imagery",
+    name: "Satellite Imagery",
+    glyph: "◱",
+    layerIds: [
+      "goes_east",
+      "goes_west",
+      "goes_infrared",
+      "goes_airmass",
+      "viirs_truecolor",
+      "modis_truecolor",
+    ],
   },
   {
     id: "display",
@@ -451,6 +466,20 @@ export const LAYERS: LayerDef[] = [
     description:
       "Share of layer-3 attack traffic by country of origin over the last day, from Cloudflare Radar. A proportion, not a count.",
   },
+
+  // ── Satellite imagery ───────────────────────────────────────────────────
+  // Generated from the GIBS roster so the two cannot drift apart.
+  ...IMAGERY.map(
+    (image): LayerDef => ({
+      id: image.id,
+      name: image.name,
+      source: "NASA GIBS",
+      glyph: "◱",
+      colour: "#8e8e93",
+      kind: "imagery",
+      description: image.description,
+    }),
+  ),
 
   // ── Display ─────────────────────────────────────────────────────────────
   {

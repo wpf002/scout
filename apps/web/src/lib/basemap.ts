@@ -17,7 +17,7 @@ import type { StyleSpecification } from "maplibre-gl";
  * and why SAT is the default.
  */
 
-const proxy = (url: string) =>
+export const proxy = (url: string) =>
   `/api/proxy-tiles?url=${encodeURIComponent(url)
     // MapLibre substitutes `{z}`/`{x}`/`{y}` by literal text match, and
     // percent-encoded braces sail straight past it — the proxy would then be

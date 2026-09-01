@@ -13,6 +13,7 @@ import {
 } from "@/lib/basemap";
 import { build, type Point as MeasurePoint, type Shape } from "@/lib/measure";
 import { ensureSymbols } from "@/lib/symbols";
+import { IMAGERY_BY_ID, imageryTiles } from "@/lib/imagery";
 
 /*
  * Point MapLibre at the worker copied into `public/` — see
@@ -356,6 +357,63 @@ export function GlobeMap({
       instance.off("moveend", update);
     };
   }, [active, ready, redraw, dataVersion, alive]);
+
+  /**
+   * Satellite imagery overlays.
+   *
+   * These are rasters, not marks, so they belong under everything the map
+   * draws on top — inserted before the first data layer rather than appended,
+   * or a storm would hide the aircraft flying round it.
+   */
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+
+    const beneath = instance
+      .getStyle()
+      ?.layers.find(
+        (layer) =>
+          !["space", "base", "labels"].includes(layer.id) &&
+          !layer.id.startsWith("imagery:"),
+      )?.id;
+
+    for (const def of LAYERS) {
+      if (def.kind !== "imagery") continue;
+      const id = `imagery:${def.id}`;
+      const on = active.includes(def.id);
+      const image = IMAGERY_BY_ID.get(def.id);
+
+      try {
+        if (on && image !== undefined) {
+          if (instance.getSource(id) === undefined) {
+            instance.addSource(id, {
+              type: "raster",
+              tiles: [imageryTiles(image)],
+              tileSize: 256,
+              maxzoom: image.maxzoom,
+              attribution: "NASA GIBS / Worldview",
+            });
+          }
+          if (instance.getLayer(id) === undefined) {
+            instance.addLayer(
+              {
+                id,
+                type: "raster",
+                source: id,
+                paint: { "raster-opacity": image.opacity },
+              },
+              beneath,
+            );
+          }
+        } else {
+          if (instance.getLayer(id) !== undefined) instance.removeLayer(id);
+          if (instance.getSource(id) !== undefined) instance.removeSource(id);
+        }
+      } catch {
+        // A style mid-swap. The next redraw picks it up.
+      }
+    }
+  }, [active, ready, redraw]);
 
   // ── Terrain ──────────────────────────────────────────────────────────────
   useEffect(() => {

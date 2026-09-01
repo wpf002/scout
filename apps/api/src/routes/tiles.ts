@@ -45,6 +45,8 @@ const ALLOWED_HOSTS = new Set([
   // AWS's open terrain tiles, for the 3D elevation layer.
   "s3.amazonaws.com",
   "elevation-tiles-prod.s3.amazonaws.com",
+  // NASA GIBS, for the live satellite imagery overlays.
+  "gibs.earthdata.nasa.gov",
 ]);
 
 /** Exposed for the allowlist tests; the boundary deserves a test run. */
