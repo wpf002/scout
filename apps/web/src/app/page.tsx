@@ -90,6 +90,14 @@ export default function Page() {
   const [centre, setCentre] = useState({ lat: 25, lon: -40 });
   const [filters, setFiltersState] = useState<Record<string, Predicate[]>>({});
   const [held, setHeld] = useState<Map<string, GeoJSON.Feature[]>>(new Map());
+  const [track, setTrack] = useState<{
+    path: [number, number][];
+    altitudes: Array<number | null>;
+    route: {
+      from: { code: string | null; place: string | null; lon: number; lat: number };
+      to: { code: string | null; place: string | null; lon: number; lat: number };
+    } | null;
+  } | null>(null);
   const [kp, setKp] = useState<{ kp: number | null; level: string } | null>(null);
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({});
 
@@ -256,6 +264,48 @@ export default function Page() {
       clearInterval(timer);
     };
   }, [tool]);
+
+  /**
+   * Fetch the selected aircraft's recorded track and filed route.
+   *
+   * Only for aircraft, and only on selection. Every other layer either does
+   * not move or has no published history, and asking for nine thousand traces
+   * in the background would be both useless and rude.
+   */
+  useEffect(() => {
+    const properties = selection?.properties ?? {};
+    const layer = String(properties["layer"] ?? "");
+    const hex = String(properties["icao24"] ?? "");
+
+    if (!layer.startsWith("aircraft:") || !/^[0-9a-f]{6}$/i.test(hex)) {
+      setTrack(null);
+      return;
+    }
+
+    let cancelled = false;
+    const callsign = String(properties["label"] ?? "").trim();
+    const query = /^[A-Z0-9]{2,8}$/.test(callsign)
+      ? `?callsign=${encodeURIComponent(callsign)}`
+      : "";
+
+    void fetch(`/api/track/${hex}${query}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { path?: [number, number][]; altitudes?: Array<number | null>; route?: unknown }) => {
+        if (cancelled) return;
+        setTrack({
+          path: d.path ?? [],
+          altitudes: d.altitudes ?? [],
+          route: (d.route ?? null) as never,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setTrack(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selection]);
 
   const alerts = useAlerts(active);
 
@@ -516,6 +566,7 @@ export default function Page() {
         onMeasure={setReading}
         filters={filters}
         onHeld={setHeld}
+        track={track}
         route={route}
         stops={stops}
         picking={picking}
@@ -890,6 +941,7 @@ export default function Page() {
           selection={selection}
           onClose={() => setSelection(null)}
           onFly={setFlyTo}
+          track={track}
         />
       ) : null}
 

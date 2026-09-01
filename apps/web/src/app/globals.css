@@ -2546,3 +2546,28 @@ a:hover {
 .filter-list .pick {
   flex: none;
 }
+
+/* ── Track and route ──────────────────────────────────────────────────── */
+
+.detail-track {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.detail-arrow {
+  color: var(--text-faint);
+}
+
+/* The recorded track is a fact; the route is a plan. The count says which
+ * of the two the reader is looking at. */
+.detail-trail {
+  font-size: 10px;
+  color: var(--text-faint);
+}

@@ -97,10 +97,18 @@ export function Detail({
   selection,
   onClose,
   onFly,
+  track,
 }: {
   selection: Selection;
   onClose: () => void;
   onFly: (place: { lat: number; lon: number; zoom?: number }) => void;
+  track?: {
+    path: [number, number][];
+    route: {
+      from: { code: string | null; place: string | null };
+      to: { code: string | null; place: string | null };
+    } | null;
+  } | null;
 }) {
   const properties = selection.properties;
   const layerId = String(properties["layer"] ?? selection.layer);
@@ -170,6 +178,24 @@ export function Detail({
           </dd>
         </div>
       </dl>
+
+      {track != null && (track.path.length > 1 || track.route !== null) ? (
+        <p className="detail-track">
+          {track.route !== null ? (
+            <span>
+              {track.route.from.code ?? "?"}{" "}
+              <span className="detail-arrow">→</span>{" "}
+              {track.route.to.code ?? "?"}
+              {track.route.to.place !== null ? ` (${track.route.to.place})` : ""}
+            </span>
+          ) : null}
+          {track.path.length > 1 ? (
+            <span className="detail-trail">
+              {track.path.length} recorded positions
+            </span>
+          ) : null}
+        </p>
+      ) : null}
 
       {def !== undefined ? (
         <p className="detail-source">{def.source}</p>

@@ -54,6 +54,15 @@ export interface Props {
   onPick: (index: number, lngLat: { lat: number; lon: number }) => void;
   /** Everything each layer returned, so a filter can report a real denominator. */
   onHeld?: (held: Map<string, GeoJSON.Feature[]>) => void;
+  /** The selected aircraft's recorded track and filed route. */
+  track: {
+    path: [number, number][];
+    altitudes: Array<number | null>;
+    route: {
+      from: { code: string | null; place: string | null; lon: number; lat: number };
+      to: { code: string | null; place: string | null; lon: number; lat: number };
+    } | null;
+  } | null;
 }
 
 const FEED_LAYERS = LAYERS.filter((layer) => layer.kind === "feed");
@@ -92,6 +101,7 @@ export function GlobeMap({
   picking,
   onPick,
   onHeld,
+  track,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -733,6 +743,125 @@ export function GlobeMap({
       instance.getCanvas().style.cursor = "";
     };
   }, [picking, ready, onPick]);
+
+  /**
+   * The selected aircraft's history and intent.
+   *
+   * The trail is coloured by the altitude recorded at each point, which is
+   * what makes it read as a climb, a descent or a hold rather than as a
+   * squiggle. `line-gradient` needs `lineMetrics` on the source, and it only
+   * works on a single LineString — so the trail is one feature and the route
+   * is another.
+   */
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+
+    const features: GeoJSON.Feature[] = [];
+
+    if (track !== null && track.path.length > 1) {
+      features.push({
+        type: "Feature",
+        properties: { role: "trail" },
+        geometry: { type: "LineString", coordinates: track.path },
+      });
+    }
+
+    /*
+     * The filed route as a great circle through the aircraft's current
+     * position: where it came from, where it is, where it says it is going.
+     * Drawn dashed, because unlike the trail it is a plan rather than a
+     * record.
+     */
+    if (track?.route != null && track.path.length > 0) {
+      const now = track.path[track.path.length - 1];
+      if (now !== undefined) {
+        features.push({
+          type: "Feature",
+          properties: { role: "route" },
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [track.route.from.lon, track.route.from.lat],
+              now,
+              [track.route.to.lon, track.route.to.lat],
+            ],
+          },
+        });
+        for (const [end, point] of [
+          ["from", track.route.from],
+          ["to", track.route.to],
+        ] as const) {
+          features.push({
+            type: "Feature",
+            properties: {
+              role: "airport",
+              label: `${point.code ?? ""} ${point.place ?? ""}`.trim(),
+              end,
+            },
+            geometry: { type: "Point", coordinates: [point.lon, point.lat] },
+          });
+        }
+      }
+    }
+
+    const data: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features,
+    };
+
+    const source = instance.getSource("track") as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (source === undefined) {
+      instance.addSource("track", { type: "geojson", data, lineMetrics: true });
+      instance.addLayer({
+        id: "track-route",
+        type: "line",
+        source: "track",
+        filter: ["==", ["get", "role"], "route"],
+        paint: {
+          "line-color": "#8e8e93",
+          "line-width": 1.2,
+          "line-dasharray": [3, 3],
+          "line-opacity": 0.7,
+        },
+      });
+      instance.addLayer({
+        id: "track-trail",
+        type: "line",
+        source: "track",
+        filter: ["==", ["get", "role"], "trail"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-width": 2.4,
+          // Along the line rather than by feature: the far end is where the
+          // aircraft was, the near end is where it is.
+          "line-gradient": [
+            "interpolate",
+            ["linear"],
+            ["line-progress"],
+            0, "rgba(90,200,250,0.15)",
+            1, "#5ac8fa",
+          ],
+        },
+      });
+      instance.addLayer({
+        id: "track-airports",
+        type: "circle",
+        source: "track",
+        filter: ["==", ["get", "role"], "airport"],
+        paint: {
+          "circle-radius": 4,
+          "circle-color": "#8e8e93",
+          "circle-stroke-color": "#05050a",
+          "circle-stroke-width": 1,
+        },
+      });
+    } else {
+      source.setData(data);
+    }
+  }, [track, ready, redraw]);
 
   // ── Layer painting ───────────────────────────────────────────────────────
 
