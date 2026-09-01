@@ -422,13 +422,28 @@ export default function Page() {
     const count = countFor(layerId);
     const failed = typeof count === "string";
 
+    // A child toggle does nothing on its own — it modifies its parent — so it
+    // is shown as subordinate and disabled while the parent is off.
+    const parentOff =
+      layer.parent !== undefined && !active.includes(layer.parent);
+
     return (
-      <li key={layerId} className={failed && on ? "failed" : undefined}>
+      <li
+        key={layerId}
+        className={[
+          failed && on ? "failed" : "",
+          layer.parent !== undefined ? "child" : "",
+          parentOff ? "muted" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         <button
-          className={`switch${on ? " on" : ""}`}
+          className={`switch${on && !parentOff ? " on" : ""}`}
           onClick={() => toggle(layerId)}
           aria-pressed={on}
           aria-label={layer.name}
+          disabled={parentOff}
         >
           <span className="knob" />
         </button>

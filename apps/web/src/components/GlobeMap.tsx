@@ -62,6 +62,15 @@ const FEED_LAYERS = LAYERS.filter((layer) => layer.kind === "feed");
  */
 const HEAVY_CEILING = 6_000;
 
+/**
+ * How many camera stills to show at once.
+ *
+ * Each is a request to a public agency's own server. A city with six hundred
+ * cameras in view must not become six hundred requests because someone
+ * toggled a switch.
+ */
+const PREVIEW_CEILING = 12;
+
 export function GlobeMap({
   active,
   basemap,
@@ -87,6 +96,16 @@ export function GlobeMap({
 
   /** Every feature a layer returned, before viewport thinning. */
   const raw = useRef(new Map<string, GeoJSON.Feature[]>());
+
+  /**
+   * Bumped when a feed's features land.
+   *
+   * `raw` is a ref, so writing to it does not re-render — which is correct for
+   * the map itself but wrong for anything derived from it. Without this, the
+   * camera previews computed once against an empty map before the first fetch
+   * resolved and then waited for the operator to pan before they appeared.
+   */
+  const [dataVersion, setDataVersion] = useState(0);
 
   // ── Create the map once ──────────────────────────────────────────────────
   useEffect(() => {
@@ -218,6 +237,72 @@ export function GlobeMap({
     }
   }, [projection, ready]);
 
+  /**
+   * Camera previews.
+   *
+   * Off by default and capped, because this is one image request per camera
+   * straight to the agency that publishes it — turning it on over a city with
+   * six hundred cameras would be a small denial of service against a public
+   * transport authority. Only cameras in view are previewed, only the nearest
+   * few, and only above a zoom where they are distinguishable at all.
+   */
+  const [previews, setPreviews] = useState<
+    Array<{ id: string; url: string; lon: number; lat: number; label: string }>
+  >([]);
+
+  useEffect(() => {
+    const instance = map.current;
+    if (
+      instance === null ||
+      !ready ||
+      !active.includes("cctv_previews") ||
+      !active.includes("cctv")
+    ) {
+      setPreviews([]);
+      return;
+    }
+
+    const update = () => {
+      if (instance.getZoom() < 9) {
+        setPreviews([]);
+        return;
+      }
+      const bounds = instance.getBounds();
+      const centre = instance.getCenter();
+      const cameras = (raw.current.get("cctv") ?? []).flatMap((feature) => {
+        if (feature.geometry.type !== "Point") return [];
+        const [lon, lat] = feature.geometry.coordinates;
+        if (typeof lon !== "number" || typeof lat !== "number") return [];
+        if (!bounds.contains([lon, lat])) return [];
+        const p = (feature.properties ?? {}) as Record<string, unknown>;
+        // The still, never the stream. An HLS playlist is not an image and
+        // would render as a broken one — which is what happened while these
+        // were collapsed into a single field.
+        const url = p["stillUrl"];
+        if (typeof url !== "string" || url.length === 0) return [];
+        return [
+          {
+            id: String(p["id"] ?? `${lon},${lat}`),
+            url,
+            lon,
+            lat,
+            label: String(p["label"] ?? "Camera"),
+            distance: Math.abs(lon - centre.lng) + Math.abs(lat - centre.lat),
+          },
+        ];
+      });
+
+      cameras.sort((a, b) => a.distance - b.distance);
+      setPreviews(cameras.slice(0, PREVIEW_CEILING));
+    };
+
+    update();
+    instance.on("moveend", update);
+    return () => {
+      instance.off("moveend", update);
+    };
+  }, [active, ready, redraw, dataVersion]);
+
   // ── Terrain ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const instance = map.current;
@@ -235,6 +320,50 @@ export function GlobeMap({
       }
     } catch {
       // Terrain is a garnish. A renderer that cannot do it still draws a map.
+    }
+
+    /*
+     * Extruded buildings, where the basemap has them.
+     *
+     * Only the vector style carries a `building` layer — the satellite style
+     * is imagery and has no such data — so this appears with MAP and not with
+     * SAT. That is a property of the basemap, not a bug, and it is why the
+     * layer is not offered as if it always works.
+     */
+    try {
+      const hasBuildings =
+        instance.getSource("carto") !== undefined &&
+        instance.getLayer("buildings-3d") === undefined;
+
+      if (on && hasBuildings) {
+        instance.addLayer({
+          id: "buildings-3d",
+          type: "fill-extrusion",
+          source: "carto",
+          "source-layer": "building",
+          minzoom: 14,
+          paint: {
+            "fill-extrusion-color": "#2a2a3a",
+            "fill-extrusion-height": [
+              "coalesce",
+              ["get", "render_height"],
+              ["get", "height"],
+              12,
+            ],
+            "fill-extrusion-base": [
+              "coalesce",
+              ["get", "render_min_height"],
+              ["get", "min_height"],
+              0,
+            ],
+            "fill-extrusion-opacity": 0.85,
+          },
+        });
+      } else if (!on && instance.getLayer("buildings-3d") !== undefined) {
+        instance.removeLayer("buildings-3d");
+      }
+    } catch {
+      // A style without a building layer. The terrain still works.
     }
   }, [active, ready, redraw]);
 
@@ -603,6 +732,7 @@ export function GlobeMap({
         if (cancelled) return;
 
         raw.current.set(layerId, data.features);
+        setDataVersion((n) => n + 1);
         const drawn =
           def.heavy === true ? inView(instance, data.features) : data.features;
         ensure(instance, layerId, { type: "FeatureCollection", features: drawn });
@@ -687,7 +817,7 @@ export function GlobeMap({
         features: inView(instance, features),
       });
     }
-  }, [viewport, active, ready, inView]);
+  }, [viewport, active, ready, inView, dataVersion]);
 
   // Refresh live feeds on a timer, so the map stays live without a reload.
   useEffect(() => {
@@ -778,5 +908,43 @@ export function GlobeMap({
     };
   }, [ready, onSelect, measure, picking, active, redraw]);
 
-  return <div ref={container} className="globe" />;
+  return (
+    <>
+      <div ref={container} className="globe" />
+      {previews.length > 0 ? (
+        <div className="previews">
+          {previews.map((preview) => {
+            const instance = map.current;
+            if (instance === null) return null;
+            const at = instance.project([preview.lon, preview.lat]);
+            return (
+              <figure
+                key={preview.id}
+                className="preview"
+                style={{ left: at.x, top: at.y }}
+              >
+                {/*
+                  * Eager, not lazy. The count is already capped at a dozen,
+                  * which is what lazy loading would otherwise be protecting
+                  * against — and a deferred image in a panel the operator
+                  * deliberately opened just reads as a broken preview.
+                  * eslint-disable-next-line @next/next/no-img-element
+                  */}
+                <img
+                  src={preview.url}
+                  alt={preview.label}
+                  onError={(event) => {
+                    // A camera that is offline serves nothing. Hide the frame
+                    // rather than leave a broken-image icon on the map.
+                    event.currentTarget.closest("figure")?.remove();
+                  }}
+                />
+                <figcaption>{preview.label}</figcaption>
+              </figure>
+            );
+          })}
+        </div>
+      ) : null}
+    </>
+  );
 }

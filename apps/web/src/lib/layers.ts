@@ -27,6 +27,8 @@ export interface LayerDef {
    * switch, not an honest one.
    */
   requires?: string;
+  /** A modifier on another layer rather than a layer of its own. */
+  parent?: string;
   description: string;
 }
 
@@ -66,7 +68,7 @@ export const CATEGORIES: CategoryDef[] = [
     id: "surveillance",
     name: "Surveillance",
     glyph: "▣",
-    layerIds: ["cctv", "live_news"],
+    layerIds: ["cctv", "cctv_previews", "live_news"],
   },
   {
     id: "hazards",
@@ -220,6 +222,16 @@ export const LAYERS: LayerDef[] = [
     heavy: true,
     description:
       "Cameras published by transport authorities and municipalities. Agency feeds only — nothing here comes from scanning for exposed devices.",
+  },
+  {
+    id: "cctv_previews",
+    name: "Live Previews",
+    glyph: "▤",
+    colour: "#c8b0ff",
+    kind: "overlay",
+    parent: "cctv",
+    description:
+      "Show the current still from each camera in view. Off by default — it is one image request per camera.",
   },
   {
     id: "live_news",

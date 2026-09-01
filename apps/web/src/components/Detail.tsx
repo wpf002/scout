@@ -119,6 +119,10 @@ export function Detail({
   const url = typeof properties["url"] === "string" ? properties["url"] : null;
   const streamUrl =
     typeof properties["streamUrl"] === "string" ? properties["streamUrl"] : null;
+  const stillUrl =
+    typeof properties["stillUrl"] === "string" && properties["stillUrl"].length > 0
+      ? properties["stillUrl"]
+      : null;
   const streamType = String(properties["streamType"] ?? "");
   const emergency =
     typeof properties["emergency"] === "string" ? properties["emergency"] : null;
@@ -147,9 +151,9 @@ export function Detail({
         * agency's video player would mean loading their scripts into this
         * page, which is not a trade worth making for a thumbnail.
         */}
-      {streamUrl !== null && streamType === "image" ? (
+      {stillUrl !== null ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img className="detail-still" src={streamUrl} alt={selection.label} />
+        <img className="detail-still" src={stillUrl} alt={selection.label} />
       ) : null}
 
       <dl>

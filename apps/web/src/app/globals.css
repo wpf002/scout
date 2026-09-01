@@ -2344,3 +2344,57 @@ a:hover {
 .maplibregl-ctrl-bottom-right {
   bottom: 152px !important;
 }
+
+/* ── Camera previews ──────────────────────────────────────────────────── */
+
+.previews {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.preview {
+  position: absolute;
+  width: 132px;
+  margin: 0;
+  /* Anchored above its camera, not on it, so the dot stays visible. */
+  transform: translate(-50%, calc(-100% - 10px));
+  background: rgba(9, 9, 16, 0.92);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.preview img {
+  display: block;
+  width: 100%;
+  height: 74px;
+  object-fit: cover;
+  background: var(--bg-inset);
+}
+
+.preview figcaption {
+  padding: 3px 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+/* A toggle that modifies another layer is shown as subordinate to it. */
+.cat-panel li.child,
+.layer-list li.child {
+  padding-left: 14px;
+}
+
+.cat-panel li.muted,
+.layer-list li.muted {
+  opacity: 0.45;
+}
+
+.switch:disabled {
+  cursor: default;
+}

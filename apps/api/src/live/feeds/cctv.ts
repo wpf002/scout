@@ -25,8 +25,20 @@ interface Camera {
   lon: number;
   city: string | null;
   country: string;
+  /** The best moving picture, if the agency serves one. */
   streamUrl: string | null;
   streamType: StreamType;
+  /**
+   * A single frame, kept separately.
+   *
+   * Several agencies publish both an HLS stream and a JPEG that updates, and
+   * they are for different jobs: the still is what a map preview can show
+   * without a player, the stream is what a viewer opens. Collapsing them into
+   * one field meant the previews had nothing to draw wherever a stream
+   * existed — which was most of the largest source.
+   */
+  stillUrl: string | null;
+  /** The authority that published it. */
   operator: string;
 }
 
@@ -39,6 +51,7 @@ const toFeature = (camera: Camera): Feature =>
     country: camera.country,
     streamUrl: camera.streamUrl,
     streamType: camera.streamType,
+    stillUrl: camera.stillUrl,
     operator: camera.operator,
     colour: "#c8b0ff",
   });
@@ -101,9 +114,11 @@ async function caltrans(): Promise<Camera[]> {
         const lon = Number(location?.longitude);
         if (!usable(lon, lat)) return [];
 
-        const hls = cctv.imageData?.streamingVideoURL;
-        const still = cctv.imageData?.static?.currentImageURL;
-        const url = hls ?? still ?? null;
+        // Empty strings are how these feeds say "no camera here"; they must
+        // not survive as a URL that renders a broken image.
+        const hls = cctv.imageData?.streamingVideoURL?.trim() || null;
+        const still = cctv.imageData?.static?.currentImageURL?.trim() || null;
+        if (hls === null && still === null) return [];
 
         return [
           {
@@ -113,8 +128,9 @@ async function caltrans(): Promise<Camera[]> {
             lon,
             city: location?.nearbyPlace?.trim() ?? null,
             country: "United States",
-            streamUrl: url,
-            streamType: hls !== undefined ? "hls" : "image",
+            streamUrl: hls ?? still,
+            streamType: hls !== null ? "hls" : "image",
+            stillUrl: still,
             operator: `Caltrans District ${d}`,
           },
         ];
@@ -164,6 +180,7 @@ async function ontario(): Promise<Camera[]> {
         country: "Canada",
         streamUrl: view?.Url ?? row.Url ?? null,
         streamType: "image",
+        stillUrl: view?.Url ?? row.Url ?? null,
         operator: "511 Ontario",
       },
     ];
@@ -207,6 +224,7 @@ async function driveBc(): Promise<Camera[]> {
         country: "Canada",
         streamUrl: row.links?.imageDisplay ?? row.links?.imageSource ?? null,
         streamType: "image",
+        stillUrl: row.links?.imageDisplay ?? row.links?.imageSource ?? null,
         operator: "DriveBC",
       },
     ];
@@ -245,8 +263,9 @@ async function tfl(): Promise<Camera[]> {
         lon: row.lon as number,
         city: "London",
         country: "United Kingdom",
-        streamUrl: still ?? video ?? null,
-        streamType: still !== undefined ? "image" : "hls",
+        streamUrl: video ?? still ?? null,
+        streamType: video !== undefined ? "hls" : "image",
+        stillUrl: still ?? null,
         operator: "Transport for London",
       },
     ];
@@ -267,6 +286,9 @@ const NYC_SCHEMA = z.array(
   }),
 );
 
+const nycStill = (url: string | undefined, id: string | undefined) =>
+  url ?? (id === undefined ? null : `https://webcams.nyctmc.org/api/cameras/${id}/image`);
+
 async function nyc(): Promise<Camera[]> {
   const parsed = NYC_SCHEMA.parse(
     await getJson("https://webcams.nyctmc.org/api/cameras", { timeoutMs: 30_000 }),
@@ -282,8 +304,9 @@ async function nyc(): Promise<Camera[]> {
         lon: row.longitude as number,
         city: row.area?.trim() ?? "New York",
         country: "United States",
-        streamUrl: row.imageUrl ?? (row.id === undefined ? null : `https://webcams.nyctmc.org/api/cameras/${row.id}/image`),
+        streamUrl: nycStill(row.imageUrl, row.id),
         streamType: "image",
+        stillUrl: nycStill(row.imageUrl, row.id),
         operator: "NYC DOT",
       },
     ];
@@ -335,6 +358,7 @@ async function singapore(): Promise<Camera[]> {
         country: "Singapore",
         streamUrl: row.image ?? null,
         streamType: "image",
+        stillUrl: row.image ?? null,
         operator: "LTA Singapore",
       },
     ];
@@ -354,6 +378,9 @@ const OTTAWA_SCHEMA = z.array(
   }),
 );
 
+const ottawaStill = (number: number | undefined) =>
+  number === undefined ? null : `https://traffic.ottawa.ca/beta/camera?id=${number}`;
+
 async function ottawa(): Promise<Camera[]> {
   const parsed = OTTAWA_SCHEMA.parse(
     await getJson("https://traffic.ottawa.ca/beta/camera_list", {
@@ -371,11 +398,9 @@ async function ottawa(): Promise<Camera[]> {
         lon: row.longitude as number,
         city: "Ottawa",
         country: "Canada",
-        streamUrl:
-          row.number === undefined
-            ? null
-            : `https://traffic.ottawa.ca/beta/camera?id=${row.number}`,
+        streamUrl: ottawaStill(row.number),
         streamType: "image",
+        stillUrl: ottawaStill(row.number),
         operator: row.type === "MTO" ? "Ontario MTO" : "City of Ottawa",
       },
     ];
