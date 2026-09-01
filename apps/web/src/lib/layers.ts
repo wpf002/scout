@@ -7,7 +7,7 @@
  * views rather than between pages.
  */
 
-export type Draw = "point" | "line" | "glow" | "arc";
+export type Draw = "point" | "line" | "glow" | "arc" | "aircraft" | "vessel";
 
 export interface LayerDef {
   id: string;
@@ -120,6 +120,7 @@ export const LAYERS: LayerDef[] = [
   // ── Aviation ────────────────────────────────────────────────────────────
   {
     id: "flights",
+    draw: "aircraft",
     source: "OpenSky and adsb.fi",
     name: "Commercial",
     glyph: "✈",
@@ -130,6 +131,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "private",
+    draw: "aircraft",
     source: "OpenSky and adsb.fi",
     name: "Private",
     glyph: "✈",
@@ -140,6 +142,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "jets",
+    draw: "aircraft",
     source: "adsb.fi type designators",
     name: "Private Jets",
     glyph: "✈",
@@ -150,6 +153,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "military",
+    draw: "aircraft",
     source: "adsb.fi military feed",
     name: "Military",
     glyph: "✦",
@@ -162,6 +166,7 @@ export const LAYERS: LayerDef[] = [
   // ── Cross-domain entities ───────────────────────────────────────────────
   {
     id: "sdk_air",
+    draw: "aircraft",
     name: "Air Entities",
     source: "A sample of the Aviation layers",
     glyph: "⌁",
@@ -172,6 +177,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "sdk_sea",
+    draw: "vessel",
     name: "Sea Entities",
     source: "A sample of the Maritime layer",
     glyph: "⌁",
@@ -182,6 +188,7 @@ export const LAYERS: LayerDef[] = [
   },
   {
     id: "sdk_naval",
+    draw: "vessel",
     name: "Naval Entities",
     source: "Military ADS-B flag and AIS ship type 35",
     glyph: "⌁",
@@ -194,6 +201,7 @@ export const LAYERS: LayerDef[] = [
   // ── Maritime ────────────────────────────────────────────────────────────
   {
     id: "maritime",
+    draw: "vessel",
     source: "Kystverket, Fintraffic, EIA, port authorities",
     name: "Maritime / Naval",
     glyph: "⚓",

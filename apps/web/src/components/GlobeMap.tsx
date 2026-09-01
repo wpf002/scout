@@ -12,6 +12,7 @@ import {
   type BasemapId,
 } from "@/lib/basemap";
 import { build, type Point as MeasurePoint, type Shape } from "@/lib/measure";
+import { ensureSymbols } from "@/lib/symbols";
 
 /*
  * Point MapLibre at the worker copied into `public/` — see
@@ -174,6 +175,7 @@ export function GlobeMap({
     observer.observe(container.current);
 
     instance.on("load", () => {
+      ensureSymbols(instance);
       // Ready first. Setting the projection is a nice-to-have, and when it
       // threw it took the rest of this handler with it — so `ready` stayed
       // false, no layer effect ever ran, and the map sat black with every
@@ -251,7 +253,13 @@ export function GlobeMap({
     const swap = (spec: StyleSpecification) => {
       if (!alive(instance)) return;
       instance.setStyle(spec);
-      instance.once("styledata", () => setRedraw((n) => n + 1));
+      instance.once("styledata", () => {
+        // setStyle discards the image atlas along with everything else, so
+        // every symbol layer would otherwise point at an image that no longer
+        // exists.
+        ensureSymbols(instance);
+        setRedraw((n) => n + 1);
+      });
     };
 
     if (typeof style === "string") {
@@ -627,6 +635,71 @@ export function GlobeMap({
       const colour = def?.colour ?? "#ffffff";
       const base = { id: layerId, source: layerId } as const;
 
+      /**
+       * Anything that moves is drawn as a heading-rotated silhouette rather
+       * than a dot.
+       *
+       * `icon-rotation-alignment: "map"` is the load-bearing option: it makes
+       * the symbol turn with the globe, so a northbound aircraft points north
+       * on screen at every bearing and projection. Screen alignment would
+       * leave every heading wrong the moment the map rotated.
+       *
+       * Overlap and placement checks are both disabled. They are what makes
+       * symbol layers expensive, and label collision is meaningless for
+       * traffic — two aircraft close together should both be drawn, not
+       * silently deconflicted.
+       */
+      if (def?.draw === "aircraft" || def?.draw === "vessel") {
+        return {
+          ...base,
+          type: "symbol",
+          filter: ["==", ["geometry-type"], "Point"],
+          layout: {
+            // A stationary object has no meaningful heading, so it keeps the
+            // dot rather than pointing somewhere arbitrary.
+            "icon-image": [
+              "case",
+              [
+                "any",
+                // `to-boolean`, because vessels carry no `grounded` property
+                // at all and `any` rejects the null that `get` returns for a
+                // missing key — which invalidates the whole layout and drops
+                // the layer silently.
+                ["to-boolean", ["get", "grounded"]],
+                ["==", ["coalesce", ["get", "heading"], 0], 0],
+              ],
+              "dot",
+              def.draw,
+            ],
+            "icon-rotate": ["coalesce", ["get", "heading"], 0],
+            "icon-rotation-alignment": "map",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+            "icon-size": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              2, 0.22,
+              6, 0.34,
+              11, 0.6,
+            ],
+            // Military and anything squawking an emergency draw over the top.
+            "symbol-sort-key": [
+              "case",
+              ["!=", ["coalesce", ["get", "emergency"], ""], ""], 0,
+              ["==", ["get", "tier"], "military"], 1,
+              2,
+            ],
+          },
+          paint: {
+            "icon-color": ["coalesce", ["get", "colour"], colour],
+            "icon-halo-color": "#05050a",
+            "icon-halo-width": 1,
+            "icon-opacity": 0.95,
+          },
+        } as maplibregl.AddLayerObject;
+      }
+
       if (def?.draw === "line" || def?.draw === "arc") {
         return {
           ...base,
@@ -711,6 +784,7 @@ export function GlobeMap({
       }
 
       if (instance.getLayer(layerId) === undefined) {
+        ensureSymbols(instance);
         instance.addLayer(paintFor(layerId));
 
         // An arc layer draws lines; its endpoints need their own circle layer
