@@ -132,10 +132,28 @@ interface Element {
 const TTL_MS = 2 * 60 * 60_000;
 const MAX_STALE_MS = 7 * 24 * 60 * 60_000;
 
+/**
+ * Once CelesTrak says no, stop asking.
+ *
+ * This is the single most important piece of politeness in this file.
+ * CelesTrak firewalls an address that accumulates fifty HTTP errors in a
+ * two-hour window, and the label pass is thirty-five requests. On a cold start
+ * inside a refusal window, walking that list would spend most of the budget in
+ * seconds and get the address banned outright — turning a two-hour wait into a
+ * manual unblock request.
+ *
+ * So the first refusal trips this, and every remaining request in the pass is
+ * skipped without being sent. It clears when the window does.
+ */
+let refusedUntil = 0;
+
+class RateLimited extends Error {}
+
 /** The refusal, and an invalid group name, both arrive as prose. */
 function assertElements(body: string, what: string): void {
   if (body.startsWith("GP data has not updated")) {
-    throw new Error(`CelesTrak is rate limiting ${what}`);
+    refusedUntil = Date.now() + TTL_MS;
+    throw new RateLimited(`CelesTrak is rate limiting ${what}`);
   }
   // An unknown GROUP is answered with HTTP 200 and an error sentence, not a
   // 4xx. Checking only the status code ingests "Invalid query: ..." as a
@@ -164,6 +182,10 @@ function parseTle(body: string): Element[] {
  * too soon" and "this group does not exist" is known at all.
  */
 async function fetchGroup(group: string, timeoutMs: number): Promise<Element[]> {
+  if (Date.now() < refusedUntil) {
+    throw new RateLimited("CelesTrak refused a request in this window already");
+  }
+
   const body = await getText(`${CELESTRAK}?GROUP=${group}&FORMAT=tle`, {
     timeoutMs,
     allowStatus: [403],
@@ -206,9 +228,15 @@ async function loadLabels(): Promise<Labelled> {
         labels[element.noradId] ??= label;
         if (!byId.has(element.noradId)) byId.set(element.noradId, element);
       }
-    } catch {
+    } catch (error) {
       // A group that will not answer costs its label, not the layer. Every
       // satellite still has a position; some just say "other".
+      //
+      // But a refusal is different from a failure: it means the window is
+      // shut, and the remaining thirty-odd requests would all be refused too.
+      // Abandoning the pass is what keeps this inside CelesTrak's error
+      // budget.
+      if (error instanceof RateLimited) break;
     }
   }
   return { labels, elements: [...byId.values()] };
