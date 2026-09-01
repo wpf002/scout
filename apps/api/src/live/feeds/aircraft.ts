@@ -20,6 +20,7 @@ import { point, usable, type Feature, type FeatureCollection } from "../types.js
 
 const OPENSKY = "https://opensky-network.org/api/states/all";
 const ADSBFI = "https://opendata.adsb.fi/api/v2";
+const ADSBLOL = "https://api.adsb.lol/v2";
 
 export type Tier = "commercial" | "private" | "jet" | "military";
 
@@ -199,82 +200,109 @@ function fromAdsb(
   ];
 }
 
+/**
+ * The two ADS-B services return the same records under different keys —
+ * adsb.fi uses `aircraft`, adsb.lol uses `ac`.
+ *
+ * This is read explicitly rather than as a schema union, and that is not a
+ * style preference. A union whose first branch is `{ aircraft: [...] }` with
+ * a default silently *succeeds* against `{ ac: [...] }`, producing an empty
+ * array and never trying the second branch. The sweep looked like it was
+ * running and returned nothing, so the private-jet tier — which exists only
+ * because of these type codes — sat at zero.
+ */
+function aircraftIn_(body: unknown): z.infer<typeof ADSB_SCHEMA>["ac"] {
+  const envelope = body as Record<string, unknown> | null;
+  const rows = envelope?.["ac"] ?? envelope?.["aircraft"];
+  if (!Array.isArray(rows)) return [];
+  return ADSB_SCHEMA.parse({ ac: rows }).ac;
+}
+
 async function adsbMilitary(): Promise<Track[]> {
-  const parsed = ADSB_SCHEMA.parse(await getJson(`${ADSBFI}/mil`));
-  return parsed.ac.flatMap((row) => fromAdsb(row, true));
+  /*
+   * adsb.fi first for the military tier because it carries a human-readable
+   * model where adsb.lol does not, with adsb.lol as failover — this is the
+   * only source for that tier, so it must not share a failure with anything.
+   */
+  try {
+    const body = await getJson(`${ADSBFI}/mil`);
+    return aircraftIn_(body).flatMap((row) => fromAdsb(row, true));
+  } catch {
+    const body = await getJson(`${ADSBLOL}/mil`, { timeoutMs: 30_000 });
+    return aircraftIn_(body).flatMap((row) => fromAdsb(row, true));
+  }
 }
 
 /**
- * Radius queries over the airspace that actually carries traffic.
+ * Radius sweeps, for the type designators OpenSky does not carry.
  *
- * These exist to attach type designators to tracks OpenSky can only place, so
- * the private-jet tier means something. They are not an attempt at global
- * coverage — that is OpenSky's job here — and the list is kept short because
- * each one is a request.
+ * adsb.lol, not adsb.fi, because the radius limit is the whole story here:
+ * adsb.fi rejects anything past 250 nautical miles, while adsb.lol answers a
+ * 1000 nm circle — roughly a continent — in one request. Four of those cover
+ * most of the world's traffic; forty 250 nm circles would not, and would be
+ * forty requests.
+ *
+ * The two services also use different envelopes for the same data — adsb.fi
+ * returns `aircraft`, adsb.lol returns `ac` — which silently zeroes any shared
+ * parser that assumes one. Both are accepted below.
  */
-const HOTSPOTS: Array<[number, number, string]> = [
-  [40.7, -74.0, "US Northeast"],
-  [33.9, -118.4, "US West"],
-  [41.9, -87.6, "US Midwest"],
-  [29.8, -95.4, "US South"],
-  [26.1, -80.1, "Florida"],
-  [51.5, -0.1, "London"],
-  [50.0, 8.6, "Central Europe"],
-  [43.0, 2.0, "Western Mediterranean"],
-  [55.7, 37.6, "Moscow"],
-  [25.3, 55.4, "Gulf"],
-  [1.4, 103.8, "Singapore"],
-  [35.7, 139.7, "Tokyo"],
-  [22.3, 114.2, "Hong Kong"],
-  [-33.9, 151.2, "Sydney"],
-  [-23.5, -46.6, "Sao Paulo"],
-  [19.4, -99.1, "Mexico City"],
-  [28.6, 77.2, "Delhi"],
-  [-26.2, 28.0, "Johannesburg"],
+const SWEEPS: Array<[number, number, string]> = [
+  [39, -96, "North America"],
+  [48, 10, "Europe"],
+  [25, 55, "Middle East and South Asia"],
+  [30, 115, "East Asia"],
+  [-10, -55, "South America"],
+  [-25, 133, "Australia"],
+  [0, 20, "Africa"],
 ];
 
 /**
  * Rotating, not all at once.
  *
- * Eighteen requests every twenty seconds is fifty-four a minute to one
- * provider, which is exactly how adsb.fi starts answering 429 — and when it
- * does, the military endpoint goes with it and that whole tier silently
- * empties while the map still shows nine thousand aircraft. Each refresh takes
- * one slice of the list and the results are held long enough for the whole
- * rotation to stay on the map.
+ * adsb.lol answers 429 to a burst, and a rate-limited provider takes the
+ * military endpoint with it — that tier then silently empties while the map
+ * still shows nine thousand aircraft. Each refresh takes one slice, and the
+ * type codes are remembered between rotations so the tiers stay populated.
  */
-const HOTSPOT_BATCH = 4;
+const SWEEP_BATCH = 2;
 let rotation = 0;
 
-async function adsbHotspots(): Promise<Track[]> {
-  const start = (rotation * HOTSPOT_BATCH) % HOTSPOTS.length;
+async function adsbSweeps(): Promise<Track[]> {
+  const start = (rotation * SWEEP_BATCH) % SWEEPS.length;
   rotation += 1;
 
-  const slice = Array.from({ length: HOTSPOT_BATCH }, (_, i) => {
-    const entry = HOTSPOTS[(start + i) % HOTSPOTS.length];
-    return entry;
-  }).filter((e): e is [number, number, string] => e !== undefined);
+  const slice = Array.from({ length: SWEEP_BATCH }, (_, i) =>
+    SWEEPS[(start + i) % SWEEPS.length],
+  ).filter((e): e is [number, number, string] => e !== undefined);
 
-  const { items } = await merge(
-    slice.map(([lat, lon]) => async () => {
-      const parsed = z
-        .object({ aircraft: ADSB_SCHEMA.shape.ac })
-        .or(ADSB_SCHEMA.transform((v) => ({ aircraft: v.ac })))
-        .parse(await getJson(`${ADSBFI}/lat/${lat}/lon/${lon}/dist/250`));
-      return parsed.aircraft.flatMap((row) => fromAdsb(row, false));
-    }),
-  );
-  return items;
+  const out: Track[] = [];
+  for (const [lat, lon] of slice) {
+    try {
+      const body = await getJson(`${ADSBLOL}/lat/${lat}/lon/${lon}/dist/1000`, {
+        timeoutMs: 45_000,
+      });
+      out.push(...aircraftIn_(body).flatMap((row) => fromAdsb(row, false)));
+    } catch {
+      // One region thins the enrichment, not the layer.
+    }
+    // Sequential and spaced. These are megabyte responses, and a burst of
+    // them is what draws a 429.
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+  }
+  return out;
 }
 
 /**
  * Enrichment is held longer than the positions it decorates.
  *
- * A type designator does not change; a position does. Keeping the last
- * rotation's type codes lets the private-jet tier stay populated between
- * sweeps instead of flickering as the rotation moves on.
+ * A type designator does not change; a position does. Keeping what the
+ * type-bearing providers said lets the private-jet tier stay populated
+ * between sweeps instead of collapsing as the rotation moves on.
  */
-const enrichment = new Map<string, { type: string | null; registration: string | null; military: boolean }>();
+const enrichment = new Map<
+  string,
+  { type: string | null; registration: string | null; military: boolean }
+>();
 
 async function loadTracks(): Promise<Track[]> {
   /*
@@ -289,7 +317,7 @@ async function loadTracks(): Promise<Track[]> {
   const [global, mil, hot] = await Promise.allSettled([
     cached("aircraft:opensky", 20_000, openSky),
     cached("aircraft:mil", 45_000, adsbMilitary),
-    cached("aircraft:hotspots", 120_000, adsbHotspots),
+    cached("aircraft:sweeps", 90_000, adsbSweeps),
   ]);
 
   const items: Track[] = [];
