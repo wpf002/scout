@@ -19,6 +19,8 @@ import { Directions, type Route, type Stop } from "@/components/Directions";
 import { Minimap } from "@/components/Minimap";
 import { useAlerts, ago } from "@/lib/alerts";
 import type { Shape } from "@/lib/measure";
+import { Filters } from "@/components/Filters";
+import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
 /**
  * MapLibre touches `window` at import time, so it cannot be server-rendered.
@@ -33,6 +35,7 @@ const TOOLS = [
   { id: "osint", glyph: "◎", name: "OSINT Search" },
   { id: "alerts", glyph: "⚠", name: "Live Alerts" },
   { id: "measure", glyph: "⊹", name: "Measure" },
+  { id: "filters", glyph: "⚗", name: "Filters" },
   { id: "directions", glyph: "⇄", name: "Directions" },
   { id: "intel", glyph: "◫", name: "Intel Feed" },
   { id: "layers", glyph: "≡", name: "All Layers" },
@@ -85,13 +88,19 @@ export default function Page() {
   const [picking, setPicking] = useState<number | null>(null);
   const [headlines, setHeadlines] = useState<Headline[]>([]);
   const [centre, setCentre] = useState({ lat: 25, lon: -40 });
+  const [filters, setFiltersState] = useState<Record<string, Predicate[]>>({});
+  const [held, setHeld] = useState<Map<string, GeoJSON.Feature[]>>(new Map());
   const [kp, setKp] = useState<{ kp: number | null; level: string } | null>(null);
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({});
 
   // ── URL is the source of truth ───────────────────────────────────────────
   useEffect(() => {
     setActive(parseLayers(window.location.search));
-    const onPop = () => setActive(parseLayers(window.location.search));
+    setFiltersState(parseFilters(window.location.search));
+    const onPop = () => {
+      setActive(parseLayers(window.location.search));
+      setFiltersState(parseFilters(window.location.search));
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
@@ -120,7 +129,23 @@ export default function Page() {
 
     activeRef.current = next;
     setActive(next);
-    window.history.replaceState(null, "", layersToSearch(next));
+    window.history.replaceState(null, "", filtersToSearch(next, filtersRef.current));
+  }, []);
+
+  /**
+   * A filtered view is a link, exactly as a set of layers is. Sending someone
+   * "military traffic above 30,000 ft over the Baltic" should not mean sending
+   * them a screenshot and instructions.
+   */
+  const filtersRef = useRef<Record<string, Predicate[]>>({});
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+
+  const setFilters = useCallback((next: Record<string, Predicate[]>) => {
+    filtersRef.current = next;
+    setFiltersState(next);
+    window.history.replaceState(null, "", filtersToSearch(activeRef.current, next));
   }, []);
 
   const onStatus = useCallback((patch: Record<string, number | string>) => {
@@ -489,6 +514,8 @@ export default function Page() {
         onCentre={onCentre}
         measure={measure}
         onMeasure={setReading}
+        filters={filters}
+        onHeld={setHeld}
         route={route}
         stops={stops}
         picking={picking}
@@ -762,6 +789,21 @@ export default function Page() {
             setPicking={setPicking}
             onRoute={setRoute}
             onFly={setFlyTo}
+          />
+        </section>
+      ) : null}
+
+      {tool === "filters" ? (
+        <section className="tool-panel">
+          <div className="tool-panel-head">
+            <h2>Filters</h2>
+            <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          <Filters
+            active={active}
+            filters={filters}
+            setFilters={setFilters}
+            held={held}
           />
         </section>
       ) : null}

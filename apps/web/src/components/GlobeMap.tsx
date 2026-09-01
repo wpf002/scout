@@ -14,6 +14,7 @@ import {
 import { build, type Point as MeasurePoint, type Shape } from "@/lib/measure";
 import { ensureSymbols } from "@/lib/symbols";
 import { IMAGERY_BY_ID, imageryTiles } from "@/lib/imagery";
+import { compileAll, type Predicate } from "@/lib/filters";
 
 /*
  * Point MapLibre at the worker copied into `public/` — see
@@ -42,6 +43,8 @@ export interface Props {
   onCentre: (centre: { lat: number; lon: number }) => void;
   measure: Shape | null;
   onMeasure: (reading: string | null) => void;
+  /** Per-layer attribute predicates, applied in the style. */
+  filters: Record<string, Predicate[]>;
   /** The planned route, drawn under everything else. */
   route: { coordinates: [number, number][] } | null;
   /** Stops placed so far, drawn as lettered pins. */
@@ -49,6 +52,8 @@ export interface Props {
   /** Which stop the next map click should fill, if any. */
   picking: number | null;
   onPick: (index: number, lngLat: { lat: number; lon: number }) => void;
+  /** Everything each layer returned, so a filter can report a real denominator. */
+  onHeld?: (held: Map<string, GeoJSON.Feature[]>) => void;
 }
 
 const FEED_LAYERS = LAYERS.filter((layer) => layer.kind === "feed");
@@ -81,10 +86,12 @@ export function GlobeMap({
   onCentre,
   measure,
   onMeasure,
+  filters,
   route,
   stops,
   picking,
   onPick,
+  onHeld,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -171,19 +178,60 @@ export function GlobeMap({
     const observer = new ResizeObserver(() => instance.resize());
     observer.observe(container.current);
 
-    instance.on("load", () => {
-      ensureSymbols(instance);
-      // Ready first. Setting the projection is a nice-to-have, and when it
-      // threw it took the rest of this handler with it — so `ready` stayed
-      // false, no layer effect ever ran, and the map sat black with every
-      // feed reporting nothing. A cosmetic call must not gate the app.
+    /**
+     * Ready means "the style is parsed", not "the first frame is painted".
+     *
+     * MapLibre's `load` waits for both, and the second half never happens in a
+     * background tab: browsers throttle `requestAnimationFrame` to nothing
+     * there, `_render` does not complete, and `load` simply never fires. An
+     * app that gates on it shows a basemap and no data until the tab is
+     * focused — and reports every feed as empty in the meantime.
+     *
+     * Adding sources and layers only needs the style. So readiness is taken
+     * from `styledata`, which fires on parse, and `load` is kept as a
+     * belt-and-braces second trigger.
+     *
+     * Everything after `setReady` is wrapped. Anything that throws in here
+     * takes the rest of the handler with it, which has now cost this file two
+     * separate outages — one to `setProjection`, one to the symbol atlas.
+     */
+    const becomeReady = () => {
+      if (!instance.isStyleLoaded()) return;
       setReady(true);
+
+      try {
+        ensureSymbols(instance);
+      } catch {
+        // Circles instead of silhouettes. Still a map.
+      }
       try {
         instance.setProjection({ type: projection } as never);
       } catch {
         // Flat map. Still a map.
       }
-    });
+    };
+
+    instance.on("styledata", becomeReady);
+    instance.on("load", becomeReady);
+
+    /*
+     * And a poll, because both events can be missed.
+     *
+     * `styledata` fires while the Map constructor is still running — before
+     * the line above has had a chance to subscribe — and `load` never fires at
+     * all in a background tab. Between them it is entirely possible for the
+     * style to be parsed and ready with nothing left to announce it, which
+     * leaves the map showing a basemap and no data forever.
+     *
+     * Asking is cheap and stops the moment the answer is yes.
+     */
+    const poll = setInterval(() => {
+      if (instance.isStyleLoaded()) {
+        becomeReady();
+        clearInterval(poll);
+      }
+    }, 250);
+    becomeReady();
 
     instance.on("mousemove", (event) => {
       onCursor({
@@ -212,6 +260,7 @@ export function GlobeMap({
     map.current = instance;
     (window as unknown as { __scoutMap?: unknown }).__scoutMap = instance;
     return () => {
+      clearInterval(poll);
       observer.disconnect();
       // Null first: any async work already in flight sees a dead map through
       // `alive()` and stops before `remove()` pulls the painter out from
@@ -254,7 +303,11 @@ export function GlobeMap({
         // setStyle discards the image atlas along with everything else, so
         // every symbol layer would otherwise point at an image that no longer
         // exists.
-        ensureSymbols(instance);
+        try {
+          ensureSymbols(instance);
+        } catch {
+          // Redraw regardless — the layers matter more than their icons.
+        }
         setRedraw((n) => n + 1);
       });
     };
@@ -885,7 +938,12 @@ export function GlobeMap({
       }
 
       if (instance.getLayer(layerId) === undefined) {
-        ensureSymbols(instance);
+        try {
+          ensureSymbols(instance);
+        } catch {
+          // The symbol layer falls back to MapLibre's missing-image
+          // behaviour rather than taking the layer down.
+        }
         instance.addLayer(paintFor(layerId));
 
         if (clustered) {
@@ -1032,6 +1090,7 @@ export function GlobeMap({
 
         raw.current.set(layerId, data.features);
         setDataVersion((n) => n + 1);
+        onHeld?.(new Map(raw.current));
         const drawn =
           def.heavy === true ? inView(instance, data.features) : data.features;
         ensure(instance, layerId, { type: "FeatureCollection", features: drawn });
@@ -1092,7 +1151,7 @@ export function GlobeMap({
     return () => {
       cancelled = true;
     };
-  }, [active, ready, onStatus, redraw, ensure, inView, alive]);
+  }, [active, ready, onStatus, redraw, ensure, inView, alive, onHeld]);
 
   /**
    * Re-thin heavy layers when the view moves.
@@ -1156,6 +1215,56 @@ export function GlobeMap({
       source.setData(data);
     }
   }, [osintFeatures, ready, redraw]);
+
+  /**
+   * Attribute filters, applied to the style rather than to the data.
+   *
+   * The source keeps every feature; the filter decides what is drawn. That
+   * makes filtering instant and reversible, and it is why the source has to
+   * hold the unfiltered set — the other reason clustering replaced
+   * destructive thinning.
+   *
+   * The filter is composed with each layer's own geometry predicate rather
+   * than replacing it, or a point-only layer would start drawing its polygons.
+   */
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+
+    for (const def of FEED_LAYERS) {
+      if (instance.getLayer(def.id) === undefined) continue;
+
+      const predicates = filters[def.id] ?? [];
+      const compiled = compileAll(predicates);
+      const base = paintFor(def.id) as { filter?: unknown };
+
+      try {
+        instance.setFilter(
+          def.id,
+          (compiled === null
+            ? base.filter
+            : base.filter === undefined
+              ? compiled
+              : ["all", base.filter, compiled]) as never,
+        );
+
+        // The cluster has to agree with the marks, or a bubble counts
+        // features the map is no longer drawing.
+        const clusterId = `${def.id}-cluster`;
+        if (instance.getLayer(clusterId) !== undefined) {
+          instance.setFilter(clusterId, ["has", "point_count"] as never);
+        }
+      } catch {
+        // A layer mid-swap. The next redraw applies it.
+      }
+    }
+    /*
+     * `dataVersion` is in the dependencies because a layer does not exist
+     * until its first fetch resolves. Without it this effect runs once
+     * against an empty style and never again, so a filter arriving in the URL
+     * is parsed, stored, shown in the panel — and silently never applied.
+     */
+  }, [filters, ready, redraw, active, paintFor, dataVersion]);
 
   // ── Selection ────────────────────────────────────────────────────────────
   useEffect(() => {

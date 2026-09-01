@@ -2479,3 +2479,70 @@ a:hover {
   font-size: 10px;
   color: var(--text-faint);
 }
+
+/* ── Filters ──────────────────────────────────────────────────────────── */
+
+.filters {
+  padding: 10px;
+}
+
+.filter-layer {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+/* The denominator is the point: a filter matching nothing and a feed that
+ * died look identical on a map without it. */
+.filter-count {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.filter-count.none {
+  color: var(--warn);
+}
+
+.filter-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.filter-list li {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+
+.filter-list select,
+.filter-list input {
+  min-width: 0;
+  flex: 1;
+  height: 26px;
+  padding: 0 6px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 11px;
+  outline: none;
+}
+
+.filter-list select:focus,
+.filter-list input:focus {
+  border-color: var(--border-strong);
+}
+
+.filter-list .pick {
+  flex: none;
+}
