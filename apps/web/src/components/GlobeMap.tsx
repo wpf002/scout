@@ -54,6 +54,12 @@ export interface Props {
   onPick: (index: number, lngLat: { lat: number; lon: number }) => void;
   /** Everything each layer returned, so a filter can report a real denominator. */
   onHeld?: (held: Map<string, GeoJSON.Feature[]>) => void;
+  /** The drawn area of interest, and whether the next clicks define one. */
+  aoi: { south: number; west: number; north: number; east: number } | null;
+  drawingAoi: boolean;
+  onAoi: (box: { south: number; west: number; north: number; east: number }) => void;
+  /** Fixed infrastructure found inside the area. */
+  aoiFeatures: GeoJSON.Feature[];
   /** The selected aircraft's recorded track and filed route. */
   track: {
     path: [number, number][];
@@ -102,6 +108,10 @@ export function GlobeMap({
   onPick,
   onHeld,
   track,
+  aoi,
+  drawingAoi,
+  onAoi,
+  aoiFeatures,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -863,6 +873,123 @@ export function GlobeMap({
     }
   }, [track, ready, redraw]);
 
+  /**
+   * Drawing the area of interest.
+   *
+   * Two clicks, and like every other click mode this one is registered only
+   * while it is on — a capture that outlives its panel silently eats clicks
+   * meant for features.
+   */
+  const corner = useRef<[number, number] | null>(null);
+
+  useEffect(() => {
+    corner.current = null;
+    const instance = map.current;
+    if (instance === null || !ready || !drawingAoi) return;
+
+    const onClick = (event: maplibregl.MapMouseEvent) => {
+      const point: [number, number] = [event.lngLat.lng, event.lngLat.lat];
+      const first = corner.current;
+      if (first === null) {
+        corner.current = point;
+        return;
+      }
+      corner.current = null;
+      onAoi({
+        south: Math.min(first[1], point[1]),
+        north: Math.max(first[1], point[1]),
+        west: Math.min(first[0], point[0]),
+        east: Math.max(first[0], point[0]),
+      });
+    };
+
+    instance.getCanvas().style.cursor = "crosshair";
+    instance.on("click", onClick);
+    return () => {
+      instance.off("click", onClick);
+      instance.getCanvas().style.cursor = "";
+    };
+  }, [drawingAoi, ready, onAoi]);
+
+  // The box itself, and whatever was found inside it.
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+
+    const features: GeoJSON.Feature[] = [];
+    if (aoi !== null) {
+      features.push({
+        type: "Feature",
+        properties: { role: "aoi" },
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [aoi.west, aoi.south],
+              [aoi.east, aoi.south],
+              [aoi.east, aoi.north],
+              [aoi.west, aoi.north],
+              [aoi.west, aoi.south],
+            ],
+          ],
+        },
+      });
+    }
+
+    const boxData: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features,
+    };
+    const infraData: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: aoiFeatures,
+    };
+
+    const boxSource = instance.getSource("aoi") as maplibregl.GeoJSONSource | undefined;
+    if (boxSource === undefined) {
+      instance.addSource("aoi", { type: "geojson", data: boxData });
+      instance.addLayer({
+        id: "aoi-fill",
+        type: "fill",
+        source: "aoi",
+        paint: { "fill-color": "#35c46a", "fill-opacity": 0.08 },
+      });
+      instance.addLayer({
+        id: "aoi-line",
+        type: "line",
+        source: "aoi",
+        paint: {
+          "line-color": "#35c46a",
+          "line-width": 1.6,
+          "line-dasharray": [2, 2],
+        },
+      });
+    } else {
+      boxSource.setData(boxData);
+    }
+
+    const infraSource = instance.getSource("aoi-infra") as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (infraSource === undefined) {
+      instance.addSource("aoi-infra", { type: "geojson", data: infraData });
+      instance.addLayer({
+        id: "aoi-infra",
+        type: "circle",
+        source: "aoi-infra",
+        paint: {
+          "circle-radius": 5,
+          "circle-color": ["coalesce", ["get", "colour"], "#ffd60a"],
+          "circle-opacity": 0.9,
+          "circle-stroke-color": "#05050a",
+          "circle-stroke-width": 1,
+        },
+      });
+    } else {
+      infraSource.setData(infraData);
+    }
+  }, [aoi, aoiFeatures, ready, redraw]);
+
   // ── Layer painting ───────────────────────────────────────────────────────
 
   const paintFor = useCallback(
@@ -1398,7 +1525,8 @@ export function GlobeMap({
   // ── Selection ────────────────────────────────────────────────────────────
   useEffect(() => {
     const instance = map.current;
-    if (instance === null || !ready || measure !== null || picking !== null) return;
+    if (instance === null || !ready || measure !== null || picking !== null || drawingAoi)
+      return;
 
     const onClick = (event: maplibregl.MapMouseEvent) => {
       /*
@@ -1443,7 +1571,7 @@ export function GlobeMap({
         }
       }
 
-      const clickable = [...FEED_LAYERS.map((l) => l.id), "osint"].filter(
+      const clickable = [...FEED_LAYERS.map((l) => l.id), "osint", "aoi-infra"].filter(
         (id) => instance.getLayer(id) !== undefined,
       );
       const hits = instance.queryRenderedFeatures(event.point, {
@@ -1485,7 +1613,7 @@ export function GlobeMap({
         instance.off("mouseleave", def.id, onLeave);
       }
     };
-  }, [ready, onSelect, measure, picking, active, redraw]);
+  }, [ready, onSelect, measure, picking, drawingAoi, active, redraw]);
 
   return (
     <>

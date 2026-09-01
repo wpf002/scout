@@ -20,6 +20,7 @@ import { Minimap } from "@/components/Minimap";
 import { useAlerts, ago } from "@/lib/alerts";
 import type { Shape } from "@/lib/measure";
 import { Filters } from "@/components/Filters";
+import { Aoi, type Box } from "@/components/Aoi";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
 /**
@@ -36,6 +37,7 @@ const TOOLS = [
   { id: "alerts", glyph: "⚠", name: "Live Alerts" },
   { id: "measure", glyph: "⊹", name: "Measure" },
   { id: "filters", glyph: "⚗", name: "Filters" },
+  { id: "aoi", glyph: "▢", name: "Area of Interest" },
   { id: "directions", glyph: "⇄", name: "Directions" },
   { id: "intel", glyph: "◫", name: "Intel Feed" },
   { id: "layers", glyph: "≡", name: "All Layers" },
@@ -90,6 +92,9 @@ export default function Page() {
   const [centre, setCentre] = useState({ lat: 25, lon: -40 });
   const [filters, setFiltersState] = useState<Record<string, Predicate[]>>({});
   const [held, setHeld] = useState<Map<string, GeoJSON.Feature[]>>(new Map());
+  const [aoi, setAoi] = useState<Box | null>(null);
+  const [drawingAoi, setDrawingAoi] = useState(false);
+  const [aoiFeatures, setAoiFeatures] = useState<GeoJSON.Feature[]>([]);
   const [track, setTrack] = useState<{
     path: [number, number][];
     altitudes: Array<number | null>;
@@ -306,6 +311,12 @@ export default function Page() {
       cancelled = true;
     };
   }, [selection]);
+
+  /** A completed box ends drawing mode — two clicks, then done. */
+  const onAoi = useCallback((box: Box) => {
+    setAoi(box);
+    setDrawingAoi(false);
+  }, []);
 
   const alerts = useAlerts(active);
 
@@ -567,6 +578,10 @@ export default function Page() {
         filters={filters}
         onHeld={setHeld}
         track={track}
+        aoi={aoi}
+        drawingAoi={drawingAoi}
+        onAoi={onAoi}
+        aoiFeatures={aoiFeatures}
         route={route}
         stops={stops}
         picking={picking}
@@ -660,6 +675,7 @@ export default function Page() {
                   // A pick mode that outlives its panel eats clicks meant for
                   // features, exactly as a stray crosshair does.
                   if (next !== "directions") setPicking(null);
+                  if (next !== "aoi") setDrawingAoi(false);
                   return next;
                 })
               }
@@ -855,6 +871,36 @@ export default function Page() {
             filters={filters}
             setFilters={setFilters}
             held={held}
+          />
+        </section>
+      ) : null}
+
+      {tool === "aoi" ? (
+        <section className="tool-panel">
+          <div className="tool-panel-head">
+            <h2>Area of Interest</h2>
+            <button
+              className="link"
+              onClick={() => {
+                setTool(null);
+                setDrawingAoi(false);
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <Aoi
+            box={aoi}
+            drawing={drawingAoi}
+            setDrawing={setDrawingAoi}
+            clear={() => {
+              setAoi(null);
+              setDrawingAoi(false);
+            }}
+            held={held}
+            active={active}
+            onInfrastructure={setAoiFeatures}
+            onFly={setFlyTo}
           />
         </section>
       ) : null}

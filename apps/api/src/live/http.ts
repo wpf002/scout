@@ -26,6 +26,9 @@ export interface FetchOptions {
   timeoutMs?: number;
   /** Some upstreams answer 4xx with a body worth reading. */
   allowStatus?: number[];
+  /** Overpass takes its query as a POST body; everything else is a GET. */
+  method?: "GET" | "POST";
+  body?: string;
 }
 
 export async function getText(
@@ -33,6 +36,8 @@ export async function getText(
   options: FetchOptions = {},
 ): Promise<string> {
   const response = await fetch(url, {
+    method: options.method ?? "GET",
+    ...(options.body === undefined ? {} : { body: options.body }),
     headers: { "user-agent": UA, ...options.headers },
     signal: AbortSignal.timeout(options.timeoutMs ?? TIMEOUT_MS),
     redirect: "follow",

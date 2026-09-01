@@ -2571,3 +2571,78 @@ a:hover {
   font-size: 10px;
   color: var(--text-faint);
 }
+
+/* ── Area of interest ─────────────────────────────────────────────────── */
+
+.aoi {
+  padding: 10px;
+}
+
+.aoi-head {
+  margin: 12px 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+}
+
+.aoi-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.aoi-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.aoi-list li:last-child {
+  border-bottom: none;
+}
+
+.aoi-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.aoi-count {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+/* The denominator again: "12 of 3,400" is a different fact from "12". */
+.aoi-total {
+  color: var(--text-faint);
+}
+
+.aoi-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.aoi-categories button {
+  padding: 4px 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.aoi-categories button.on {
+  background: rgba(53, 196, 106, 0.16);
+  border-color: var(--ok);
+  color: var(--text);
+}
