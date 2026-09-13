@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cornersOf, coverageBands, describeConfidence, earliest, lastPosition, mapLayer, stamp } from "./investigation";
+import { cellForZoom, clusterLayer, cornersOf, coverageBands, densityLayer, describeConfidence, earliest, lastPosition, mapLayer, padBox, stamp } from "./investigation";
 import type { Entity, GraphEdge, Observation } from "./v2";
 
 const obs = (id: string, sourceId: string, observedAt: string, position: { lon: number; lat: number } | null): Observation => ({
@@ -98,5 +98,26 @@ describe("earliest and describeConfidence", () => {
 
   it("orders a box's corners the way an image source wants them", () => {
     expect(cornersOf([5.2, 60.3, 5.4, 60.5])).toEqual([[5.2, 60.5], [5.4, 60.5], [5.4, 60.3], [5.2, 60.3]]);
+  });
+
+  it("picks a grid cell by zoom, pads a box, and weights cells on a log scale", () => {
+    expect(cellForZoom(1)).toBe(2);
+    expect(cellForZoom(6)).toBe(0.1);
+    expect(cellForZoom(12)).toBe(0.01);
+    expect(padBox([-10, 40, 10, 50], 0.5)).toEqual([-20, 35, 20, 55]);
+    expect(padBox([-179, -89, 179, 89], 0.5)).toEqual([-180, -90, 180, 90]);
+    const cells = densityLayer([{ lon: 1, lat: 1, count: 99, sources: ["a"], kinds: ["PERSON"], latestObservedAt: "2026-06-01T00:00:00Z" }, { lon: 2, lat: 2, count: 1, sources: ["b"], kinds: [], latestObservedAt: "2026-06-02T00:00:00Z" }]);
+    expect(cells[0]?.properties?.["weight"]).toBe(1);
+    expect(cells[1]?.properties?.["weight"]).toBeCloseTo(Math.log(2) / Math.log(100), 6);
+    expect(cells[0]?.properties?.["label"]).toBe("99 observations");
+  });
+
+  it("draws a cluster at its centroid and marks the selected entity's cluster", () => {
+    const layer = clusterLayer([
+      { id: "c1", entities: [{ id: "E1", kind: "PERSON", label: "a" }, { id: "E2", kind: "PERSON", label: "b" }], edges: 1, evidenceObservationIds: ["o1"], centroid: { lon: 5, lat: 6 }, from: "2026-06-01T00:00:00Z", until: null },
+      { id: "c2", entities: [{ id: "E3", kind: "PERSON", label: "c" }], edges: 1, evidenceObservationIds: [], centroid: null, from: "2026-06-01T00:00:00Z", until: null },
+    ], "E2");
+    expect(layer).toHaveLength(1);
+    expect(layer[0]?.properties).toMatchObject({ size: 2, selected: true, entityIds: "E1,E2" });
   });
 });

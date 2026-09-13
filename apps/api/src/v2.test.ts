@@ -916,6 +916,43 @@ run("Scout v2 — stage 3: collection", () => {
       expect(r.json().reason).toBe("action-not-permitted");
     });
 
+    it("bins the case's observations for the map, windows a box, and finds co-location clusters", async () => {
+      const dense = (await get(`/v2/observations/density?caseId=${graphCase}&cell=1`)).json();
+      expect(dense.count).toBe(2);
+      expect(dense.observations).toBe(5);
+      expect(dense.cells[0].count).toBe(4);
+      expect(dense.cells[0].sources).toEqual(["adsb-live"]);
+      const boxed = (await get(`/v2/observations/density?caseId=${graphCase}&cell=1&bbox=-125,44,-120,47`)).json();
+      expect(boxed.count).toBe(1);
+      const log = await prisma.accessLog.findFirst({ where: { authorizationId: graphAuth, targetType: "ObservationDensity" }, orderBy: { createdAt: "desc" } });
+      expect(log?.resultCount).toBe(4);
+      expect(log?.targetIds).toEqual([]);
+
+      const window = (await get(`/v2/observations?caseId=${graphCase}&bbox=-125,44,-120,47&limit=2`)).json();
+      expect(window.count).toBe(2);
+      expect(window.total).toBe(5);
+      expect(window.window).toEqual([-125, 44, -120, 47]);
+      expect(window.observations.map((o: { id: string }) => o.id)).toEqual([obs["P4"], obs["P3"]]);
+      expect((await get(`/v2/observations?caseId=${graphCase}&bbox=nonsense`)).statusCode).toBe(400);
+
+      const clusters = (await get(`/v2/graph/colocation/clusters?caseId=${graphCase}&asOf=${at(20).toISOString()}`)).json();
+      expect(clusters.count).toBe(1);
+      expect(clusters.clusters[0].entities.map((e: { id: string }) => e.id).sort()).toEqual([ent["P1a"], ent["P3"]].sort());
+      expect(clusters.clusters[0].centroid.lon).toBeCloseTo(-122.674, 2);
+      expect(clusters.clusters[0].evidenceObservationIds.length).toBeGreaterThan(0);
+      const later = (await get(`/v2/graph/colocation/clusters?caseId=${graphCase}`)).json();
+      expect(later.count).toBe(0);
+
+      // The stand-in resolver labels an entity by its first identifier, so
+      // P1a's is a phone number; Carol Diaz is a name.
+      const found = (await get(`/v2/entities?caseId=${graphCase}&q=carol`)).json();
+      expect(found.total).toBe(1);
+      expect(found.entities[0].id).toBe(ent["P3"]);
+      const page = (await get(`/v2/entities?caseId=${graphCase}&limit=1&offset=1`)).json();
+      expect(page.count).toBe(1);
+      expect(page.total).toBeGreaterThanOrEqual(3);
+    });
+
     it("reports the graph consistent for this authorization", async () => {
       const r = await post("/v2/graph/consistency", { caseId: graphCase });
       expect(r.statusCode).toBe(200);

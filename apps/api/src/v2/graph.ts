@@ -1,5 +1,5 @@
 import { ScopeError, type ScopeContext } from "@scout/scope";
-import { edgesAsOf, prisma, type EdgeAsOf } from "@scout/db";
+import { edgesAsOf, positionsOf, prisma, type EdgeAsOf } from "@scout/db";
 import { notFound } from "../errors.js";
 
 /**
@@ -227,4 +227,70 @@ export async function coLocationWindow(input: { ctx: ScopeContext; entityId: str
   const inWindow = all.filter((e) => e.relation === "CO_LOCATED" && e.validFrom < to && (e.validUntil === null || e.validUntil > from));
   const others = await visibleEntities(ctx, now, inWindow.map((e) => (e.fromEntityId === entityId ? e.toEntityId : e.fromEntityId)));
   return { entity, edges: inWindow.filter((e) => others.has(e.fromEntityId === entityId ? e.toEntityId : e.fromEntityId)), others: [...others.values()] };
+}
+
+export interface CoLocationCluster {
+  id: string;
+  entities: GraphNode[];
+  edges: number;
+  evidenceObservationIds: string[];
+  centroid: { lon: number; lat: number } | null;
+  from: Date;
+  until: Date | null;
+}
+
+const CLUSTER_CAP = 200;
+
+/**
+ * Groups of entities joined by CO_LOCATED edges that held at `asOf`:
+ * connected components over those edges, each with the observations that
+ * are its evidence and the mean of their positions as a place to draw it.
+ * Every entity in a cluster passed the scope check; an edge to one that
+ * did not is not counted and does not join anything.
+ */
+export async function coLocationClusters(input: { ctx: ScopeContext } & Clocks): Promise<{ asOf: Date; knownAs: Date; clusters: CoLocationCluster[]; truncated: boolean }> {
+  const { ctx, asOf, knownAs } = input;
+  const edges = (await edgesAsOf(asOf, { authorizationId: ctx.authorizationId, knownAs })).filter((e) => e.relation === "CO_LOCATED");
+  const ids = [...new Set(edges.flatMap((e) => [e.fromEntityId, e.toEntityId]))];
+  const visible = await visibleEntities(ctx, knownAs, ids);
+  const admitted = edges.filter((e) => visible.has(e.fromEntityId) && visible.has(e.toEntityId));
+
+  const parent = new Map<string, string>();
+  const find = (id: string): string => {
+    let root = id;
+    while (parent.get(root) !== undefined && parent.get(root) !== root) root = parent.get(root) as string;
+    parent.set(id, root);
+    return root;
+  };
+  for (const e of admitted) {
+    if (!parent.has(e.fromEntityId)) parent.set(e.fromEntityId, e.fromEntityId);
+    if (!parent.has(e.toEntityId)) parent.set(e.toEntityId, e.toEntityId);
+    const a = find(e.fromEntityId);
+    const b = find(e.toEntityId);
+    if (a !== b) parent.set(a, b);
+  }
+  const groups = new Map<string, { members: Set<string>; edges: EdgeAsOf[] }>();
+  for (const e of admitted) {
+    const root = find(e.fromEntityId);
+    const g = groups.get(root) ?? { members: new Set<string>(), edges: [] };
+    g.members.add(e.fromEntityId);
+    g.members.add(e.toEntityId);
+    g.edges.push(e);
+    groups.set(root, g);
+  }
+  const evidenceIds = [...new Set(admitted.flatMap((e) => e.evidenceObservationIds))];
+  const positions = await positionsOf(evidenceIds);
+
+  const clusters: CoLocationCluster[] = [...groups.entries()]
+    .map(([root, g]) => {
+      const evidence = [...new Set(g.edges.flatMap((e) => e.evidenceObservationIds))];
+      const placed = evidence.map((id) => positions.get(id)).filter((p): p is { lon: number; lat: number } => p !== undefined);
+      const centroid = placed.length === 0 ? null : { lon: placed.reduce((s, p) => s + p.lon, 0) / placed.length, lat: placed.reduce((s, p) => s + p.lat, 0) / placed.length };
+      const from = new Date(Math.min(...g.edges.map((e) => e.validFrom.getTime())));
+      const untils = g.edges.map((e) => e.validUntil);
+      const until = untils.some((u) => u === null) ? null : new Date(Math.max(...untils.map((u) => (u as Date).getTime())));
+      return { id: `cluster_${root}`, entities: [...g.members].map((id) => visible.get(id) as GraphNode), edges: g.edges.length, evidenceObservationIds: evidence, centroid, from, until };
+    })
+    .sort((a, b) => b.entities.length - a.entities.length || b.edges - a.edges || a.id.localeCompare(b.id));
+  return { asOf, knownAs, clusters: clusters.slice(0, CLUSTER_CAP), truncated: clusters.length > CLUSTER_CAP };
 }

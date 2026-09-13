@@ -76,6 +76,8 @@ const FIELDS: Record<string, string[]> = {
   aurora: ["probability", "at"],
   cables: [],
   investigation: ["kind", "sourceId", "observedAt"],
+  "investigation-density": ["count", "sources", "kinds", "latestObservedAt"],
+  "investigation-cluster": ["size"],
 };
 
 function format(key: string, value: string): string {

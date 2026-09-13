@@ -134,6 +134,18 @@ Flying the camera to an entity offsets the target into the strip of map the
 panel leaves visible (`besidePanel()`), since the panel is `min(62vw,
 980px)` wide and a target at the centre would land under it.
 
+**Large cases.** A case with more than 2 000 observations is not drawn
+whole. The console reads density for the whole case
+(`GET /v2/observations/density`, observations binned onto a grid sized by
+the zoom, each cell with its count, sources, kinds and recency) and, past
+zoom 5, the observations inside the view (`GET /v2/observations?bbox=`,
+newest first, capped), both following the map and the scrubber. The entity
+list is the first page of the case and the find box searches the server
+(`GET /v2/entities?q=`). Co-location clusters (`GET
+/v2/graph/colocation/clusters`: connected components over CO_LOCATED edges
+that held at the moment, with the mean of their evidence positions) are
+drawn as markers and listed in the case overview at every size.
+
 ## Review queue
 
 The queue is a tab in the case file (`apps/web/src/components/ReviewQueue.tsx`),

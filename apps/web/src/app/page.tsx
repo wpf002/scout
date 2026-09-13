@@ -22,7 +22,7 @@ import { Filters } from "@/components/Filters";
 import { Aoi, type Box } from "@/components/Aoi";
 import { CaseFile } from "@/components/CaseFile";
 import { Investigation } from "@/components/Investigation";
-import { EMPTY_LAYER, type ImageryOverlay, type MapLayer } from "@/lib/investigation";
+import { EMPTY_LAYER, type ImageryOverlay, type MapLayer, type Viewport } from "@/lib/investigation";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
 /**
@@ -102,6 +102,7 @@ export default function Page() {
   const [aoiFeatures, setAoiFeatures] = useState<GeoJSON.Feature[]>([]);
   const [investigation, setInvestigation] = useState<MapLayer>(EMPTY_LAYER);
   const [imagery, setImagery] = useState<ImageryOverlay[]>([]);
+  const [view, setView] = useState<Viewport | null>(null);
   const [pick, setPick] = useState<{ entityId: string; nonce: number } | null>(null);
   const [track, setTrack] = useState<{
     path: [number, number][];
@@ -203,6 +204,11 @@ export default function Page() {
 
   // A click on one of the console's points selects that entity in the console.
   useEffect(() => {
+    if (selection?.layer === "investigation-cluster") {
+      const first = String(selection.properties["entityIds"] ?? "").split(",")[0];
+      if (first) setPick({ entityId: first, nonce: Date.now() });
+      return;
+    }
     if (selection?.layer !== "investigation") return;
     const entityId = selection.properties["entityId"];
     if (typeof entityId === "string") setPick({ entityId, nonce: Date.now() });
@@ -588,6 +594,7 @@ export default function Page() {
         onCursor={onCursor}
         flyTo={flyTo}
         onCentre={onCentre}
+        onBounds={setView}
         measure={measure}
         onMeasure={setReading}
         filters={filters}
@@ -947,7 +954,7 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <div className="tool-panel-body">
-            <Investigation onLayer={setInvestigation} onImagery={setImagery} onFly={setFlyTo} pick={pick} />
+            <Investigation onLayer={setInvestigation} onImagery={setImagery} onFly={setFlyTo} pick={pick} view={view} />
           </div>
         </section>
       ) : null}

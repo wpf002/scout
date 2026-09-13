@@ -93,6 +93,69 @@ export async function positionsOf(
   return out;
 }
 
+export interface DensityCell {
+  lon: number;
+  lat: number;
+  count: number;
+  sources: string[];
+  kinds: string[];
+  latestObservedAt: Date;
+}
+
+/**
+ * Observations binned onto a square grid of `cellDegrees`, for a map that
+ * cannot draw a million points and should not pretend to. Each cell says
+ * how many, from which sources, of which kinds, and how recent; the cell's
+ * centre is the coordinate. Ordered densest first, capped.
+ */
+export async function observationDensity(input: {
+  authorizationId: string;
+  caseId?: string | null;
+  asOf?: Date | null;
+  bbox?: readonly [number, number, number, number] | null;
+  cellDegrees: number;
+  limit?: number;
+}): Promise<DensityCell[]> {
+  const cell = Math.max(0.001, Math.min(10, input.cellDegrees));
+  const caseClause = input.caseId === undefined || input.caseId === null ? Prisma.empty : Prisma.sql`AND "caseId" = ${input.caseId}`;
+  const asOfClause = input.asOf === undefined || input.asOf === null ? Prisma.empty : Prisma.sql`AND "observedAt" <= ${input.asOf}`;
+  const boxClause =
+    input.bbox === undefined || input.bbox === null
+      ? Prisma.empty
+      : Prisma.sql`AND ST_Intersects("geom", ST_MakeEnvelope(${input.bbox[0]}, ${input.bbox[1]}, ${input.bbox[2]}, ${input.bbox[3]}, 4326)::geography)`;
+  return prisma.$queryRaw<DensityCell[]>`
+    SELECT (floor(ST_X("geom"::geometry) / ${cell}::float8) * ${cell}::float8 + ${cell}::float8 / 2) AS lon,
+           (floor(ST_Y("geom"::geometry) / ${cell}::float8) * ${cell}::float8 + ${cell}::float8 / 2) AS lat,
+           count(*)::int AS count,
+           array_agg(DISTINCT "sourceId") AS sources,
+           coalesce(array_agg(DISTINCT "entityKind"::text) FILTER (WHERE "entityKind" IS NOT NULL), ARRAY[]::text[]) AS kinds,
+           max("observedAt") AS "latestObservedAt"
+    FROM "Observation"
+    WHERE "authorizationId" = ${input.authorizationId} AND "geom" IS NOT NULL ${caseClause} ${asOfClause} ${boxClause}
+    GROUP BY 1, 2
+    ORDER BY count DESC, lon, lat
+    LIMIT ${Math.max(1, Math.min(20_000, input.limit ?? 5_000))}`;
+}
+
+/** Ids of the positioned observations inside a box, newest first, so a viewport can be read as a window. */
+export async function observationIdsInBox(input: {
+  authorizationId: string;
+  caseId?: string | null;
+  asOf?: Date | null;
+  bbox: readonly [number, number, number, number];
+  limit: number;
+}): Promise<string[]> {
+  const caseClause = input.caseId === undefined || input.caseId === null ? Prisma.empty : Prisma.sql`AND "caseId" = ${input.caseId}`;
+  const asOfClause = input.asOf === undefined || input.asOf === null ? Prisma.empty : Prisma.sql`AND "observedAt" <= ${input.asOf}`;
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id" FROM "Observation"
+    WHERE "authorizationId" = ${input.authorizationId} AND "geom" IS NOT NULL ${caseClause} ${asOfClause}
+      AND ST_Intersects("geom", ST_MakeEnvelope(${input.bbox[0]}, ${input.bbox[1]}, ${input.bbox[2]}, ${input.bbox[3]}, 4326)::geography)
+    ORDER BY "observedAt" DESC, "id"
+    LIMIT ${Math.max(1, Math.min(5_000, input.limit))}`;
+  return rows.map((r) => r.id);
+}
+
 export interface CoLocatedPair {
   leftObservationId: string;
   rightObservationId: string;

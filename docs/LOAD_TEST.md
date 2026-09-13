@@ -98,7 +98,11 @@ work; the frame rate above is for the picture the console currently draws.
   one laptop; the schema's indexes are enough at this size.
 - Resolution's contract, one request and one JSON response per run, caps a
   run near 20 000 observations per kind. The model is not the limit.
-- The console's fixed caps make it a window onto a large case, not a view of
-  it. That is the next thing to build after the agentic layer.
+- The console's fixed caps made it a window onto a large case, not a view
+  of it. Since: a case past 2 000 observations is drawn as density cells for
+  the whole case plus the observations inside the view, the entity list is
+  paged with a server-side find, and co-location clusters are drawn as
+  markers (`docs/ARCHITECTURE_V2.md`, "Large cases"). The frame rate above
+  was measured before that change and is for 2 000 points.
 - Generation is fast enough (a million observations in under two minutes)
   that the harness can be run before any change to the read path.

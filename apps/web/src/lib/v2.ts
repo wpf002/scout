@@ -373,11 +373,23 @@ export const v2 = {
 
   collectors: () => request<{ count: number; collectors: Collector[] }>("/v2/collectors"),
 
-  observations: (caseId: string, limit = 2_000, raw = false) =>
-    request<{ count: number; observations: Observation[] }>(`/v2/observations?${q({ caseId, limit, raw: raw ? "true" : "false" })}`),
+  observations: (caseId: string, limit = 2_000, raw = false, window?: { bbox: [number, number, number, number]; asOf?: string }) =>
+    request<{ count: number; total: number; window: [number, number, number, number] | null; observations: Observation[] }>(
+      `/v2/observations?${q({ caseId, limit, raw: raw ? "true" : "false", bbox: window?.bbox.join(","), asOf: window?.asOf })}`,
+    ),
 
-  entities: (caseId: string, kind?: EntityKind, limit = 500) =>
-    request<{ count: number; sources: SourceCoverage[]; entities: Entity[] }>(`/v2/entities?${q({ caseId, kind, limit })}`),
+  density: (caseId: string, opts: { cell: number; asOf?: string; bbox?: [number, number, number, number]; limit?: number }) =>
+    request<{ cellDegrees: number; count: number; observations: number; cells: Array<{ lon: number; lat: number; count: number; sources: string[]; kinds: string[]; latestObservedAt: string }> }>(
+      `/v2/observations/density?${q({ caseId, cell: opts.cell, asOf: opts.asOf, bbox: opts.bbox?.join(","), limit: opts.limit })}`,
+    ),
+
+  entities: (caseId: string, kind?: EntityKind, limit = 500, search?: { q?: string; offset?: number }) =>
+    request<{ count: number; total: number; offset: number; sources: SourceCoverage[]; entities: Entity[] }>(`/v2/entities?${q({ caseId, kind, limit, q: search?.q, offset: search?.offset })}`),
+
+  colocationClusters: (caseId: string, asOf?: string, knownAs?: string) =>
+    request<{ asOf: string; count: number; truncated: boolean; clusters: Array<{ id: string; entities: GraphNode[]; edges: number; evidenceObservationIds: string[]; centroid: { lon: number; lat: number } | null; from: string; until: string | null }> }>(
+      `/v2/graph/colocation/clusters?${q({ caseId, asOf, knownAs })}`,
+    ),
 
   galleries: () => request<{ enabled: boolean; count: number; galleries: GallerySummary[] }>("/v2/galleries"),
 

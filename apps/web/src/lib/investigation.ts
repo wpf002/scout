@@ -24,10 +24,101 @@ export interface MapLayer {
   lines: GeoJSON.Feature[];
   /** Edges that held at the moment, between the entities' last positions. */
   links: GeoJSON.Feature[];
+  /** Grid cells with counts, for a case too big to draw as points. */
+  density: GeoJSON.Feature[];
+  /** Co-location clusters at the moment, one marker each. */
+  clusters: GeoJSON.Feature[];
   selected: string | null;
 }
 
-export const EMPTY_LAYER: MapLayer = { points: [], lines: [], links: [], selected: null };
+export const EMPTY_LAYER: MapLayer = { points: [], lines: [], links: [], density: [], clusters: [], selected: null };
+
+/** How many observations the console reads as points before it switches to density and a viewport window. */
+export const POINT_CAP = 2_000;
+
+export interface Viewport {
+  /** west, south, east, north */
+  bbox: [number, number, number, number];
+  zoom: number;
+}
+
+/** A grid cell size for a zoom level: coarse from orbit, fine on a street. About 1 500 cells across the view at most. */
+export function cellForZoom(zoom: number): number {
+  if (zoom <= 2) return 2;
+  if (zoom <= 3) return 1;
+  if (zoom <= 4) return 0.5;
+  if (zoom <= 5) return 0.25;
+  if (zoom <= 6) return 0.1;
+  if (zoom <= 7) return 0.05;
+  if (zoom <= 8) return 0.02;
+  return 0.01;
+}
+
+/** The view, widened by `factor` on each side and clamped, so a pan does not immediately leave what was fetched. */
+export function padBox(bbox: Viewport["bbox"], factor = 0.5): Viewport["bbox"] {
+  const [w, s, e, n] = bbox;
+  const dx = (e - w) * factor;
+  const dy = (n - s) * factor;
+  return [Math.max(-180, w - dx), Math.max(-90, s - dy), Math.min(180, e + dx), Math.min(90, n + dy)];
+}
+
+export interface DensityCell {
+  lon: number;
+  lat: number;
+  count: number;
+  sources: string[];
+  kinds: string[];
+  latestObservedAt: string;
+}
+
+/** Cells as features. `weight` is the count on a log scale against the densest cell, for size and opacity. */
+export function densityLayer(cells: readonly DensityCell[]): GeoJSON.Feature[] {
+  const max = Math.max(1, ...cells.map((c) => c.count));
+  return cells.map((c) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: [c.lon, c.lat] },
+    properties: {
+      layer: "investigation-density",
+      label: `${c.count.toLocaleString("en-US")} observation${c.count === 1 ? "" : "s"}`,
+      count: c.count,
+      weight: Math.log(c.count + 1) / Math.log(max + 1),
+      sources: c.sources.join(", "),
+      kinds: c.kinds.join(", "),
+      latestObservedAt: c.latestObservedAt,
+    },
+  }));
+}
+
+export interface ClusterSummary {
+  id: string;
+  entities: Array<{ id: string; kind: EntityKind; label: string }>;
+  edges: number;
+  evidenceObservationIds: string[];
+  centroid: { lon: number; lat: number } | null;
+  from: string;
+  until: string | null;
+}
+
+export function clusterLayer(clusters: readonly ClusterSummary[], selected: string | null): GeoJSON.Feature[] {
+  return clusters.flatMap((c) =>
+    c.centroid === null
+      ? []
+      : [
+          {
+            type: "Feature" as const,
+            geometry: { type: "Point" as const, coordinates: [c.centroid.lon, c.centroid.lat] },
+            properties: {
+              layer: "investigation-cluster",
+              label: `${c.entities.length} co-located: ${c.entities.map((e) => e.label).join(", ")}`,
+              clusterId: c.id,
+              size: c.entities.length,
+              entityIds: c.entities.map((e) => e.id).join(","),
+              selected: selected !== null && c.entities.some((e) => e.id === selected),
+            },
+          },
+        ],
+  );
+}
 
 export interface ImageryOverlay {
   id: string;
@@ -138,7 +229,7 @@ export function mapLayer(
       },
     });
   }
-  return { points, lines, links, selected };
+  return { points, lines, links, density: [], clusters: [], selected };
 }
 
 /** Each entity's last position by `asOf`, for flying the camera to it. */

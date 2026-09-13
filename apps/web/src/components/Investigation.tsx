@@ -20,12 +20,20 @@ import {
   type TimelineEvent,
 } from "@/lib/v2";
 import {
+  cellForZoom,
+  clusterLayer,
   cornersOf,
   coverageBands,
+  densityLayer,
   describeConfidence,
   earliest,
   EMPTY_LAYER,
+  padBox,
+  POINT_CAP,
+  type ClusterSummary,
+  type DensityCell,
   type ImageryOverlay,
+  type Viewport,
   KIND_COLOUR,
   lastPosition,
   mapLayer,
@@ -83,12 +91,15 @@ export function Investigation({
   onImagery,
   onFly,
   pick,
+  view,
 }: {
   onLayer: (layer: MapLayer) => void;
   onImagery: (overlays: ImageryOverlay[]) => void;
   onFly: (place: { lat: number; lon: number; zoom?: number; offset?: [number, number] }) => void;
   /** An entity chosen on the map. The nonce makes re-picking the same one count. */
   pick: Pick | null;
+  /** The map's settled view, for reads that follow it on a case too big to draw whole. */
+  view: Viewport | null;
 }) {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [caseId, setCaseId] = useState("");
@@ -110,6 +121,12 @@ export function Investigation({
   const [asOfMs, setAsOfMs] = useState(() => Date.now());
   const [strict, setStrict] = useState(false);
 
+  const [total, setTotal] = useState(0);
+  const [entityTotal, setEntityTotal] = useState(0);
+  const [density, setDensity] = useState<DensityCell[]>([]);
+  const [windowed, setWindowed] = useState<Observation[] | null>(null);
+  const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+  const [found, setFound] = useState<Entity[] | null>(null);
   const [tiles, setTiles] = useState<ImageryTile[]>([]);
   const [showImagery, setShowImagery] = useState(true);
   const previews = useRef<Map<string, string>>(new Map());
@@ -163,9 +180,15 @@ export function Investigation({
         ]);
         if (cancelled) return;
         setObservations(obs.observations);
+        setTotal(obs.total);
         setEntities(ents.entities);
+        setEntityTotal(ents.total);
         setSources(ents.sources);
         setTiles(imagery.tiles);
+        setDensity([]);
+        setWindowed(null);
+        setClusters([]);
+        setFound(null);
         const to = Date.now();
         const from = earliest(obs.observations, new Date(to - DEFAULT_SPAN_MS)).getTime();
         setRange({ from: Math.min(from, to - 60_000), to });
@@ -201,9 +224,10 @@ export function Investigation({
     timer.current = setTimeout(() => {
       (async () => {
         try {
-          const all = await v2.edges(caseId, asOfIso, knownAsIso);
+          const [all, grouped] = await Promise.all([v2.edges(caseId, asOfIso, knownAsIso), v2.colocationClusters(caseId, asOfIso, knownAsIso)]);
           if (cancelled) return;
           setEdges(all.edges);
+          setClusters(grouped.clusters);
           setGraphNote(null);
           if (selectedId === null) {
             setNeighborhood(null);
@@ -234,9 +258,67 @@ export function Investigation({
   }, [caseId, loaded, authorization, asOfIso, knownAsIso, selectedId, asOf]);
 
   // ── The map follows the panel ──────────────────────────────────────────
+  const large = total > POINT_CAP;
+
   useEffect(() => {
-    onLayer(loaded && authorization ? mapLayer(observations, entities, edges, asOf, selectedId) : EMPTY_LAYER);
-  }, [observations, entities, edges, asOf, selectedId, loaded, authorization, onLayer]);
+    if (!loaded || !authorization) {
+      onLayer(EMPTY_LAYER);
+      return;
+    }
+    // A large case draws the observations in view (the window) as points,
+    // and the whole case as density cells; a small one draws everything.
+    const base = mapLayer(large ? (windowed ?? []) : observations, entities, edges, asOf, selectedId);
+    onLayer({ ...base, density: large ? densityLayer(density) : [], clusters: clusterLayer(clusters, selectedId) });
+  }, [observations, windowed, density, clusters, entities, edges, asOf, selectedId, loaded, authorization, large, onLayer]);
+
+  // ── Large cases: density for the view, and the view as a window ────────
+  useEffect(() => {
+    if (!loaded || !authorization || !large || view === null || caseId === "") return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      (async () => {
+        try {
+          const box = padBox(view.bbox);
+          const [cells, inView] = await Promise.all([
+            v2.density(caseId, { cell: cellForZoom(view.zoom), asOf: asOfIso, bbox: box }),
+            view.zoom >= 5 ? v2.observations(caseId, POINT_CAP, false, { bbox: box, asOf: asOfIso }) : Promise.resolve(null),
+          ]);
+          if (cancelled) return;
+          setDensity(cells.cells);
+          setWindowed(inView === null ? [] : inView.observations);
+        } catch (caught) {
+          if (!cancelled) setError(describeError(caught));
+        }
+      })();
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [loaded, authorization, large, view, caseId, asOfIso]);
+
+  // ── The find box asks the server when the list is a page of a larger set ──
+  useEffect(() => {
+    const q = needle.trim();
+    if (entityTotal <= entities.length || q.length < 2 || caseId === "") {
+      setFound(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      v2.entities(caseId, kind === "" ? undefined : kind, 200, { q })
+        .then((r) => {
+          if (!cancelled) setFound(r.entities);
+        })
+        .catch(() => {
+          if (!cancelled) setFound(null);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [needle, kind, entityTotal, entities.length, caseId]);
 
   useEffect(() => () => onLayer(EMPTY_LAYER), [onLayer]);
 
@@ -295,11 +377,12 @@ export function Investigation({
 
   const listed = useMemo(() => {
     const q = needle.trim().toLowerCase();
-    return entities
+    const pool = found ?? entities;
+    return pool
       .filter((e) => (kind === "" ? true : e.kind === kind))
       .filter((e) => (q === "" ? true : e.canonicalLabel.toLowerCase().includes(q)))
       .sort((a, b) => a.canonicalLabel.localeCompare(b.canonicalLabel));
-  }, [entities, kind, needle]);
+  }, [entities, found, kind, needle]);
 
   const bands = useMemo(
     () => coverageBands(observations, sources.map((s) => s.sourceId), new Date(range.from), new Date(range.to), BUCKETS),
@@ -405,6 +488,11 @@ export function Investigation({
 
             <Coverage bands={bands} bucketAt={bucketAt} from={range.from} to={range.to} />
 
+            {large ? (
+              <p className="notice">
+                Large case: {total.toLocaleString("en-US")} observations. The map draws density for the whole case and the observations inside the view (zoom in past level 5 for points); the list is the first {entities.length} of {entityTotal.toLocaleString("en-US")} entities, and the find box searches all of them.
+              </p>
+            ) : null}
             {tiles.length > 0 ? (
               <label className="tiny imagery-toggle" title="Stored satellite imagery over this case's areas, drawn under the observations">
                 <input type="checkbox" checked={showImagery} onChange={(event) => setShowImagery(event.target.checked)} />
@@ -456,7 +544,8 @@ export function Investigation({
                   <input value={needle} onChange={(event) => setNeedle(event.target.value)} placeholder="Find an entity" aria-label="Find an entity" />
                 </div>
                 <p className="tiny faint">
-                  {listed.length} of {entities.length} entities · {observations.length} observations
+                  {listed.length} of {entityTotal.toLocaleString("en-US")} entities · {total.toLocaleString("en-US")} observations
+                  {large ? ` · showing ${(windowed ?? []).length.toLocaleString("en-US")} in view` : ""}
                 </p>
                 <ul>
                   {listed.map((e) => {
@@ -497,7 +586,7 @@ export function Investigation({
                   />
                 ) : null}
                 {selected === null ? (
-                  <CaseOverview entities={entities} sources={sources} observations={observations} />
+                  <CaseOverview entities={entities} sources={sources} observations={observations} clusters={clusters} onChoose={choose} />
                 ) : (
                   <EntityView
                     entity={selected}
@@ -658,7 +747,7 @@ function Coverage({ bands, bucketAt, from, to }: { bands: ReturnType<typeof cove
   );
 }
 
-function CaseOverview({ entities, sources, observations }: { entities: Entity[]; sources: SourceCoverage[]; observations: Observation[] }) {
+function CaseOverview({ entities, sources, observations, clusters, onChoose }: { entities: Entity[]; sources: SourceCoverage[]; observations: Observation[]; clusters: ClusterSummary[]; onChoose: (entity: Entity) => void }) {
   const byKind = new Map<EntityKind, number>();
   const byStatus = new Map<Entity["status"], number>();
   for (const e of entities) {
@@ -688,6 +777,42 @@ function CaseOverview({ entities, sources, observations }: { entities: Entity[];
         ))}
         <span className="badge">{positioned} positioned</span>
       </div>
+      {clusters.length > 0 ? (
+        <>
+          <div className="spread">
+            <h3>Co-location Clusters</h3>
+            <span className="faint tiny">{clusters.length} at this moment. Entities joined by co-location edges that held then.</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Entities</th>
+                <th>Links</th>
+                <th>Held</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clusters.slice(0, 30).map((c) => (
+                <tr key={c.id}>
+                  <td>
+                    {c.entities.map((e, i) => {
+                      const full = entities.find((x) => x.id === e.id);
+                      return (
+                        <span key={e.id}>
+                          {i > 0 ? ", " : ""}
+                          {full === undefined ? titleCase(e.label) : <button className="link" onClick={() => onChoose(full)}>{titleCase(e.label)}</button>}
+                        </span>
+                      );
+                    })}
+                  </td>
+                  <td className="mono">{c.edges}</td>
+                  <td className="mono faint">{stamp(c.from)} → {c.until === null ? "open" : stamp(c.until)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : null}
       <SourcesConsulted sources={sources} contributed={null} />
       {silent.length > 0 ? (
         <p className="notice">

@@ -2,12 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { prisma } from "./client.js";
-import {
-  checkGraphConsistency,
-  edgesAsOf,
-  insertObservations,
-  positionOf,
-} from "./fusion.js";
+import { checkGraphConsistency, edgesAsOf, insertObservations, positionOf, observationDensity, observationIdsInBox } from "./fusion.js";
 
 /**
  * v2 database guarantees, against a live Postgres with PostGIS.
@@ -255,5 +250,56 @@ run("v2 schema guarantees", () => {
       expect(report.danglingEvidence).toContain(bad.id);
       expect(report.resolvedWithoutMembers).toContain(a.id);
     });
+  });
+});
+
+describe("density and windows", () => {
+  const AUTH = `auth_density_${Date.now()}`;
+  const obs = (i: number, lon: number, lat: number, at: string, kind: "PERSON" | "VESSEL" = "PERSON") => ({
+    id: `obs_density_${AUTH}_${i}`, sourceId: `density-src-${i % 2}`, authorizationId: AUTH, caseId: null, collectedAt: new Date(at), observedAt: new Date(at),
+    rawPayload: null, normalizedPayload: { i, AUTH }, contentHash: `density-${AUTH}-${i}`, position: { lon, lat }, confidenceBp: null, indeterminate: false, entityKind: kind,
+  });
+
+  beforeAll(async () => {
+    await prisma.authorization.create({
+      data: { id: AUTH, reference: AUTH, issuedBy: "vitest", boundary: { scope: [], entityKinds: [] }, sourceClasses: ["SENSOR"], actionClasses: ["READ_GRAPH"], validFrom: new Date("2026-01-01"), validUntil: new Date("2027-01-01") },
+    });
+    for (const i of [0, 1]) await prisma.collectionSource.upsert({ where: { id: `density-src-${i}` }, update: {}, create: { id: `density-src-${i}`, name: `density ${i}`, class: "SENSOR", licensingTerms: "vitest fixture, no licence applies", refreshCadenceSeconds: 1 } });
+    await insertObservations([
+      obs(1, -122.68, 45.52, "2026-06-01T00:00:00Z"), obs(2, -122.60, 45.55, "2026-06-02T00:00:00Z"), obs(3, -122.70, 45.50, "2026-06-03T00:00:00Z", "VESSEL"),
+      obs(4, -63.57, 44.65, "2026-06-04T00:00:00Z"),
+    ]);
+  });
+
+  it("bins positioned observations onto a grid with counts, sources, kinds and recency", async () => {
+    const cells = await observationDensity({ authorizationId: AUTH, cellDegrees: 1 });
+    expect(cells).toHaveLength(2);
+    const portland = cells[0];
+    expect(portland?.count).toBe(3);
+    expect(portland?.lon).toBeCloseTo(-122.5, 6);
+    expect(portland?.lat).toBeCloseTo(45.5, 6);
+    expect([...(portland?.sources ?? [])].sort()).toEqual(["density-src-0", "density-src-1"]);
+    expect([...(portland?.kinds ?? [])].sort()).toEqual(["PERSON", "VESSEL"]);
+    expect(portland?.latestObservedAt.toISOString()).toBe("2026-06-03T00:00:00.000Z");
+    expect(cells[1]?.count).toBe(1);
+  });
+
+  it("honours the moment and the box", async () => {
+    const early = await observationDensity({ authorizationId: AUTH, cellDegrees: 1, asOf: new Date("2026-06-01T12:00:00Z") });
+    expect(early).toHaveLength(1);
+    expect(early[0]?.count).toBe(1);
+    const west = await observationDensity({ authorizationId: AUTH, cellDegrees: 1, bbox: [-125, 44, -120, 47] });
+    expect(west).toHaveLength(1);
+    expect(west[0]?.count).toBe(3);
+    // At 0.05°, observations 1 and 3 (-122.68/45.52 and -122.70/45.50) share a cell; 2 sits alone.
+    const fine = await observationDensity({ authorizationId: AUTH, cellDegrees: 0.05, bbox: [-125, 44, -120, 47] });
+    expect(fine.map((c) => c.count).sort()).toEqual([1, 2]);
+  });
+
+  it("windows a box newest first, capped", async () => {
+    const ids = await observationIdsInBox({ authorizationId: AUTH, bbox: [-125, 44, -120, 47], limit: 2 });
+    expect(ids).toEqual([`obs_density_${AUTH}_3`, `obs_density_${AUTH}_2`]);
+    const before = await observationIdsInBox({ authorizationId: AUTH, bbox: [-125, 44, -120, 47], limit: 10, asOf: new Date("2026-06-02T12:00:00Z") });
+    expect(before).toEqual([`obs_density_${AUTH}_2`, `obs_density_${AUTH}_1`]);
   });
 });

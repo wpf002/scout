@@ -24,8 +24,8 @@ import { objectStore, TILES_BUCKET } from "../v2/storage.js";
 import { compare, compareSchema, createGallery, enroll, enrollSchema, gallerySchema, recognitionEnabled, revokeEnrollment } from "../v2/recognition.js";
 import { runResolution } from "../v2/resolution.js";
 import { deriveLinks } from "../v2/links.js";
-import { coLocationWindow, neighbors, pathBetween, timelineForEntity, visibleEntities } from "../v2/graph.js";
-import { checkGraphConsistency, edgesAsOf } from "@scout/db";
+import { coLocationClusters, coLocationWindow, neighbors, pathBetween, timelineForEntity, visibleEntities } from "../v2/graph.js";
+import { checkGraphConsistency, edgesAsOf, observationDensity, observationIdsInBox } from "@scout/db";
 import {
   isConfigured,
   listRunnable,
@@ -75,8 +75,17 @@ const resolveSchema = z.object({
 const entitiesQuery = z.object({
   caseId: z.string().min(1),
   kind: fusionEntityKindSchema.optional(),
+  /** A label fragment, matched without case. The server's find box for a case too big to list. */
+  q: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200),
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
 });
+
+const bboxParam = z
+  .string()
+  .regex(/^-?[\d.]+,-?[\d.]+,-?[\d.]+,-?[\d.]+$/)
+  .transform((v) => v.split(",").map(Number) as [number, number, number, number])
+  .refine(([w, s, e, n]) => e > w && n > s && w >= -180 && e <= 180 && s >= -90 && n <= 90, "bbox is west,south,east,north");
 
 const adjudicateSchema = z.object({
   caseId: z.string().min(1),
@@ -105,6 +114,9 @@ const observationsQuery = z.object({
   caseId: z.string().min(1),
   limit: z.coerce.number().int().min(1).max(2_000).default(100),
   raw: z.enum(["true", "false"]).default("false"),
+  /** With a box the read is a window onto the map: positioned observations inside it, newest first. */
+  bbox: bboxParam.optional(),
+  asOf: z.coerce.date().optional(),
 });
 
 function serializeAuthorization(row: {
@@ -250,12 +262,21 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
     ctx.assertAction("READ_GRAPH");
 
-    const rows = await prisma.observation.findMany({
-      where: { authorizationId: ctx.authorizationId, caseId },
-      orderBy: [{ observedAt: "desc" }, { id: "asc" }],
-      take: query.limit,
-      include: { identifiers: true },
-    });
+    let rows;
+    if (query.bbox !== undefined) {
+      const ids = await observationIdsInBox({ authorizationId: ctx.authorizationId, caseId, bbox: query.bbox, asOf: query.asOf ?? null, limit: query.limit });
+      const found = await prisma.observation.findMany({ where: { id: { in: ids } }, include: { identifiers: true } });
+      const order = new Map(ids.map((id, i) => [id, i]));
+      rows = found.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    } else {
+      rows = await prisma.observation.findMany({
+        where: { authorizationId: ctx.authorizationId, caseId, ...(query.asOf === undefined ? {} : { observedAt: { lte: query.asOf } }) },
+        orderBy: [{ observedAt: "desc" }, { id: "asc" }],
+        take: query.limit,
+        include: { identifiers: true },
+      });
+    }
+    const total = await prisma.observation.count({ where: { authorizationId: ctx.authorizationId, caseId } });
     const positions = await positionsOf(rows.map((r) => r.id));
 
     // The read is the audited act. Ids and a count; the payloads stay here.
@@ -274,6 +295,8 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
       caseId,
       authorizationId: ctx.authorizationId,
       count: rows.length,
+      total,
+      window: query.bbox ?? null,
       observations: rows.map((r) => ({
         id: r.id,
         sourceId: r.sourceId,
@@ -293,6 +316,27 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/observations/density", async (request) => {
+    const query = z.object({
+      caseId: z.string().min(1),
+      cell: z.coerce.number().min(0.001).max(10).default(1),
+      asOf: z.coerce.date().optional(),
+      bbox: bboxParam.optional(),
+      limit: z.coerce.number().int().min(1).max(20_000).default(5_000),
+    }).parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const cells = await observationDensity({ authorizationId: ctx.authorizationId, caseId, cellDegrees: query.cell, asOf: query.asOf ?? null, bbox: query.bbox ?? null, limit: query.limit });
+    const total = cells.reduce((sum, c) => sum + c.count, 0);
+    // A read of counts, not rows: the log carries the shape of the ask and
+    // how much it summarised, and no observation ids, since none were returned.
+    await prisma.accessLog.create({
+      data: { actor: operator, authorizationId: ctx.authorizationId, action: "read", targetType: "ObservationDensity", targetIds: [], queryText: `cell=${query.cell}${query.bbox === undefined ? "" : ` bbox=${query.bbox.join(",")}`}${query.asOf === undefined ? "" : ` asOf=${query.asOf.toISOString()}`}`, resultCount: total },
+    });
+    return { caseId, cellDegrees: query.cell, count: cells.length, observations: total, cells };
+  });
+
   // ── resolution ─────────────────────────────────────────────────────────
 
   app.post("/v2/resolve", async (request) => {
@@ -308,12 +352,16 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
     ctx.assertAction("READ_GRAPH");
 
+    const entityWhere = {
+      resolutionRun: { authorizationId: ctx.authorizationId },
+      ...(query.kind === undefined ? {} : { kind: query.kind }),
+      ...(query.q === undefined || query.q === "" ? {} : { canonicalLabel: { contains: query.q, mode: "insensitive" as const } }),
+      members: { some: { supersededAt: null } },
+    };
+    const total = await prisma.entity.count({ where: entityWhere });
     const entities = await prisma.entity.findMany({
-      where: {
-        resolutionRun: { authorizationId: ctx.authorizationId },
-        ...(query.kind === undefined ? {} : { kind: query.kind }),
-        members: { some: { supersededAt: null } },
-      },
+      where: entityWhere,
+      skip: query.offset,
       include: {
         members: {
           where: { supersededAt: null },
@@ -355,6 +403,8 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
       caseId,
       authorizationId: ctx.authorizationId,
       count: entities.length,
+      total,
+      offset: query.offset,
       sources,
       entities: entities.map((e) => ({
         id: e.id,
@@ -815,6 +865,16 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     const result = await coLocationWindow({ ctx, entityId: query.entityId, from: query.from, to: query.to });
     await logRead(operator, ctx.authorizationId, "EntityEdge", result.edges.map((e) => e.id), `colocation ${query.entityId} ${query.from.toISOString()}..${query.to.toISOString()}`);
     return { caseId, from: query.from, to: query.to, ...result };
+  });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/graph/colocation/clusters", async (request) => {
+    const query = asOfQuery.parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const result = await coLocationClusters({ ctx, asOf: query.asOf ?? new Date(), knownAs: query.knownAs ?? new Date() });
+    await logRead(operator, ctx.authorizationId, "Entity", [...new Set(result.clusters.flatMap((c) => c.entities.map((e) => e.id)))], `colocation clusters asOf=${result.asOf.toISOString()}`);
+    return { caseId, ...result, count: result.clusters.length };
   });
 
   app.post("/v2/graph/consistency", async (request) => {

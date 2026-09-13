@@ -43,6 +43,8 @@ export interface Props {
   /** `offset` shifts where the target lands, in pixels from the centre, for a target that would otherwise sit under a panel. */
   flyTo: { lat: number; lon: number; zoom?: number; offset?: [number, number] } | null;
   onCentre: (centre: { lat: number; lon: number }) => void;
+  /** The settled view after a move: its box and zoom, for reads that follow the viewport. */
+  onBounds?: (view: { bbox: [number, number, number, number]; zoom: number }) => void;
   measure: Shape | null;
   onMeasure: (reading: string | null) => void;
   /** Per-layer attribute predicates, applied in the style. */
@@ -62,8 +64,8 @@ export interface Props {
   onAoi: (box: { south: number; west: number; north: number; east: number }) => void;
   /** Fixed infrastructure found inside the area. */
   aoiFeatures: GeoJSON.Feature[];
-  /** The investigation console's picture at one moment: observations, per-entity traces, links. */
-  investigation: { points: GeoJSON.Feature[]; lines: GeoJSON.Feature[]; links: GeoJSON.Feature[] };
+  /** The investigation console's picture at one moment: observations, per-entity traces, links, density, clusters. */
+  investigation: { points: GeoJSON.Feature[]; lines: GeoJSON.Feature[]; links: GeoJSON.Feature[]; density: GeoJSON.Feature[]; clusters: GeoJSON.Feature[] };
   /** Stored imagery previews, each pinned to its box's four corners. */
   imagery: Array<{ id: string; url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] }>;
   /** The selected aircraft's recorded track and filed route. */
@@ -117,6 +119,7 @@ function GlobeMapImpl({
   onCursor,
   flyTo,
   onCentre,
+  onBounds,
   measure,
   onMeasure,
   filters,
@@ -336,11 +339,18 @@ function GlobeMapImpl({
 
     // `moveend`, not `move`: the readout behind this is a geocoder call, and
     // one per frame of a drag would be both useless and abusive.
+    const reportBounds = () => {
+      if (onBounds === undefined) return;
+      const b = instance.getBounds();
+      onBounds({ bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], zoom: instance.getZoom() });
+    };
     instance.on("moveend", () => {
       const centre = instance.getCenter();
       onCentre({ lat: centre.lat, lon: centre.lng });
+      reportBounds();
       setViewport((n) => n + 1);
     });
+    instance.once("load", reportBounds);
 
     instance.on("error", (event) => {
       // MapLibre reports tile and style failures here rather than throwing.
@@ -1093,9 +1103,11 @@ function GlobeMapImpl({
     if (instance === null || !ready) return;
 
     const sets: Array<[string, GeoJSON.Feature[]]> = [
+      ["investigation-density", investigation.density],
       ["investigation-traces", investigation.lines],
       ["investigation-links", investigation.links],
       ["investigation", investigation.points],
+      ["investigation-clusters", investigation.clusters],
     ];
     for (const [id, features] of sets) {
       const data: GeoJSON.FeatureCollection = { type: "FeatureCollection", features };
@@ -1106,7 +1118,43 @@ function GlobeMapImpl({
       }
       instance.addSource(id, { type: "geojson", data });
       const selected: maplibregl.ExpressionSpecification = ["==", ["get", "selected"], true];
-      if (id === "investigation-traces") {
+      if (id === "investigation-density") {
+        // Cells, sized and shaded by a log of their count: dense reads dark,
+        // sparse reads faint, and a single observation is still a mark.
+        instance.addLayer({
+          id,
+          type: "circle",
+          source: id,
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["get", "weight"], 0, 5, 1, 26],
+            "circle-color": "#e0a33c",
+            "circle-opacity": ["interpolate", ["linear"], ["get", "weight"], 0, 0.18, 1, 0.55],
+            "circle-stroke-color": "#e0a33c",
+            "circle-stroke-opacity": 0.5,
+            "circle-stroke-width": 1,
+          },
+        });
+      } else if (id === "investigation-clusters") {
+        instance.addLayer({
+          id,
+          type: "circle",
+          source: id,
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["get", "size"], 2, 12, 20, 28],
+            "circle-color": "#9b6bff",
+            "circle-opacity": ["case", selected, 0.55, 0.28],
+            "circle-stroke-color": "#9b6bff",
+            "circle-stroke-width": ["case", selected, 2.5, 1.2],
+          },
+        });
+        instance.addLayer({
+          id: `${id}-count`,
+          type: "symbol",
+          source: id,
+          layout: { "text-field": ["to-string", ["get", "size"]], "text-size": 11, "text-allow-overlap": true, "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"] },
+          paint: { "text-color": "#ffffff", "text-halo-color": "#05050a", "text-halo-width": 1 },
+        });
+      } else if (id === "investigation-traces") {
         instance.addLayer({
           id,
           type: "line",
@@ -1780,7 +1828,7 @@ function GlobeMapImpl({
         }
       }
 
-      const clickable = [...FEED_LAYERS.map((l) => l.id), "osint", "aoi-infra", "investigation"].filter(
+      const clickable = [...FEED_LAYERS.map((l) => l.id), "osint", "aoi-infra", "investigation", "investigation-clusters", "investigation-density"].filter(
         (id) => instance.getLayer(id) !== undefined,
       );
       const hits = instance.queryRenderedFeatures(event.point, {
