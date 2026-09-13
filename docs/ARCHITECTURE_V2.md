@@ -250,6 +250,24 @@ decrypts only the active (unrevoked, unexpired) templates of the modality
 for that one call, and is written to `BiometricComparison` (immutable)
 before the answer returns, matched or not.
 
+A voice probe with several speakers (`diarize: true`) is split first
+(pyannote.audio's speaker-diarization pipeline, gated: `models` extra plus
+`RECOGNITION_HF_TOKEN`; the deterministic test path splits on `|`), and
+each speaker's audio is embedded and compared on its own: one
+`BiometricComparison` row and one audit event per speaker, each with its
+own probe hash. The response carries `speakers[]`; the top-level decision
+follows the speaker whose best candidate is nearest and says so. Nothing
+is averaged across speakers. Diarisation on a face probe is a 400.
+
+The case file's Recognition tab (`RecognitionPanel.tsx`) is the custodian's
+screen: galleries (created with the lawful-basis confirmation, document and
+review date), enrollments (entity from the case, media origin limited to
+consented, court-ordered or employment-record, document, expiry; revoke
+with a recorded reason), a comparison form, the result with its candidates
+and distances, and the permanent comparison log. Media is read in the
+browser and sent once. With the flag off the tab shows why enrollment and
+comparison are refused; galleries can still be prepared.
+
 ## No graph database
 
 The spec named Apache AGE as a projection. It is not used. Railway's managed

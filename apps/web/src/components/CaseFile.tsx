@@ -15,6 +15,7 @@ import { FindingsBoard } from "@/components/FindingsBoard";
 import { MonitorPanel } from "@/components/MonitorPanel";
 import { AuditPanel } from "@/components/AuditPanel";
 import { ReviewQueue } from "@/components/ReviewQueue";
+import { RecognitionPanel } from "@/components/RecognitionPanel";
 import { ExportPanel } from "@/components/ExportPanel";
 import type {
   AuditView,
@@ -45,6 +46,7 @@ type Tab =
   | "datasets"
   | "graph"
   | "review"
+  | "recognition"
   | "timeline"
   | "findings"
   | "monitors"
@@ -58,6 +60,7 @@ const TABS: Array<{ id: Tab; name: string; hint: string }> = [
   { id: "datasets", name: "Datasets", hint: "Bulk and person-facing adapters" },
   { id: "graph", name: "Graph", hint: "How the entities connect" },
   { id: "review", name: "Review", hint: "Pairs the resolution model could not decide" },
+  { id: "recognition", name: "Recognition", hint: "Enrolled galleries and 1:N comparison; off unless enabled" },
   { id: "timeline", name: "Timeline", hint: "What happened, in order" },
   { id: "findings", name: "Findings", hint: "What was kept, with provenance" },
   { id: "monitors", name: "Monitors", hint: "Watches that run on a schedule" },
@@ -267,6 +270,7 @@ export function CaseFile() {
             {tab === "review" ? (
               <ReviewQueue record={record} onCount={setReviewCount} onDecided={onFindingSaved} />
             ) : null}
+            {tab === "recognition" ? <RecognitionPanel record={record} onActed={onFindingSaved} /> : null}
             {tab === "timeline" ? <TimelineBoard record={record} /> : null}
             {tab === "findings" ? <FindingsBoard findings={findings} /> : null}
             {tab === "monitors" ? (

@@ -657,6 +657,37 @@ run("Scout v2 — stage 3: collection", () => {
       await expect(prisma.biometricComparison.update({ where: { id: logged[0]!.id }, data: { decision: "NO_MATCH" } })).rejects.toThrow();
     });
 
+    it("compares a multi-speaker voice probe as one logged comparison per speaker", async () => {
+      await post(`/v2/galleries/${gallery}/enroll`, { caseId: recCase, entityId: entityA, modality: "VOICE", mediaB64: b64("voice A"), contentType: "audio/wav", origin: "consented-upload", lawfulBasisDocumentRef: "CONSENT-FORM-A", expiresAt: IN_A_MONTH });
+      const before = await prisma.biometricComparison.count({ where: { galleryId: gallery, modality: "VOICE" } });
+      const r = await post("/v2/compare", { caseId: recCase, galleryId: gallery, modality: "VOICE", mediaB64: b64("voice A|voice B"), contentType: "audio/wav", diarize: true });
+      expect(r.statusCode).toBe(200);
+      const body = r.json();
+      expect(body.speakers).toHaveLength(2);
+      expect(body.speakers.map((s: { decision: string }) => s.decision)).toEqual(["MATCH", "NO_MATCH"]);
+      expect(body.speakers[0].matches[0].entityId).toBe(entityA);
+      expect(body.comparisonIds).toHaveLength(2);
+      expect(body.reason).toContain("2 speakers compared separately");
+      expect(await prisma.biometricComparison.count({ where: { galleryId: gallery, modality: "VOICE" } })).toBe(before + 2);
+      const hashes = (await prisma.biometricComparison.findMany({ where: { id: { in: body.comparisonIds } } })).map((c) => c.probeHash);
+      expect(new Set(hashes).size).toBe(2);
+      expect((await post("/v2/compare", { caseId: recCase, galleryId: gallery, modality: "FACE", mediaB64: b64("face A"), diarize: true })).statusCode).toBe(400);
+    });
+
+    it("reads one gallery in full, with labels only under a case's authorization", async () => {
+      const bare = (await get(`/v2/galleries/${gallery}`)).json();
+      expect(bare.enrollments).toHaveLength(3);
+      expect(bare.enrollments.every((e: { label: string | null }) => e.label === null)).toBe(true);
+      expect(bare.comparisons.filter((c: { modality: string }) => c.modality === "FACE").map((c: { decision: string }) => c.decision)).toEqual(["INDETERMINATE", "NO_MATCH", "MATCH"]);
+      const labelled = (await get(`/v2/galleries/${gallery}?caseId=${recCase}`)).json();
+      expect(labelled.enrollments.every((e: { label: string | null }) => typeof e.label === "string")).toBe(true);
+      expect(labelled.comparisons.find((c: { decision: string; modality: string }) => c.modality === "FACE" && c.decision === "MATCH").topMatches[0].label).toBeTruthy();
+      const log = await prisma.accessLog.findFirst({ where: { authorizationId: recAuth, targetType: "GalleryEnrollment" }, orderBy: { createdAt: "desc" } });
+      expect(log?.targetIds).toHaveLength(3);
+      expect((await get(`/v2/galleries/${gallery}?caseId=${openCase}`)).statusCode).toBe(200);
+      expect((await get(`/v2/galleries/nope`)).statusCode).toBe(404);
+    });
+
     it("ignores revoked and expired enrollments, and refuses a gallery whose review is overdue", async () => {
       const enrollments = await prisma.galleryEnrollment.findMany({ where: { galleryId: gallery }, orderBy: { enrolledAt: "asc" } });
       const revoke = await post(`/v2/galleries/${gallery}/enrollments/${enrollments[1]!.id}/revoke`, { reason: "consent withdrawn" });

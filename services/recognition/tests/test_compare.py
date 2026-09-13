@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from recognition.compare import Match, cosine_distance_bp, decide, rank
+from recognition.diarize import DeterministicDiariser, reset_diarisers
 from recognition.embedders import DeterministicEmbedder, reset_embedders
 from recognition.main import app
 
@@ -108,3 +109,48 @@ def test_without_models_a_real_embedder_is_unavailable_not_invented(monkeypatch:
         assert r.status_code == 503
         assert r.json()["detail"]["error"] == "model-unavailable"
         assert "uv sync --extra models" in r.json()["detail"]["message"]
+
+
+def test_deterministic_diariser_splits_speakers_and_refuses_silence() -> None:
+    parts = DeterministicDiariser().split(b"voice A|voice B|", "audio/wav")
+    assert [p.speaker for p in parts] == ["SPEAKER_00", "SPEAKER_01"]
+    assert parts[1].media == b"voice B"
+    with pytest.raises(Exception):
+        DeterministicDiariser().split(b"||", "audio/wav")
+
+
+def test_a_multi_speaker_probe_is_one_comparison_per_speaker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECOGNITION_ENABLED", "true")
+    monkeypatch.setenv("RECOGNITION_EMBEDDER", "test")
+    reset_embedders()
+    reset_diarisers()
+    enrolled_a = client.post("/embed", json={"gallery_id": "g1", "purpose": "enrollment", "modality": "VOICE", "media_b64": _b64(b"voice A")}).json()
+    body = {
+        "gallery_id": "g1", "authorization_id": "auth", "modality": "VOICE", "probe_media_b64": _b64(b"voice A|voice B"), "diarize": True,
+        "candidates": [{"enrollment_id": "e-a", "embedding": enrolled_a["embedding"]}], "threshold_bp": 6_000, "margin_bp": 500,
+    }
+    r = client.post("/compare", json=body).json()
+    assert r["diariser"].startswith("deterministic")
+    assert [s["speaker"] for s in r["speakers"]] == ["SPEAKER_00", "SPEAKER_01"]
+    assert r["speakers"][0]["decision"] == "MATCH"
+    assert r["speakers"][1]["decision"] == "NO_MATCH"
+    assert r["speakers"][0]["probe_hash"] != r["speakers"][1]["probe_hash"]
+    # The top-level fields follow the leading speaker and say so.
+    assert r["decision"] == "MATCH"
+    assert "2 speakers compared separately" in r["reason"]
+
+    face = client.post("/compare", json={**body, "modality": "FACE"})
+    assert face.status_code == 422
+    assert face.json()["detail"]["error"] == "diarize-voice-only"
+
+
+def test_diarisation_without_the_model_is_unavailable_not_invented(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECOGNITION_ENABLED", "true")
+    monkeypatch.delenv("RECOGNITION_EMBEDDER", raising=False)
+    reset_diarisers()
+    try:
+        import pyannote.audio  # noqa: F401
+    except ImportError:
+        r = client.post("/compare", json={"gallery_id": "g1", "authorization_id": "auth", "modality": "VOICE", "probe_media_b64": _b64(b"x"), "diarize": True, "threshold_bp": 6_000})
+        assert r.status_code == 503
+        assert r.json()["detail"]["error"] == "model-unavailable"

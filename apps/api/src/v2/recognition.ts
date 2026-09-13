@@ -84,13 +84,17 @@ export function openTemplate(sealed: SealedTemplate, keyMaterial = templateKey()
 // ── the service ────────────────────────────────────────────────────────────
 
 const embedResponse = z.object({ model: z.string(), dims: z.number().int().positive(), embedding: z.array(z.number()).min(1), media_hash: z.string() });
+const matchOut = z.object({ enrollment_id: z.string(), distance_bp: z.number().int() });
+const decisionOut = z.enum(["MATCH", "NO_MATCH", "INDETERMINATE"]);
 const compareResponse = z.object({
   model: z.string(),
   probe_hash: z.string(),
   compared: z.number().int(),
-  matches: z.array(z.object({ enrollment_id: z.string(), distance_bp: z.number().int() })),
-  decision: z.enum(["MATCH", "NO_MATCH", "INDETERMINATE"]),
+  matches: z.array(matchOut),
+  decision: decisionOut,
   reason: z.string(),
+  speakers: z.array(z.object({ speaker: z.string(), seconds: z.number().nullable(), probe_hash: z.string(), compared: z.number().int(), matches: z.array(matchOut), decision: decisionOut, reason: z.string() })).nullable().optional(),
+  diariser: z.string().nullable().optional(),
 });
 
 async function callService<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
@@ -225,14 +229,17 @@ export const compareSchema = z.object({
   mediaB64: z.string().min(1).max(20_000_000),
   contentType: z.string().trim().min(1).max(100).default("application/octet-stream"),
   topN: z.number().int().min(1).max(20).default(5),
+  /** Voice only: split the probe by speaker; each speaker is its own logged comparison. */
+  diarize: z.boolean().default(false),
 });
 
 export async function compare(input: { ctx: ScopeContext; operator: string; body: z.infer<typeof compareSchema> }) {
   const { ctx, operator, body } = input;
-  const audit = { galleryId: body.galleryId, modality: body.modality, authorizationId: ctx.authorizationId };
+  const audit = { galleryId: body.galleryId, modality: body.modality, authorizationId: ctx.authorizationId, diarize: body.diarize };
   if (!recognitionEnabled()) {
     await refuse("v2.biometric.comparison", operator, body.caseId, audit, new HttpError(503, "feature-disabled", `Recognition is disabled (${RECOGNITION_ENABLED_ENV}=false). Nothing was compared.`));
   }
+  if (body.diarize && body.modality !== "VOICE") throw new HttpError(400, "diarize-voice-only", "Diarisation applies to voice probes only.");
   const gallery = await prisma.gallery.findUnique({ where: { id: body.galleryId } });
   // The three-part gate, in the scope package, audited here: a gallery, a
   // lawful basis on record for it, and an authorization that permits it.
@@ -264,29 +271,47 @@ export async function compare(input: { ctx: ScopeContext; operator: string; body
   const margin = marginBp();
   const result = await callService(
     "/compare",
-    { gallery_id: gallery.id, authorization_id: ctx.authorizationId, modality: body.modality, probe_media_b64: body.mediaB64, content_type: body.contentType, candidates, threshold_bp: threshold, margin_bp: margin, top_n: body.topN },
+    { gallery_id: gallery.id, authorization_id: ctx.authorizationId, modality: body.modality, probe_media_b64: body.mediaB64, content_type: body.contentType, candidates, threshold_bp: threshold, margin_bp: margin, top_n: body.topN, diarize: body.diarize },
     compareResponse,
   );
 
   const byEnrollment = new Map(enrollments.map((e) => [e.id, e]));
-  const entityIds = [...new Set(result.matches.map((m) => byEnrollment.get(m.enrollment_id)?.entityId).filter((id): id is string => id !== undefined))];
+  const allMatches = [...result.matches, ...(result.speakers ?? []).flatMap((s) => s.matches)];
+  const entityIds = [...new Set(allMatches.map((m) => byEnrollment.get(m.enrollment_id)?.entityId).filter((id): id is string => id !== undefined))];
   const labels = await visibleEntities(ctx, now, entityIds);
+  const describe = (matches: Array<{ enrollment_id: string; distance_bp: number }>) =>
+    matches.map((m) => {
+      const e = byEnrollment.get(m.enrollment_id);
+      const entity = e === undefined ? undefined : labels.get(e.entityId);
+      return { enrollmentId: m.enrollment_id, entityId: e?.entityId ?? null, label: entity?.label ?? null, kind: entity?.kind ?? null, distanceBp: m.distance_bp, withinThreshold: m.distance_bp <= threshold };
+    });
 
-  // Logged whether or not it matched, before the answer leaves.
-  const row = await prisma.biometricComparison.create({
-    data: {
-      probeHash: result.probe_hash, galleryId: gallery.id, authorizationId: ctx.authorizationId, modality: body.modality,
-      topMatches: result.matches.map((m) => ({ enrollmentId: m.enrollment_id, distanceBp: m.distance_bp })),
-      thresholdBp: threshold, decision: result.decision, requestedBy: operator,
-    },
-  });
-  await recordAuditEvent({
-    caseId: body.caseId, action: "v2.biometric.comparison", actor: operator,
-    detail: { ...audit, outcome: "ok", comparisonId: row.id, probeHash: result.probe_hash, decision: result.decision, compared: result.compared, model: result.model },
-  });
+  // Logged whether or not it matched, before the answer leaves. A diarised
+  // probe is one row per speaker: each speaker was compared, so each is a
+  // comparison, with its own probe hash.
+  const units = result.speakers === null || result.speakers === undefined
+    ? [{ speaker: null as string | null, seconds: null as number | null, probe_hash: result.probe_hash, compared: result.compared, matches: result.matches, decision: result.decision, reason: result.reason }]
+    : result.speakers.map((s) => ({ ...s, speaker: s.speaker as string | null }));
+  const rows = [];
+  for (const unit of units) {
+    const row = await prisma.biometricComparison.create({
+      data: {
+        probeHash: unit.probe_hash, galleryId: gallery.id, authorizationId: ctx.authorizationId, modality: body.modality,
+        topMatches: unit.matches.map((m) => ({ enrollmentId: m.enrollment_id, distanceBp: m.distance_bp, ...(unit.speaker === null ? {} : { speaker: unit.speaker }) })),
+        thresholdBp: threshold, decision: unit.decision, requestedBy: operator,
+      },
+    });
+    await recordAuditEvent({
+      caseId: body.caseId, action: "v2.biometric.comparison", actor: operator,
+      detail: { ...audit, outcome: "ok", comparisonId: row.id, probeHash: unit.probe_hash, decision: unit.decision, compared: unit.compared, model: result.model, speaker: unit.speaker, diariser: result.diariser ?? null },
+    });
+    rows.push({ row, unit });
+  }
+  const lead = rows[0] as (typeof rows)[number];
 
   return {
-    comparisonId: row.id,
+    comparisonId: lead.row.id,
+    comparisonIds: rows.map((r) => r.row.id),
     galleryId: gallery.id,
     modality: body.modality,
     probeHash: result.probe_hash,
@@ -296,10 +321,10 @@ export async function compare(input: { ctx: ScopeContext; operator: string; body
     decision: result.decision,
     reason: result.reason,
     model: result.model,
-    matches: result.matches.map((m) => {
-      const e = byEnrollment.get(m.enrollment_id);
-      const entity = e === undefined ? undefined : labels.get(e.entityId);
-      return { enrollmentId: m.enrollment_id, entityId: e?.entityId ?? null, label: entity?.label ?? null, kind: entity?.kind ?? null, distanceBp: m.distance_bp, withinThreshold: m.distance_bp <= threshold };
-    }),
+    diariser: result.diariser ?? null,
+    matches: describe(result.matches),
+    speakers: result.speakers === null || result.speakers === undefined
+      ? null
+      : rows.map(({ row, unit }) => ({ comparisonId: row.id, speaker: unit.speaker, seconds: unit.seconds, probeHash: unit.probe_hash, compared: unit.compared, decision: unit.decision, reason: unit.reason, matches: describe(unit.matches) })),
   };
 }

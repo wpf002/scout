@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from recognition import __version__
 from recognition.compare import decide, rank
+from recognition.diarize import diariser_for
 from recognition.embedders import ModelUnavailable, NoSubject, embedder_for
 
 app = FastAPI(title="Scout recognition", version=__version__, docs_url=None, redoc_url=None)
@@ -118,11 +119,23 @@ class CompareRequest(BaseModel):
     threshold_bp: int = Field(ge=0, le=10_000)
     margin_bp: int = Field(default=500, ge=0, le=10_000)
     top_n: int = Field(default=5, ge=1, le=20)
+    """Voice only: split the probe by speaker and compare each one on its own."""
+    diarize: bool = False
 
 
 class MatchOut(BaseModel):
     enrollment_id: str
     distance_bp: int
+
+
+class SpeakerOut(BaseModel):
+    speaker: str
+    seconds: float | None
+    probe_hash: str
+    compared: int
+    matches: list[MatchOut]
+    decision: str
+    reason: str
 
 
 class CompareResponse(BaseModel):
@@ -132,12 +145,70 @@ class CompareResponse(BaseModel):
     matches: list[MatchOut]
     decision: str
     reason: str
+    """Present only for a diarised probe: one entry per speaker, each its own comparison."""
+    speakers: list[SpeakerOut] | None = None
+    diariser: str | None = None
+
+
+def _rank_and_decide(probe: list[float], request: CompareRequest) -> tuple[list[MatchOut], str, str]:
+    try:
+        matches = rank(probe, [(c.enrollment_id, c.embedding) for c in request.candidates], request.top_n)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail={"error": "bad-embedding", "message": str(error)}) from error
+    outcome = decide(matches, request.threshold_bp, request.margin_bp)
+    return [MatchOut(enrollment_id=m.enrollment_id, distance_bp=m.distance_bp) for m in matches], outcome.decision, outcome.reason
+
+
+def _compare_by_speaker(request: CompareRequest, media: bytes) -> CompareResponse:
+    """One comparison per speaker. The top-level fields describe the speaker
+    whose best candidate is nearest, and say so; the rows are in `speakers`."""
+    try:
+        diariser = diariser_for()
+        parts = diariser.split(media, request.content_type)
+    except ModelUnavailable as error:
+        raise HTTPException(status_code=503, detail={"error": "model-unavailable", "message": str(error)}) from error
+    except NoSubject as error:
+        raise HTTPException(status_code=422, detail={"error": "no-subject", "message": f"nothing to diarise: {error}"}) from error
+    speakers: list[SpeakerOut] = []
+    model = "caller-supplied embedding"
+    for part in parts:
+        try:
+            probe, model = _embed(request.modality, part.media, request.content_type)
+        except HTTPException as error:
+            detail = error.detail if isinstance(error.detail, dict) else {}
+            if detail.get("error") == "no-subject":
+                continue
+            raise
+        matches, decision, reason = _rank_and_decide(probe, request)
+        speakers.append(SpeakerOut(
+            speaker=part.speaker, seconds=part.seconds, probe_hash=hashlib.sha256(part.media).hexdigest(),
+            compared=len(request.candidates), matches=matches, decision=decision, reason=reason,
+        ))
+    if not speakers:
+        raise HTTPException(status_code=422, detail={"error": "no-subject", "message": "no speaker in the probe could be embedded"})
+    lead = min(speakers, key=lambda s: (s.matches[0].distance_bp if s.matches else 10_001, s.speaker))
+    return CompareResponse(
+        model=model,
+        probe_hash=hashlib.sha256(media).hexdigest(),
+        compared=len(request.candidates),
+        matches=lead.matches,
+        decision=lead.decision,
+        reason=f"{len(speakers)} speakers compared separately; leading with {lead.speaker}: {lead.reason}",
+        speakers=speakers,
+        diariser=diariser.model,
+    )
 
 
 @app.post("/compare", response_model=CompareResponse, dependencies=[Depends(require_enabled)])
 def compare(request: CompareRequest) -> CompareResponse:
     if request.probe_media_b64 is None and request.probe_embedding is None:
         raise HTTPException(status_code=422, detail={"error": "no-probe", "message": "a probe (media or embedding) is required"})
+    if request.diarize:
+        if request.modality != "VOICE":
+            raise HTTPException(status_code=422, detail={"error": "diarize-voice-only", "message": "diarisation applies to voice probes only"})
+        if request.probe_media_b64 is None:
+            raise HTTPException(status_code=422, detail={"error": "no-probe", "message": "diarisation needs the probe media, not an embedding"})
+        return _compare_by_speaker(request, _decode(request.probe_media_b64))
     if request.probe_media_b64 is not None:
         media = _decode(request.probe_media_b64)
         probe, model = _embed(request.modality, media, request.content_type)
@@ -146,16 +217,5 @@ def compare(request: CompareRequest) -> CompareResponse:
         probe = request.probe_embedding or []
         model = "caller-supplied embedding"
         probe_hash = "embedding:" + hashlib.sha256(",".join(f"{x:.6f}" for x in probe).encode()).hexdigest()
-    try:
-        matches = rank(probe, [(c.enrollment_id, c.embedding) for c in request.candidates], request.top_n)
-    except ValueError as error:
-        raise HTTPException(status_code=422, detail={"error": "bad-embedding", "message": str(error)}) from error
-    outcome = decide(matches, request.threshold_bp, request.margin_bp)
-    return CompareResponse(
-        model=model,
-        probe_hash=probe_hash,
-        compared=len(request.candidates),
-        matches=[MatchOut(enrollment_id=m.enrollment_id, distance_bp=m.distance_bp) for m in matches],
-        decision=outcome.decision,
-        reason=outcome.reason,
-    )
+    matches, decision, reason = _rank_and_decide(probe, request)
+    return CompareResponse(model=model, probe_hash=probe_hash, compared=len(request.candidates), matches=matches, decision=decision, reason=reason)

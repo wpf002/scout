@@ -312,7 +312,9 @@ async function main(): Promise<void> {
       issuedBy: "Scout fixture generator (synthetic data; no real persons or platforms)",
       boundary: { scope: [], entityKinds: [] },
       sourceClasses: ["PUBLIC_RECORD", "SENSOR", "BROKER"],
-      actionClasses: ["COLLECT", "RESOLVE", "READ_GRAPH"],
+      // BIOMETRIC_COMPARE too: the synthetic case is the sandbox for the
+      // recognition screen, against a gallery of made-up people.
+      actionClasses: ["COLLECT", "RESOLVE", "READ_GRAPH", "BIOMETRIC_COMPARE"],
       validFrom: new Date(now.getTime() - 86_400_000),
       validUntil: new Date(now.getTime() + 10 * 365 * 86_400_000),
       createdBy: "seed-v2",

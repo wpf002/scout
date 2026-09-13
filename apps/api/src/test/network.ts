@@ -283,21 +283,30 @@ function fakeRecognition(path: string, body: string): Response {
     return text(JSON.stringify({ model: "stub-embedder (not a recogniser)", dims: 16, embedding: fakeEmbedding(modality, media), media_hash: createHash("sha256").update(media).digest("hex") }), "application/json");
   }
   const media = Buffer.from(String(req["probe_media_b64"]), "base64");
-  const probe = fakeEmbedding(modality, media);
   const candidates = (req["candidates"] as Array<{ enrollment_id: string; embedding: number[] }>) ?? [];
-  const distance = (e: number[]) => Math.round(Math.max(0, Math.min(1, 1 - probe.reduce((s, x, i) => s + x * (e[i] as number), 0))) * 10_000);
-  const matches = candidates.map((c) => ({ enrollment_id: c.enrollment_id, distance_bp: distance(c.embedding) })).sort((a, b) => a.distance_bp - b.distance_bp || a.enrollment_id.localeCompare(b.enrollment_id)).slice(0, Number(req["top_n"] ?? 5));
   const threshold = Number(req["threshold_bp"]);
   const margin = Number(req["margin_bp"] ?? 500);
-  let decision = "INDETERMINATE";
-  let reason = "the gallery has no active template for this modality; nothing was compared";
-  const best = matches[0];
-  if (best !== undefined) {
-    if (best.distance_bp > threshold) { decision = "NO_MATCH"; reason = "outside the threshold"; }
-    else if (matches[1] !== undefined && (matches[1].distance_bp - best.distance_bp) < margin) { decision = "INDETERMINATE"; reason = "top two inside the ambiguity margin"; }
-    else { decision = "MATCH"; reason = "inside the threshold"; }
+  const one = (bytes: Buffer) => {
+    const probe = fakeEmbedding(modality, bytes);
+    const distance = (e: number[]) => Math.round(Math.max(0, Math.min(1, 1 - probe.reduce((s, x, i) => s + x * (e[i] as number), 0))) * 10_000);
+    const matches = candidates.map((c) => ({ enrollment_id: c.enrollment_id, distance_bp: distance(c.embedding) })).sort((a, b) => a.distance_bp - b.distance_bp || a.enrollment_id.localeCompare(b.enrollment_id)).slice(0, Number(req["top_n"] ?? 5));
+    let decision = "INDETERMINATE";
+    let reason = "the gallery has no active template for this modality; nothing was compared";
+    const best = matches[0];
+    if (best !== undefined) {
+      if (best.distance_bp > threshold) { decision = "NO_MATCH"; reason = "outside the threshold"; }
+      else if (matches[1] !== undefined && (matches[1].distance_bp - best.distance_bp) < margin) { decision = "INDETERMINATE"; reason = "top two inside the ambiguity margin"; }
+      else { decision = "MATCH"; reason = "inside the threshold"; }
+    }
+    return { probe_hash: createHash("sha256").update(bytes).digest("hex"), compared: candidates.length, matches, decision, reason };
+  };
+  if (req["diarize"] === true) {
+    const parts = media.toString("latin1").split("|").filter((p) => p.length > 0).map((p) => Buffer.from(p, "latin1"));
+    const speakers = parts.map((p, i) => ({ speaker: `SPEAKER_${String(i).padStart(2, "0")}`, seconds: null, ...one(p) }));
+    const lead = [...speakers].sort((a, b) => (a.matches[0]?.distance_bp ?? 10_001) - (b.matches[0]?.distance_bp ?? 10_001))[0] as (typeof speakers)[number];
+    return text(JSON.stringify({ model: "stub-embedder (not a recogniser)", probe_hash: createHash("sha256").update(media).digest("hex"), compared: candidates.length, matches: lead.matches, decision: lead.decision, reason: `${speakers.length} speakers compared separately; leading with ${lead.speaker}: ${lead.reason}`, speakers, diariser: "stub-diariser" }), "application/json");
   }
-  return text(JSON.stringify({ model: "stub-embedder (not a recogniser)", probe_hash: createHash("sha256").update(media).digest("hex"), compared: candidates.length, matches, decision, reason }), "application/json");
+  return text(JSON.stringify({ model: "stub-embedder (not a recogniser)", ...one(media) }), "application/json");
 }
 
 const offline: typeof fetch = async (input, init) => {

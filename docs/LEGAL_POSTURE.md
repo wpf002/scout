@@ -67,7 +67,10 @@ comparison decrypts only the unrevoked, unexpired templates of one modality
 in one gallery for that call, and its outcome is written to the immutable
 `BiometricComparison` table (probe hash, gallery, authorization, requester,
 top candidates, threshold, decision) before the answer returns. A close call
-between two candidates is `INDETERMINATE`, never a confident identity.
+between two candidates is `INDETERMINATE`, never a confident identity. A
+recording with several speakers is diarised first and each speaker is
+compared and logged as its own comparison; speakers are never averaged into
+one probe.
 
 **Where.** `refuseOpenWorldBiometric()`, `refuseBiometricIndexing()`
 (`packages/scope`), `apps/api/src/v2/recognition.ts` (custodian, gates,

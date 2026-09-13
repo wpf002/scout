@@ -204,6 +204,85 @@ export interface ImageryTile {
   cloudOptimized: boolean;
 }
 
+export type Modality = "FACE" | "VOICE";
+export const LAWFUL_BASES = ["CONSENT", "COURT_ORDER", "STATUTORY_AUTHORITY", "EMPLOYMENT", "CONTRACT"] as const;
+export const MEDIA_ORIGINS = ["consented-upload", "court-ordered", "employment-record"] as const;
+
+export interface GallerySummary {
+  id: string;
+  name: string;
+  purpose: string;
+  custodianOrg: string;
+  lawfulBasis: string;
+  lawfulBasisDocumentRef: string;
+  reviewDueAt: string;
+  reviewOverdue: boolean;
+  enrollments: number;
+  comparisons: number;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface Enrollment {
+  id: string;
+  entityId: string;
+  label: string | null;
+  kind: string | null;
+  modality: Modality;
+  enrolledAt: string;
+  enrolledBy: string;
+  lawfulBasisDocumentRef: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  active: boolean;
+}
+
+export interface ComparisonRecord {
+  id: string;
+  requestedAt: string;
+  requestedBy: string;
+  modality: Modality;
+  decision: "MATCH" | "NO_MATCH" | "INDETERMINATE";
+  probeHash: string;
+  thresholdBp: number;
+  topMatches: Array<{ enrollmentId: string; distanceBp: number; entityId: string | null; label: string | null }>;
+}
+
+export interface GalleryDetail {
+  enabled: boolean;
+  gallery: GallerySummary & { reviewOverdue: boolean };
+  enrollments: Enrollment[];
+  comparisons: ComparisonRecord[];
+}
+
+export interface SpeakerOutcome {
+  comparisonId: string;
+  speaker: string | null;
+  seconds: number | null;
+  probeHash: string;
+  compared: number;
+  decision: "MATCH" | "NO_MATCH" | "INDETERMINATE";
+  reason: string;
+  matches: CompareOutcome["matches"];
+}
+
+export interface CompareOutcome {
+  comparisonId: string;
+  comparisonIds: string[];
+  diariser: string | null;
+  speakers: SpeakerOutcome[] | null;
+  galleryId: string;
+  modality: Modality;
+  probeHash: string;
+  compared: number;
+  thresholdBp: number;
+  marginBp: number;
+  decision: "MATCH" | "NO_MATCH" | "INDETERMINATE";
+  reason: string;
+  model: string;
+  matches: Array<{ enrollmentId: string; entityId: string | null; label: string | null; kind: string | null; distanceBp: number; withinThreshold: boolean }>;
+}
+
 export interface TimelineEvent {
   at: string;
   kind: "observation" | "membership" | "edge-start" | "edge-end";
@@ -240,6 +319,24 @@ export const v2 = {
 
   entities: (caseId: string, kind?: EntityKind, limit = 500) =>
     request<{ count: number; sources: SourceCoverage[]; entities: Entity[] }>(`/v2/entities?${q({ caseId, kind, limit })}`),
+
+  galleries: () => request<{ enabled: boolean; count: number; galleries: GallerySummary[] }>("/v2/galleries"),
+
+  gallery: (galleryId: string, caseId?: string) => request<GalleryDetail>(`/v2/galleries/${encodeURIComponent(galleryId)}?${q({ caseId })}`),
+
+  createGallery: (body: { name: string; purpose: string; custodianOrg: string; lawfulBasis: string; lawfulBasisDocumentRef: string; reviewDueAt: string; confirmLawfulBasis: true }) =>
+    request<GallerySummary>("/v2/galleries", { method: "POST", body }),
+
+  enroll: (
+    galleryId: string,
+    body: { caseId: string; entityId: string; modality: Modality; mediaB64: string; contentType: string; origin: string; lawfulBasisDocumentRef: string; expiresAt: string },
+  ) => request<{ enrollment: Enrollment; model: string; dims: number; mediaHash: string }>(`/v2/galleries/${encodeURIComponent(galleryId)}/enroll`, { method: "POST", body }),
+
+  revokeEnrollment: (galleryId: string, enrollmentId: string, reason: string) =>
+    request<Enrollment>(`/v2/galleries/${encodeURIComponent(galleryId)}/enrollments/${encodeURIComponent(enrollmentId)}/revoke`, { method: "POST", body: { reason } }),
+
+  compare: (body: { caseId: string; galleryId: string; modality: Modality; mediaB64: string; contentType: string; topN?: number; diarize?: boolean }) =>
+    request<CompareOutcome>("/v2/compare", { method: "POST", body }),
 
   imageryTiles: (caseId: string) => request<{ count: number; tiles: ImageryTile[] }>(`/v2/imagery/tiles?${q({ caseId })}`),
 

@@ -679,6 +679,9 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     return { caseId, authorizationId: ctx.authorizationId, ...asked };
   });
 
+  const logRead = async (operator: string, authorizationId: string, targetType: string, targetIds: string[], queryText: string) =>
+    prisma.accessLog.create({ data: { actor: operator, authorizationId, action: "read", targetType, targetIds, queryText, resultCount: targetIds.length } });
+
   // ── recognition (gallery-restricted) ───────────────────────────────────
 
   app.get("/v2/galleries", async (request) => {
@@ -692,6 +695,43 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
       galleries: rows.map((g) => ({
         id: g.id, name: g.name, purpose: g.purpose, custodianOrg: g.custodianOrg, lawfulBasis: g.lawfulBasis, lawfulBasisDocumentRef: g.lawfulBasisDocumentRef,
         reviewDueAt: g.reviewDueAt, reviewOverdue: g.reviewDueAt <= now, enrollments: g._count.enrollments, comparisons: g._count.comparisons, createdAt: g.createdAt, createdBy: g.createdBy,
+      })),
+    };
+  });
+
+  app.get<{ Params: { galleryId: string }; Querystring: Record<string, string | undefined> }>("/v2/galleries/:galleryId", async (request) => {
+    const query = z.object({ caseId: z.string().min(1).optional() }).parse(request.query);
+    const operator = operatorOf(request);
+    const gallery = await prisma.gallery.findUnique({ where: { id: request.params.galleryId } });
+    if (gallery === null) throw notFound(`Gallery ${request.params.galleryId} does not exist.`);
+    const now = new Date();
+    const enrollments = await prisma.galleryEnrollment.findMany({ where: { galleryId: gallery.id }, orderBy: { enrolledAt: "asc" } });
+    const comparisons = await prisma.biometricComparison.findMany({ where: { galleryId: gallery.id }, orderBy: { requestedAt: "desc" }, take: 50 });
+    // Entity labels are a graph read, so they need a case's authorization;
+    // without one the enrollments carry ids only.
+    let labels = new Map<string, { label: string; kind: string }>();
+    if (query.caseId !== undefined) {
+      const { ctx } = await scopeContextForCase(query.caseId, operator);
+      ctx.assertAction("READ_GRAPH");
+      labels = await visibleEntities(ctx, now, [...new Set(enrollments.map((e) => e.entityId))]);
+      await logRead(operator, ctx.authorizationId, "GalleryEnrollment", enrollments.map((e) => e.id), `gallery ${gallery.id}`);
+    }
+    await recordAuditEvent({ action: "v2.gallery.read", actor: operator, detail: { galleryId: gallery.id, enrollments: enrollments.length, comparisons: comparisons.length } });
+    const byEnrollment = new Map(enrollments.map((e) => [e.id, e]));
+    return {
+      enabled: recognitionEnabled(),
+      gallery: { ...gallery, reviewOverdue: gallery.reviewDueAt <= now },
+      enrollments: enrollments.map((e) => ({
+        id: e.id, entityId: e.entityId, label: labels.get(e.entityId)?.label ?? null, kind: labels.get(e.entityId)?.kind ?? null, modality: e.modality,
+        enrolledAt: e.enrolledAt, enrolledBy: e.enrolledBy, lawfulBasisDocumentRef: e.lawfulBasisDocumentRef, expiresAt: e.expiresAt, revokedAt: e.revokedAt,
+        active: e.revokedAt === null && e.expiresAt > now,
+      })),
+      comparisons: comparisons.map((c) => ({
+        id: c.id, requestedAt: c.requestedAt, requestedBy: c.requestedBy, modality: c.modality, decision: c.decision, probeHash: c.probeHash, thresholdBp: c.thresholdBp,
+        topMatches: (c.topMatches as Array<{ enrollmentId: string; distanceBp: number }>).map((m) => {
+          const e = byEnrollment.get(m.enrollmentId);
+          return { ...m, entityId: e?.entityId ?? null, label: e === undefined ? null : (labels.get(e.entityId)?.label ?? null) };
+        }),
       })),
     };
   });
@@ -736,8 +776,6 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     });
   });
 
-  const logRead = async (operator: string, authorizationId: string, targetType: string, targetIds: string[], queryText: string) =>
-    prisma.accessLog.create({ data: { actor: operator, authorizationId, action: "read", targetType, targetIds, queryText, resultCount: targetIds.length } });
 
   // ── imagery ────────────────────────────────────────────────────────────
 
