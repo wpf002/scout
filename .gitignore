@@ -19,3 +19,11 @@ coverage/
 # Copied from node_modules at dev/build time; see apps/web/scripts/copy-map-worker.mjs
 apps/web/public/maplibre-gl-worker.mjs
 apps/web/public/maplibre-gl-shared.mjs
+
+# python services
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+
+# v2 env template is a template, not a secret
+!.env.v2.example

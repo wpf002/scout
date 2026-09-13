@@ -38,6 +38,17 @@ export const DENY_REASONS = [
   "authorization-missing",
   /** The subject value could not be parsed into something matchable. */
   "unparseable-subject",
+  // ── v2 scope context ──
+  /** The authorization was revoked. Nothing under it runs again. */
+  "authorization-revoked",
+  /** The current time is past the authorization's validUntil. */
+  "authorization-expired",
+  /** The current time is before the authorization's validFrom. */
+  "authorization-not-started",
+  /** The authorization does not list this action class. */
+  "action-not-permitted",
+  /** The authorization does not list this source class. */
+  "source-class-not-permitted",
 ] as const;
 
 export type DenyReason = (typeof DENY_REASONS)[number];
