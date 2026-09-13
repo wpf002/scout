@@ -141,38 +141,91 @@ def model_version(kind: str) -> str | None:
     return f"splink-{kind.lower()}-{digest}"
 
 
+def _level_counts(comparison: Any) -> int:
+    """Non-null levels of a comparison, in the order `.configure()` expects."""
+    levels = comparison.get_comparison("duckdb").comparison_levels
+    return sum(1 for lvl in levels if not lvl.is_null_level)
+
+
+def calibrate(kind: str, rows: list[dict[str, Any]], label_column: str, out: Path | None = None) -> Path:
+    """m and u straight from labelled pairs.
+
+    Random-sampling u assumes a random pair is almost never a match. In a
+    fixture where every entity has three to six records, four per cent of all
+    pairs are matches, so sampled u is contaminated and the model lands most
+    true pairs in the review band. With labels there is no need to sample:
+    for every comparison level, m is its frequency among pairs of the same
+    entity and u its frequency among pairs of different entities, and the
+    prior is the share of pairs that are matches. All of it is written into
+    the model file, level by level, where it can be read.
+    """
+    spec = _spec(kind)
+    frame = pd.DataFrame(rows)
+    scan = SettingsCreator(
+        link_type="dedupe_only",
+        comparisons=spec.comparisons,
+        blocking_rules_to_generate_predictions=["1=1"],
+        retain_intermediate_calculation_columns=True,
+        additional_columns_to_retain=[label_column],
+    )
+    linker = Linker(frame, scan, db_api=DuckDBAPI())
+    pairs = linker.inference.predict(threshold_match_probability=0.0).as_record_dict()
+    names = [c.create_output_column_name() for c in spec.comparisons]
+
+    same = [p for p in pairs if p[f"{label_column}_l"] == p[f"{label_column}_r"]]
+    diff = [p for p in pairs if p[f"{label_column}_l"] != p[f"{label_column}_r"]]
+    prior = len(same) / max(1, len(pairs))
+
+    calibrated = []
+    fresh = _spec(kind).comparisons
+    for comparison, name in zip(fresh, names):
+        k = _level_counts(comparison)
+        # Position 0 is the top level, which Splink numbers as gamma k-1.
+        def freq(group: list[dict[str, Any]], gamma: int) -> float:
+            observed = [p for p in group if p.get(f"gamma_{name}", -1) >= 0]
+            hits = sum(1 for p in observed if int(p[f"gamma_{name}"]) == gamma)
+            # Add-one smoothing: an unobserved level is rare, not impossible.
+            return (hits + 1) / (len(observed) + k)
+        m = [freq(same, k - 1 - pos) for pos in range(k)]
+        u = [freq(diff, k - 1 - pos) for pos in range(k)]
+        calibrated.append(comparison.configure(m_probabilities=m, u_probabilities=u))
+
+    final = SettingsCreator(
+        link_type="dedupe_only",
+        comparisons=calibrated,
+        blocking_rules_to_generate_predictions=[block_on(*r.columns) for r in spec.blocking],
+        probability_two_random_records_match=max(prior, 1e-6),
+        retain_intermediate_calculation_columns=True,
+    )
+    path = out or model_path(kind)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Linker(frame.drop(columns=[label_column]), final, db_api=DuckDBAPI()).misc.save_model_to_json(str(path), overwrite=True)
+    return path
+
+
 def train(
     kind: str,
     rows: list[dict[str, Any]],
     out: Path | None = None,
     label_column: str | None = None,
 ) -> Path:
-    """Fit the m and u probabilities for one kind.
+    """Fit a model for one kind.
 
-    u (how often a level occurs between two *different* entities) comes from
-    random sampling, which needs no labels. m (how often it occurs between two
-    records of the *same* entity) is where labels matter: on a few hundred
-    rows EM lands on m values that put most true pairs in the review band, so
-    when a label column is present, m is calibrated from it instead. That is
-    the spec's "train with EM, calibrate on the labelled fixture". The label
-    column is a training input only; it is never a comparison and never sent
-    by the service.
+    With labels, `calibrate()` computes every m and u from the labelled pairs.
+    Without them, EM on unlabelled rows with u from random sampling, which is
+    what a deployment with no fixture can do; the model file says which.
     """
+    if label_column is not None:
+        return calibrate(kind, rows, label_column, out)
+
     spec = _spec(kind)
-    # The label column stays out of the settings on purpose: anything listed
-    # there is written into the saved model and then selected at predict time,
-    # where no label exists. Splink reads the label straight off the input
-    # table for m estimation.
     linker = Linker(pd.DataFrame(rows), _settings(spec), db_api=DuckDBAPI())
     linker.training.estimate_probability_two_random_records_match(
         [block_on(*r.columns) for r in spec.deterministic], recall=0.7
     )
     linker.training.estimate_u_using_random_sampling(max_pairs=2_000_000)
-    if label_column is not None:
-        linker.training.estimate_m_from_label_column(label_column)
-    else:
-        for session in spec.em_sessions:
-            linker.training.estimate_parameters_using_expectation_maximisation(block_on(*session.columns))
+    for session in spec.em_sessions:
+        linker.training.estimate_parameters_using_expectation_maximisation(block_on(*session.columns))
     path = out or model_path(kind)
     path.parent.mkdir(parents=True, exist_ok=True)
     linker.misc.save_model_to_json(str(path), overwrite=True)

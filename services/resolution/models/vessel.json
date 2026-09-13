@@ -1,11 +1,11 @@
 {
     "link_type": "dedupe_only",
-    "probability_two_random_records_match": 0.03027048139830095,
+    "probability_two_random_records_match": 0.039986329460013674,
     "retain_matching_columns": true,
     "retain_intermediate_calculation_columns": true,
     "additional_columns_to_retain": [],
     "sql_dialect": "duckdb",
-    "linker_uid": "gh3eaku2",
+    "linker_uid": "raogb37h",
     "em_convergence": 0.0001,
     "max_iterations": 25,
     "bayes_factor_column_prefix": "bf_",
@@ -45,15 +45,16 @@
                 {
                     "sql_condition": "\"mmsi_l\" = \"mmsi_r\"",
                     "label_for_charts": "Exact match on mmsi",
-                    "m_probability": 1.0,
-                    "u_probability": 0.03996983408748114,
+                    "m_probability": 0.9818181818181818,
+                    "u_probability": 0.000784313725490196,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "All other comparisons",
-                    "u_probability": 0.9600301659125189,
+                    "m_probability": 0.01818181818181818,
+                    "u_probability": 0.9992156862745099,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 }
@@ -73,15 +74,16 @@
                 {
                     "sql_condition": "\"imo_l\" = \"imo_r\"",
                     "label_for_charts": "Exact match on imo",
-                    "m_probability": 1.0,
-                    "u_probability": 0.03,
+                    "m_probability": 0.9090909090909091,
+                    "u_probability": 0.0034129692832764505,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "All other comparisons",
-                    "u_probability": 0.97,
+                    "m_probability": 0.09090909090909091,
+                    "u_probability": 0.9965870307167235,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 }
@@ -101,29 +103,32 @@
                 {
                     "sql_condition": "\"name_l\" = \"name_r\"",
                     "label_for_charts": "Exact match on name",
-                    "m_probability": 1.0,
-                    "u_probability": 0.04408749145591251,
+                    "m_probability": 0.9752066115702479,
+                    "u_probability": 0.004621400639886242,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "jaro_winkler_similarity(\"name_l\", \"name_r\") >= 0.92",
                     "label_for_charts": "Jaro-Winkler distance of name >= 0.92",
-                    "u_probability": 0.017429938482570063,
+                    "m_probability": 0.008264462809917356,
+                    "u_probability": 0.01848560255954497,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "jaro_winkler_similarity(\"name_l\", \"name_r\") >= 0.8",
                     "label_for_charts": "Jaro-Winkler distance of name >= 0.8",
-                    "u_probability": 0.1291866028708134,
+                    "m_probability": 0.008264462809917356,
+                    "u_probability": 0.1347316032705297,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "All other comparisons",
-                    "u_probability": 0.8092959671907041,
+                    "m_probability": 0.008264462809917356,
+                    "u_probability": 0.8421613935300392,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 }
@@ -143,15 +148,16 @@
                 {
                     "sql_condition": "\"callsign_l\" = \"callsign_r\"",
                     "label_for_charts": "Exact match on callsign",
-                    "m_probability": 1.0,
-                    "u_probability": 0.03666666666666667,
+                    "m_probability": 0.9090909090909091,
+                    "u_probability": 0.010238907849829351,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "All other comparisons",
-                    "u_probability": 0.9633333333333334,
+                    "m_probability": 0.09090909090909091,
+                    "u_probability": 0.9897610921501706,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 }
