@@ -1,32 +1,24 @@
-import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { subjectSchema } from "@scout/sources";
 import {
-  ScopeError,
   actionClassSchema,
   sourceClassSchema,
 } from "@scout/scope";
 import {
-  assertMayCollect,
-  assertProvenance,
-  contentHash,
   fusionEntityKindSchema,
-  type ObservationInput,
 } from "@scout/fusion";
 import {
-  insertObservations,
   positionsOf,
   prisma,
   recordAuditEvent,
   toScopeEntry,
-  type ObservationRow,
 } from "@scout/db";
 import { HttpError, badRequest, notFound } from "../errors.js";
 import { operatorOf } from "../auth.js";
-import { logEvent } from "../observability.js";
-import { upstreamMessage } from "../adapters/base.js";
 import { scopeContextForCase } from "../v2/scope.js";
+import { runCollection } from "../v2/collect.js";
+import { agentTick, approveProposal, createMonitor, disableMonitor, executeProposal, monitorSchema, proposalSchema, propose, rejectProposal } from "../agent/index.js";
 import { ask } from "../v2/reason.js";
 import { objectStore, TILES_BUCKET } from "../v2/storage.js";
 import { compare, compareSchema, createGallery, enroll, enrollSchema, gallerySchema, recognitionEnabled, revokeEnrollment } from "../v2/recognition.js";
@@ -35,12 +27,8 @@ import { deriveLinks } from "../v2/links.js";
 import { coLocationWindow, neighbors, pathBetween, timelineForEntity, visibleEntities } from "../v2/graph.js";
 import { checkGraphConsistency, edgesAsOf } from "@scout/db";
 import {
-  NORMALIZATION_VERSION,
-  ensureCollectionSource,
-  getRunnable,
   isConfigured,
   listRunnable,
-  naiveNormalize,
 } from "../v2/collectors/index.js";
 
 /**
@@ -118,34 +106,6 @@ const observationsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(2_000).default(100),
   raw: z.enum(["true", "false"]).default("false"),
 });
-
-/**
- * Deterministic id: the same fact from the same source under the same
- * authorization is the same row. A second authorization collecting the same
- * fact gets its own row, because provenance names one authorization per row.
- */
-function observationId(sourceId: string, authorizationId: string, hash: string): string {
-  return `obs_${createHash("sha256").update(`${sourceId}|${authorizationId}|${hash}`).digest("hex").slice(0, 24)}`;
-}
-
-function toRow(input: ObservationInput): ObservationRow {
-  const hash = contentHash(input.normalizedPayload);
-  return {
-    id: observationId(input.sourceId, input.authorizationId, hash),
-    sourceId: input.sourceId,
-    authorizationId: input.authorizationId,
-    caseId: input.caseId ?? null,
-    collectedAt: input.collectedAt,
-    observedAt: input.observedAt,
-    rawPayload: input.rawPayload,
-    normalizedPayload: input.normalizedPayload,
-    contentHash: hash,
-    position: input.position,
-    confidenceBp: input.confidenceBp,
-    indeterminate: input.indeterminate,
-    entityKind: input.entityKind ?? null,
-  };
-}
 
 function serializeAuthorization(row: {
   id: string; reference: string; issuedBy: string; boundary: unknown;
@@ -278,124 +238,8 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     const body = collectSchema.parse(request.body);
     const operator = operatorOf(request);
     const { ctx, caseId } = await scopeContextForCase(body.caseId, operator);
-
-    const collector = getRunnable(body.collectorId);
-    if (collector === undefined) throw notFound(`Collector "${body.collectorId}" is not registered.`);
-
-    // Order matters and mirrors v1's adapter gate: every refusal is decided
-    // before anything is fetched, and the most specific reason wins.
-    assertMayCollect(ctx, collector);
-    if (!ctx.permitsEntityKind(collector.entityKind)) {
-      throw new ScopeError(
-        "out-of-scope",
-        `Authorization ${ctx.reference} does not cover ${collector.entityKind} entities.`,
-      );
-    }
-    if (collector.subjectRequired) {
-      if (body.subject === undefined) {
-        throw badRequest(`${collector.name} collects about a subject; none was given.`);
-      }
-      ctx.assertCovers(body.subject);
-    }
-
-    // The collector's own parameters, checked before anything is fetched or
-    // audited: a bad bounding box is the caller's error, not an upstream's.
-    const params = collector.paramsSchema === undefined ? body.params : (collector.paramsSchema.parse(body.params ?? {}) as Record<string, unknown>);
-
-    await ensureCollectionSource(collector);
-
-    if (!isConfigured(collector)) {
-      await recordAuditEvent({
-        caseId, action: "v2.collection.ran", actor: operator,
-        detail: { collectorId: collector.id, authorizationId: ctx.authorizationId, outcome: "inert", reason: "not-configured" },
-      });
-      return reply.send({
-        status: "inert",
-        collectorId: collector.id,
-        reason: "not-configured",
-        message: `${collector.name} needs ${collector.configuredBy} set. Nothing was requested.`,
-        written: 0,
-        skipped: 0,
-        observationIds: [],
-      });
-    }
-
-    const collectedAt = new Date();
-    const meta = { collectedAt, authorizationId: ctx.authorizationId, caseId };
-
-    let raw: unknown;
-    try {
-      raw = await collector.fetch({ subject: body.subject, params, authorizationId: ctx.authorizationId, caseId });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await recordAuditEvent({
-        caseId, action: "v2.collection.ran", actor: operator,
-        detail: { collectorId: collector.id, authorizationId: ctx.authorizationId, outcome: "error", errorMessage: upstreamMessage(collector.name, message) },
-      });
-      return reply.send({
-        status: "error",
-        collectorId: collector.id,
-        reason: "upstream-error",
-        message: upstreamMessage(collector.name, message),
-        written: 0,
-        skipped: 0,
-        observationIds: [],
-      });
-    }
-
-    const inputs = collector.normalize(raw, meta).map((input) => assertProvenance(input));
-
-    // The window is re-checked here rather than trusted from the top of the
-    // handler: a slow upstream can outlive a short authorization.
-    ctx.assertLive();
-
-    const rows = inputs.map(toRow);
-    const written = await insertObservations(rows);
-    const writtenSet = new Set(written);
-
-    const identifierRows = inputs.flatMap((input, index) => {
-      const id = rows[index]?.id;
-      if (id === undefined || !writtenSet.has(id)) return [];
-      return input.identifiers.map((identifier) => ({
-        observationId: id,
-        kind: identifier.kind,
-        value: identifier.value,
-        normalizedValue: naiveNormalize(identifier.kind, identifier.value),
-        normalizationVersion: NORMALIZATION_VERSION,
-      }));
-    });
-    if (identifierRows.length > 0) {
-      await prisma.identifier.createMany({ data: identifierRows });
-    }
-
-    const skipped = rows.length - written.length;
-    await recordAuditEvent({
-      caseId, action: "v2.collection.ran", actor: operator,
-      detail: {
-        collectorId: collector.id,
-        authorizationId: ctx.authorizationId,
-        outcome: "ok",
-        subjectKind: body.subject?.kind ?? null,
-        requested: rows.length,
-        written: written.length,
-        skipped,
-      },
-    });
-    logEvent(request.log, "collection.ran", {
-      collectorId: collector.id, requested: rows.length, written: written.length, skipped,
-    });
-
-    return reply.send({
-      status: "ok",
-      collectorId: collector.id,
-      sourceClass: collector.sourceClass,
-      entityKind: collector.entityKind,
-      requested: rows.length,
-      written: written.length,
-      skipped,
-      observationIds: written,
-      sourcesConsulted: [{ sourceId: collector.id, status: "ok", records: rows.length }],
-    });
+    const result = await runCollection({ ctx, caseId, operator, collectorId: body.collectorId, subject: body.subject, params: body.params, log: request.log });
+    return reply.send(result);
   });
 
   // ── observations ───────────────────────────────────────────────────────
@@ -762,6 +606,99 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     const operator = operatorOf(request);
     const { ctx } = await scopeContextForCase(body.caseId, operator);
     return compare({ ctx, operator, body });
+  });
+
+  // ── the agent: observe, propose, approve ───────────────────────────────
+
+  app.post("/v2/agent/proposals", async (request, reply) => {
+    const body = proposalSchema.parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(body.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    return reply.status(201).send(await propose({ ctx, operator, ...body, caseId }));
+  });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/agent/proposals", async (request) => {
+    const query = z.object({ caseId: z.string().min(1), status: z.enum(["PROPOSED", "APPROVED", "EXECUTED", "REJECTED", "REFUSED"]).optional() }).parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const rows = await prisma.agentProposal.findMany({
+      where: { caseId, authorizationId: ctx.authorizationId, ...(query.status === undefined ? {} : { status: query.status }) },
+      orderBy: { createdAt: "desc" }, take: 200, include: { approvals: { orderBy: { approvedAt: "desc" } } },
+    });
+    await logRead(operator, ctx.authorizationId, "AgentProposal", rows.map((r) => r.id), "proposals");
+    return { caseId, count: rows.length, maxAutonomousTier: process.env["AGENT_MAX_AUTONOMOUS_TIER"] ?? "observe", proposals: rows };
+  });
+
+  app.post<{ Params: { proposalId: string } }>("/v2/agent/proposals/:proposalId/approve", async (request) => {
+    const body = z.object({ caseId: z.string().min(1), ttlMinutes: z.number().int().min(1).max(24 * 60).default(60), note: z.string().trim().min(1).max(2000) }).parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx } = await scopeContextForCase(body.caseId, operator);
+    return approveProposal({ ctx, proposalId: request.params.proposalId, approver: operator, ttlMinutes: body.ttlMinutes, note: body.note });
+  });
+
+  app.post<{ Params: { proposalId: string } }>("/v2/agent/proposals/:proposalId/reject", async (request) => {
+    const body = z.object({ caseId: z.string().min(1), reason: z.string().trim().min(1).max(2000) }).parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx } = await scopeContextForCase(body.caseId, operator);
+    return rejectProposal({ ctx, proposalId: request.params.proposalId, operator, reason: body.reason });
+  });
+
+  app.post<{ Params: { proposalId: string } }>("/v2/agent/proposals/:proposalId/execute", async (request) => {
+    const body = z.object({ caseId: z.string().min(1) }).parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(body.caseId, operator);
+    return executeProposal({ ctx, caseId, proposalId: request.params.proposalId, operator, log: request.log });
+  });
+
+  app.post("/v2/agent/monitors", async (request, reply) => {
+    const body = monitorSchema.parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(body.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    return reply.status(201).send(await createMonitor({ ctx, caseId, operator, kind: body.kind, name: body.name, params: body.params }));
+  });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/agent/monitors", async (request) => {
+    const query = z.object({ caseId: z.string().min(1) }).parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const rows = await prisma.graphMonitor.findMany({ where: { caseId, authorizationId: ctx.authorizationId }, orderBy: { createdAt: "desc" }, include: { _count: { select: { alerts: true } } } });
+    return { caseId, count: rows.length, monitors: rows.map((m) => ({ ...m, alerts: m._count.alerts, _count: undefined })) };
+  });
+
+  app.post<{ Params: { monitorId: string } }>("/v2/agent/monitors/:monitorId/disable", async (request) => {
+    const body = z.object({ caseId: z.string().min(1), reason: z.string().trim().min(1).max(500) }).parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx } = await scopeContextForCase(body.caseId, operator);
+    return disableMonitor({ ctx, monitorId: request.params.monitorId, operator, reason: body.reason });
+  });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/agent/alerts", async (request) => {
+    const query = z.object({ caseId: z.string().min(1), limit: z.coerce.number().int().min(1).max(500).default(100) }).parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const rows = await prisma.graphAlert.findMany({ where: { caseId, authorizationId: ctx.authorizationId }, orderBy: { at: "desc" }, take: query.limit, include: { monitor: { select: { name: true, kind: true } } } });
+    await logRead(operator, ctx.authorizationId, "GraphAlert", rows.map((r) => r.id), "alerts");
+    return { caseId, count: rows.length, alerts: rows };
+  });
+
+  app.post<{ Params: { alertId: string } }>("/v2/agent/alerts/:alertId/acknowledge", async (request) => {
+    const body = z.object({ caseId: z.string().min(1) }).parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx } = await scopeContextForCase(body.caseId, operator);
+    const alert = await prisma.graphAlert.findFirst({ where: { id: request.params.alertId, authorizationId: ctx.authorizationId } });
+    if (alert === null) throw notFound(`Alert ${request.params.alertId} is not under this authorization.`);
+    return prisma.graphAlert.update({ where: { id: alert.id }, data: { acknowledgedAt: new Date(), acknowledgedBy: operator } });
+  });
+
+  // A sweep on demand: what the scheduler does on its timer.
+  app.post("/v2/agent/tick", async (request) => {
+    const operator = operatorOf(request);
+    return agentTick(operator, Date.now());
   });
 
   // ── the temporal graph ─────────────────────────────────────────────────

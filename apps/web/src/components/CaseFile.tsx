@@ -16,6 +16,7 @@ import { MonitorPanel } from "@/components/MonitorPanel";
 import { AuditPanel } from "@/components/AuditPanel";
 import { ReviewQueue } from "@/components/ReviewQueue";
 import { RecognitionPanel } from "@/components/RecognitionPanel";
+import { AgentPanel } from "@/components/AgentPanel";
 import { ExportPanel } from "@/components/ExportPanel";
 import type {
   AuditView,
@@ -47,6 +48,7 @@ type Tab =
   | "graph"
   | "review"
   | "recognition"
+  | "agent"
   | "timeline"
   | "findings"
   | "monitors"
@@ -61,6 +63,7 @@ const TABS: Array<{ id: Tab; name: string; hint: string }> = [
   { id: "graph", name: "Graph", hint: "How the entities connect" },
   { id: "review", name: "Review", hint: "Pairs the resolution model could not decide" },
   { id: "recognition", name: "Recognition", hint: "Enrolled galleries and 1:N comparison; off unless enabled" },
+  { id: "agent", name: "Agent", hint: "What the agent watches and proposes; what you approve" },
   { id: "timeline", name: "Timeline", hint: "What happened, in order" },
   { id: "findings", name: "Findings", hint: "What was kept, with provenance" },
   { id: "monitors", name: "Monitors", hint: "Watches that run on a schedule" },
@@ -271,6 +274,7 @@ export function CaseFile() {
               <ReviewQueue record={record} onCount={setReviewCount} onDecided={onFindingSaved} />
             ) : null}
             {tab === "recognition" ? <RecognitionPanel record={record} onActed={onFindingSaved} /> : null}
+            {tab === "agent" ? <AgentPanel record={record} onActed={onFindingSaved} /> : null}
             {tab === "timeline" ? <TimelineBoard record={record} /> : null}
             {tab === "findings" ? <FindingsBoard findings={findings} /> : null}
             {tab === "monitors" ? (

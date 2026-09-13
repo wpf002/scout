@@ -309,6 +309,15 @@ function fakeRecognition(path: string, body: string): Response {
   return text(JSON.stringify({ model: "stub-embedder (not a recogniser)", ...one(media) }), "application/json");
 }
 
+/** Webhooks the agent posted to `https://hooks.example/...`, for assertions. */
+const webhooks: Array<{ url: string; body: unknown }> = [];
+export function webhookCalls(): Array<{ url: string; body: unknown }> {
+  return [...webhooks];
+}
+export function clearWebhookCalls(): void {
+  webhooks.length = 0;
+}
+
 const offline: typeof fetch = async (input, init) => {
   const url =
     typeof input === "string"
@@ -321,6 +330,10 @@ const offline: typeof fetch = async (input, init) => {
     return fakeResolve(init.body);
   }
   if (/^http:\/\/127\.0\.0\.1:9000\//.test(url)) return s3(url, init);
+  if (/^https:\/\/hooks\.example\//.test(url)) {
+    webhooks.push({ url, body: typeof init?.body === "string" ? JSON.parse(init.body) : null });
+    return new Response(url.endsWith("/down") ? "no" : "ok", { status: url.endsWith("/down") ? 503 : 200 });
+  }
   const recognition = /^http:\/\/127\.0\.0\.1:8200(\/embed|\/compare)$/.exec(url);
   if (recognition !== null && typeof init?.body === "string") return fakeRecognition(recognition[1] as string, init.body);
   // The process API answers in the format the caller accepted.

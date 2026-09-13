@@ -4,6 +4,7 @@ import { prisma } from "@scout/db";
 import { startMonitorScheduler } from "./monitor/scheduler.js";
 import type { MonitorScheduler } from "./monitor/scheduler.js";
 import { keepWarm } from "./live/warm.js";
+import { agentTick } from "./agent/index.js";
 
 async function main(): Promise<void> {
   const app = await buildServer();
@@ -20,6 +21,20 @@ async function main(): Promise<void> {
     });
   }
 
+  // The agent's observe pass, on the same scheduler with the same guards.
+  // Off unless SCOUT_AGENT_TICK_SECONDS is set: a process that starts
+  // watching and proposing on a timer is something you turned on.
+  let agent: MonitorScheduler | null = null;
+  const agentSeconds = Number(process.env["SCOUT_AGENT_TICK_SECONDS"]);
+  if (Number.isInteger(agentSeconds) && agentSeconds >= 5) {
+    agent = startMonitorScheduler({
+      log: app.log,
+      intervalSeconds: agentSeconds,
+      operator: config.SCOUT_OPERATOR,
+      sweep: (operator, now) => agentTick(operator, now),
+    });
+  }
+
   // Same reasoning as the scheduler above: a timer that makes outbound
   // requests belongs to the running server, not to every server a test builds.
   const stopWarming = keepWarm((id, ms, ok) => {
@@ -30,6 +45,7 @@ async function main(): Promise<void> {
     app.log.info({ signal }, "shutting down");
     stopWarming();
     scheduler?.stop();
+    agent?.stop();
     await app.close();
     await prisma.$disconnect();
     process.exit(0);

@@ -81,3 +81,14 @@ refuse. The fifth is attempted through the real routes. Every
 `ProhibitionError` the API answers is written to the audit log as
 `v2.prohibition.refused` with the actor, the route, the guard and the case
 named, by the error handler, so no route has to remember to.
+
+## The agent
+
+Every agent route runs under `scopeContextForCase`, so a revoked or expired
+authorization refuses proposals, approvals, executions, monitors and
+alerts alike. An approval is a record about one proposal and does not
+carry scope: an approved act passes every gate on its way through
+(`runCollection()` for a dispatch, the boundary for a subject), and a
+scope-expansion request records the ask for the issuer without changing
+the authorization. Monitors are disabled by the sweep the moment their
+authorization stops holding.

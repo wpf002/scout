@@ -283,6 +283,65 @@ export interface CompareOutcome {
   matches: Array<{ enrollmentId: string; entityId: string | null; label: string | null; kind: string | null; distanceBp: number; withinThreshold: boolean }>;
 }
 
+export type AgentTier = "OBSERVE" | "PREPARE" | "CONSEQUENTIAL";
+export type ProposalStatus = "PROPOSED" | "APPROVED" | "EXECUTED" | "REJECTED" | "REFUSED";
+export const ACTION_KINDS = ["draft-report", "stage-collection", "assemble-package", "dispatch-collection", "send-report", "write-external", "request-scope-expansion"] as const;
+export type ActionKind = (typeof ACTION_KINDS)[number];
+
+export interface AgentApproval {
+  id: string;
+  approvedBy: string;
+  approvedAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+  note: string;
+}
+
+export interface AgentProposal {
+  id: string;
+  kind: ActionKind;
+  tier: AgentTier;
+  title: string;
+  rationale: string;
+  citations: string[];
+  requiresScope: Record<string, unknown>;
+  affects: Record<string, unknown>;
+  params: Record<string, unknown>;
+  status: ProposalStatus;
+  proposedBy: string;
+  createdAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  decisionNote: string | null;
+  executedAt: string | null;
+  result: Record<string, unknown> | null;
+  approvals: AgentApproval[];
+}
+
+export interface GraphMonitor {
+  id: string;
+  kind: "CO_LOCATION" | "NEW_OBSERVATIONS" | "MEMBERSHIP_CHANGE";
+  name: string;
+  params: { entityId: string; otherEntityId?: string };
+  createdBy: string;
+  createdAt: string;
+  disabledAt: string | null;
+  disabledReason: string | null;
+  lastEvaluatedAt: string | null;
+  alerts: number;
+}
+
+export interface GraphAlert {
+  id: string;
+  monitorId: string;
+  at: string;
+  summary: string;
+  observationIds: string[];
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+  monitor: { name: string; kind: GraphMonitor["kind"] };
+}
+
 export interface TimelineEvent {
   at: string;
   kind: "observation" | "membership" | "edge-start" | "edge-end";
@@ -337,6 +396,23 @@ export const v2 = {
 
   compare: (body: { caseId: string; galleryId: string; modality: Modality; mediaB64: string; contentType: string; topN?: number; diarize?: boolean }) =>
     request<CompareOutcome>("/v2/compare", { method: "POST", body }),
+
+  proposals: (caseId: string) => request<{ count: number; maxAutonomousTier: string; proposals: AgentProposal[] }>(`/v2/agent/proposals?${q({ caseId })}`),
+  propose: (body: { caseId: string; kind: ActionKind; title: string; rationale: string; citations: string[]; requiresScope?: Record<string, unknown>; affects?: Record<string, unknown>; params?: Record<string, unknown> }) =>
+    request<AgentProposal>("/v2/agent/proposals", { method: "POST", body }),
+  approveProposal: (caseId: string, proposalId: string, note: string, ttlMinutes = 60) =>
+    request<AgentApproval>(`/v2/agent/proposals/${encodeURIComponent(proposalId)}/approve`, { method: "POST", body: { caseId, note, ttlMinutes } }),
+  rejectProposal: (caseId: string, proposalId: string, reason: string) =>
+    request<AgentProposal>(`/v2/agent/proposals/${encodeURIComponent(proposalId)}/reject`, { method: "POST", body: { caseId, reason } }),
+  executeProposal: (caseId: string, proposalId: string) => request<AgentProposal>(`/v2/agent/proposals/${encodeURIComponent(proposalId)}/execute`, { method: "POST", body: { caseId } }),
+  monitors: (caseId: string) => request<{ count: number; monitors: GraphMonitor[] }>(`/v2/agent/monitors?${q({ caseId })}`),
+  createMonitor: (body: { caseId: string; kind: GraphMonitor["kind"]; name: string; params: { entityId: string; otherEntityId?: string } }) =>
+    request<GraphMonitor>("/v2/agent/monitors", { method: "POST", body }),
+  disableMonitor: (caseId: string, monitorId: string, reason: string) =>
+    request<GraphMonitor>(`/v2/agent/monitors/${encodeURIComponent(monitorId)}/disable`, { method: "POST", body: { caseId, reason } }),
+  alerts: (caseId: string) => request<{ count: number; alerts: GraphAlert[] }>(`/v2/agent/alerts?${q({ caseId })}`),
+  acknowledgeAlert: (caseId: string, alertId: string) => request<GraphAlert>(`/v2/agent/alerts/${encodeURIComponent(alertId)}/acknowledge`, { method: "POST", body: { caseId } }),
+  agentTick: () => request<{ checked: number; alerted: number; disabled: number; proposed: number }>("/v2/agent/tick", { method: "POST", body: {} }),
 
   imageryTiles: (caseId: string) => request<{ count: number; tiles: ImageryTile[] }>(`/v2/imagery/tiles?${q({ caseId })}`),
 

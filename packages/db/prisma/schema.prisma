@@ -918,6 +918,115 @@ model ImageryTile {
   @@index([authorizationId, sensedAt])
 }
 
+// ── the agentic layer ─────────────────────────────────────────────────────
+
+enum AgentTier {
+  OBSERVE
+  PREPARE
+  CONSEQUENTIAL
+}
+
+enum ProposalStatus {
+  PROPOSED
+  APPROVED
+  EXECUTED
+  REJECTED
+  REFUSED
+}
+
+/// What the agent proposes to do: the act, why (with the observations it
+/// rests on), the scope it needs and what it would affect. A consequential
+/// proposal executes only under a recorded approval.
+model AgentProposal {
+  id              String         @id @default(cuid())
+  caseId          String
+  authorizationId String
+  kind            String
+  tier            AgentTier
+  title           String
+  rationale       String
+  /// Observation ids under the same authorization. Required for anything above observe.
+  citations       String[]
+  requiresScope   Json
+  affects         Json
+  params          Json
+  status          ProposalStatus @default(PROPOSED)
+  proposedBy      String
+  createdAt       DateTime       @default(now())
+  decidedAt       DateTime?
+  decidedBy       String?
+  decisionNote    String?
+  executedAt      DateTime?
+  result          Json?
+
+  approvals AgentApproval[]
+
+  @@index([caseId, status, createdAt])
+  @@index([authorizationId])
+}
+
+/// One human's approval of one proposal: single-use, expiring, never
+/// transferable. `usedAt` is the only field that changes, once.
+model AgentApproval {
+  id         String        @id @default(cuid())
+  proposalId String
+  proposal   AgentProposal @relation(fields: [proposalId], references: [id])
+  approvedBy String
+  approvedAt DateTime      @default(now())
+  expiresAt  DateTime
+  usedAt     DateTime?
+  note       String
+
+  @@index([proposalId, usedAt])
+}
+
+enum GraphMonitorKind {
+  CO_LOCATION
+  NEW_OBSERVATIONS
+  MEMBERSHIP_CHANGE
+}
+
+/// A standing watch on the entity graph, inside one authorization. It does
+/// not outlive that authorization: the sweep disables it the first time
+/// the scope context refuses to build.
+model GraphMonitor {
+  id              String           @id @default(cuid())
+  caseId          String
+  authorizationId String
+  kind            GraphMonitorKind
+  name            String
+  params          Json
+  createdBy       String
+  createdAt       DateTime         @default(now())
+  disabledAt      DateTime?
+  disabledReason  String?
+  lastEvaluatedAt DateTime?
+  lastState       Json?
+
+  alerts GraphAlert[]
+
+  @@index([caseId, disabledAt])
+  @@index([authorizationId])
+}
+
+/// What a monitor saw change, with the observations behind it.
+model GraphAlert {
+  id              String       @id @default(cuid())
+  monitorId       String
+  monitor         GraphMonitor @relation(fields: [monitorId], references: [id])
+  caseId          String
+  authorizationId String
+  at              DateTime     @default(now())
+  summary         String
+  detail          Json
+  observationIds  String[]
+  acknowledgedAt  DateTime?
+  acknowledgedBy  String?
+
+  @@index([caseId, at])
+  @@index([monitorId, at])
+}
+
 model AccessLog {
   id              String   @id @default(cuid())
   actor           String

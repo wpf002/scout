@@ -209,13 +209,44 @@ export async function runResolution(input: RunResolutionInput): Promise<RunSumma
 
       // The previous run's system memberships for these observations are
       // superseded, never deleted; an analyst's memberships are not touched.
-      const previous = await tx.$queryRaw<Array<{ entityId: string }>>`
-        SELECT DISTINCT "entityId" FROM "EntityMember"
+      // What the previous run left: which entity each observation sits in.
+      // An entity keeps its id across runs when its cluster is unchanged or
+      // only grew, so a monitor, an enrollment or a citation that names it
+      // stays true; a merge or a split is a new entity, and the old one is
+      // superseded with its history intact.
+      const previousMembers = await tx.$queryRaw<Array<{ entityId: string; observationId: string }>>`
+        SELECT "entityId", "observationId" FROM "EntityMember"
         WHERE "observationId" = ANY(${ids}::text[]) AND "supersededAt" IS NULL AND "addedBy" = 'SYSTEM'`;
-      await tx.$executeRaw`
-        UPDATE "EntityMember" SET "supersededAt" = ${now}, "supersededBy" = ${run.id}
-        WHERE "observationId" = ANY(${ids}::text[]) AND "supersededAt" IS NULL AND "addedBy" = 'SYSTEM'`;
-      const previousEntityIds = previous.map((m) => m.entityId);
+      const membersOf = new Map<string, Set<string>>();
+      const entityOf = new Map<string, string>();
+      for (const m of previousMembers) {
+        membersOf.set(m.entityId, (membersOf.get(m.entityId) ?? new Set()).add(m.observationId));
+        entityOf.set(m.observationId, m.entityId);
+      }
+      const reusable = new Map<number, string>();
+      const reusedEntityIds = new Set<string>();
+      result.clusters.forEach((cluster, index) => {
+        const contributors = new Set(cluster.members.map((id) => entityOf.get(id)).filter((e): e is string => e !== undefined));
+        if (contributors.size !== 1) return;
+        const [only] = [...contributors] as [string];
+        const before = membersOf.get(only) ?? new Set();
+        const after = new Set(cluster.members);
+        if ([...before].every((id) => after.has(id)) && !reusedEntityIds.has(only)) {
+          reusable.set(index, only);
+          reusedEntityIds.add(only);
+        }
+      });
+      const keptObservationIds = new Set<string>();
+      for (const [index, entityId] of reusable) {
+        for (const id of result.clusters[index]?.members ?? []) if (membersOf.get(entityId)?.has(id)) keptObservationIds.add(id);
+      }
+      const supersededIds = ids.filter((id) => !keptObservationIds.has(id));
+      if (supersededIds.length > 0) {
+        await tx.$executeRaw`
+          UPDATE "EntityMember" SET "supersededAt" = ${now}, "supersededBy" = ${run.id}
+          WHERE "observationId" = ANY(${supersededIds}::text[]) AND "supersededAt" IS NULL AND "addedBy" = 'SYSTEM'`;
+      }
+      const previousEntityIds = [...membersOf.keys()].filter((id) => !reusedEntityIds.has(id));
       if (previousEntityIds.length > 0) {
         await tx.$executeRaw`
           UPDATE "Entity" SET "status" = 'UNRESOLVED'
@@ -234,25 +265,33 @@ export async function runResolution(input: RunResolutionInput): Promise<RunSumma
       }
 
       const entities: RunSummary["entities"] = [];
-      const entityRows = result.clusters.map((cluster) => ({
-        id: `ent_${randomUUID().replace(/-/g, "")}`,
+      const entityRows = result.clusters.map((cluster, index) => ({
+        id: reusable.get(index) ?? `ent_${randomUUID().replace(/-/g, "")}`,
         kind: entityKind,
         canonicalLabel: cluster.label,
         status: cluster.status,
         lastResolvedAt: now,
         resolutionRunId: run.id,
       }));
+      const fresh = entityRows.filter((_, index) => !reusable.has(index));
+      for (let i = 0; i < fresh.length; i += BATCH) await tx.entity.createMany({ data: fresh.slice(i, i + BATCH) });
+      for (const [index, entityId] of reusable) {
+        const cluster = result.clusters[index] as (typeof result.clusters)[number];
+        await tx.entity.update({ where: { id: entityId }, data: { canonicalLabel: cluster.label, status: cluster.status, lastResolvedAt: now, resolutionRunId: run.id } });
+      }
+      // Memberships that survived are left as they were; only what moved is written.
       const memberRows = result.clusters.flatMap((cluster, index) =>
-        cluster.members.map((observationId) => ({
-          entityId: (entityRows[index] as { id: string }).id,
-          observationId,
-          scoreBp: cluster.members.length === 1 ? 10_000 : (bestMatch.get(observationId) ?? 0),
-          method: "fellegi-sunter",
-          addedBy: "SYSTEM" as const,
-          addedByActor: operator,
-        })),
+        cluster.members
+          .filter((observationId) => !keptObservationIds.has(observationId))
+          .map((observationId) => ({
+            entityId: (entityRows[index] as { id: string }).id,
+            observationId,
+            scoreBp: cluster.members.length === 1 ? 10_000 : (bestMatch.get(observationId) ?? 0),
+            method: "fellegi-sunter",
+            addedBy: "SYSTEM" as const,
+            addedByActor: operator,
+          })),
       );
-      for (let i = 0; i < entityRows.length; i += BATCH) await tx.entity.createMany({ data: entityRows.slice(i, i + BATCH) });
       for (let i = 0; i < memberRows.length; i += BATCH) await tx.entityMember.createMany({ data: memberRows.slice(i, i + BATCH) });
       result.clusters.forEach((cluster, index) => {
         entities.push({ id: (entityRows[index] as { id: string }).id, status: cluster.status, label: cluster.label, members: cluster.members });

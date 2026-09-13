@@ -17,7 +17,7 @@ tiers, the scope gate, the audit log, or the live map.
 | Recognition | `services/recognition`, `apps/api/src/v2/recognition.ts` | Python + TS | Stage 10, flag off by default |
 | Reasoning | `packages/reason`, `apps/api/src/v2/reason.ts` | TS | Stage 8 |
 | Console | `apps/web/src/components/Investigation.tsx` | TS | Stage 6 |
-| Agent | `apps/api/src/agent/` | TS | Phase 11 |
+| Agent | `apps/api/src/agent/` | TS | Built: observe, propose, approve; monitors; webhook |
 
 ## Data flow
 
@@ -281,6 +281,48 @@ comparison are refused; galleries can still be prepared.
 | Recognition gates, arithmetic, diarisation | `services/recognition/tests`, `apps/api/src/v2.test.ts` (stage 10) |
 | Console E2E (Playwright): load, scrub, open an entity, adjudicate, confirm the audit trail | `apps/web/e2e/console.spec.ts` (`pnpm --filter @scout/web run test:e2e` against a running app with the synthetic case seeded) |
 | Load: 1M observations, 100k entities; resolution wall time, query p95, frame rate | `apps/api/src/load/`, `apps/web/e2e/load.spec.ts`; results and the ceilings found in `docs/LOAD_TEST.md` |
+
+## The agent
+
+`apps/api/src/agent/` is the bounded loop: observe, propose, approve.
+
+- **Tiers.** `tiers.ts` is a closed list of acts, each with its tier:
+  prepare (`draft-report`, `stage-collection`, `assemble-package`; a
+  reviewable output, nothing leaves) and consequential
+  (`dispatch-collection`, `send-report`, `write-external`,
+  `request-scope-expansion`; external effect). Observe is what monitors do.
+  `AGENT_MAX_AUTONOMOUS_TIER` (observe by default; consequential refused at
+  startup) says which tiers run without a person. Consequential never does.
+- **Proposals.** A proposal names the act, why, the observations it cites
+  (under the same authorization; at least one above observe), the scope it
+  needs and what it affects. Anything needing approval is posted to
+  `AGENT_APPROVAL_WEBHOOK` when set.
+- **Approvals.** One human, one proposal, one use, with an expiry (default
+  an hour, at most a day), never transferable, never deleted. Execution
+  runs the scope package's `refuseAutonomousConsequential` guard, so a
+  consequential act without a valid approval is a prohibition refusal,
+  audited. A prepare act above the autonomous tier needs the same approval
+  and is refused as `approval-required`. Preconditions run before the
+  approval is spent: a refused act leaves it unused. An approval cannot
+  widen scope; an approved `dispatch-collection` still passes every gate
+  in `runCollection()`.
+- **Monitors.** Standing watches inside one authorization
+  (`NEW_OBSERVATIONS`, `MEMBERSHIP_CHANGE`, `CO_LOCATION` on entities). The
+  sweep compares what it sees with what it saw and writes `GraphAlert`
+  rows citing the observations behind the change. A monitor whose
+  authorization is revoked or expired is disabled on the next sweep with
+  the scope reason, and evaluated no further.
+- **The observe pass.** `agentTick()` evaluates monitors and, where they
+  alerted, proposes (never performs) an `assemble-package` citing the
+  alerts' observations. That is the whole of the agent's initiative. It
+  runs on a timer only when `SCOUT_AGENT_TICK_SECONDS` is set, on the same
+  scheduler as v1's monitors, or on demand via `POST /v2/agent/tick`.
+
+Resolution now keeps an entity's id when its cluster is unchanged or only
+grew across runs, so a monitor, an enrollment or a citation that names an
+entity stays true; a merge or a split is a new entity and the old one is
+superseded with its history intact. The case file's Agent tab shows
+monitors, alerts and proposals, and is where approvals are given.
 
 ## No graph database
 
