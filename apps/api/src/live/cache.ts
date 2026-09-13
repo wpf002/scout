@@ -22,8 +22,21 @@ interface Entry<T> {
 
 const memory = new Map<string, Entry<unknown>>();
 
+/**
+ * Loads currently running, keyed the same as the cache.
+ *
+ * Without this, a cold key being asked for twice at once runs `load` twice.
+ * That is not merely wasteful: several of these upstreams are rate limited per
+ * address, so the second call can be the one that gets the address refused —
+ * and the expensive ones are expensive precisely because they are the ones
+ * everybody asks for at the same moment, on a restart or when the server warms
+ * itself. Sixteen thousand orbits, propagated twice, for one answer.
+ */
+const inFlight = new Map<string, Promise<unknown>>();
+
 export function clearLiveCache(): void {
   memory.clear();
+  inFlight.clear();
 }
 
 export async function cached<T>(
@@ -34,15 +47,34 @@ export async function cached<T>(
   const hit = memory.get(key) as Entry<T> | undefined;
   if (hit !== undefined && Date.now() - hit.at < ttlMs) return hit.value;
 
+  const running = inFlight.get(key) as Promise<T> | undefined;
+  if (running !== undefined) return running;
+
+  // The stale fallback lives inside the shared promise, not around it, so every
+  // caller waiting on one load gets the same answer. Outside, the first caller
+  // would fall back to the last good value while everyone who joined the same
+  // load got the error instead.
+  const attempt = (async (): Promise<T> => {
+    try {
+      const value = await load();
+      memory.set(key, { at: Date.now(), value });
+      return value;
+    } catch (error) {
+      // Stale beats nothing. A feed that fails on refresh keeps showing what it
+      // last knew rather than emptying the layer under the operator.
+      if (hit !== undefined) return hit.value;
+      throw error;
+    }
+  })();
+
+  // Cleared in a `finally` so a failed load does not wedge the key against
+  // every later attempt, and identity-checked so a slow failure cannot delete
+  // the entry a newer attempt has since registered.
+  inFlight.set(key, attempt);
   try {
-    const value = await load();
-    memory.set(key, { at: Date.now(), value });
-    return value;
-  } catch (error) {
-    // Stale beats nothing. A feed that fails on refresh keeps showing what it
-    // last knew rather than emptying the layer under the operator.
-    if (hit !== undefined) return hit.value;
-    throw error;
+    return await attempt;
+  } finally {
+    if (inFlight.get(key) === attempt) inFlight.delete(key);
   }
 }
 

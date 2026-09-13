@@ -368,6 +368,41 @@ if [ "${UP:-0}" != "1" ]; then
   die "Scout did not come up. Logs above; nothing was left running."
 fi
 
+# ── warm the layers ────────────────────────────────────────────────────────
+# The servers answering is not the same as the app being usable. Every heavy
+# layer is still cold at this point — satellites means propagating sixteen
+# thousand orbits, and cold that takes half a minute — so the first switch
+# flipped after "Scout is running" paid the whole cost and looked broken.
+#
+# The API warms them in the background from boot. This waits for that to
+# settle: not for every layer to succeed, because an upstream that is down will
+# never succeed, but for every layer to have been *tried*, so what is printed
+# below is the true state rather than a guess.
+step "Warming the live layers"
+
+ready_json() { curl -fsS --max-time 5 "http://localhost:$API_PORT/live/ready" 2>/dev/null; }
+ready_field() { printf '%s' "$1" | sed -E "s/.*\"$2\":([0-9]+).*/\1/"; }
+
+WARM_DEADLINE="${SCOUT_WARM_SECONDS:-240}"
+LAST=""
+for _ in $(seq 1 "$WARM_DEADLINE"); do
+  LAST="$(ready_json)"
+  case "$LAST" in
+    *'"settled":true'*) break ;;
+  esac
+  sleep 1
+done
+
+WARM="$(ready_field "$LAST" warm)"
+FAILED="$(ready_field "$LAST" failed)"
+COLD="$(ready_field "$LAST" cold)"
+TOTAL="$(ready_field "$LAST" total)"
+
+if [ "${COLD:-1}" != "0" ]; then
+  warn "Still warming after ${WARM_DEADLINE}s — $COLD of $TOTAL layers have not answered yet."
+  printf '  They keep warming in the background; those switches will be slow until they do.\n'
+fi
+
 KEYED="$(curl -fsS "http://localhost:$API_PORT/health" \
   | sed -E 's/.*"keyed":([0-9]+).*/\1/')"
 
@@ -380,6 +415,26 @@ printf '  Open that URL. Include the port — the dashboard is not on port 80,\n
 printf '  and it proxies the API itself, so this is the only address you need.\n\n'
 printf '  Checked   dashboard shell served · API healthy · /api proxy answering\n'
 printf '            · API answering at the address the dashboard calls\n'
+printf '  Layers    %s of %s warm and answering instantly\n' "${WARM:-?}" "${TOTAL:-?}"
+
+# Named, not counted. "29 of 31" tells an operator something is missing and not
+# which thing, and the difference matters when the missing one is the layer they
+# came here for.
+if [ "${FAILED:-0}" != "0" ]; then
+  printf '\n'
+  warn "$FAILED layer(s) could not load. Their upstream is refusing or down:"
+  curl -fsS --max-time 5 "http://localhost:$API_PORT/live/ready" 2>/dev/null \
+    | node -e '
+      let s = "";
+      process.stdin.on("data", (d) => (s += d)).on("end", () => {
+        for (const layer of JSON.parse(s).unavailable) {
+          console.log(`      ${layer.name.padEnd(22)} ${layer.error}`);
+        }
+      });
+    ' 2>/dev/null || true
+  printf '      Scout keeps retrying them; every other layer is unaffected.\n'
+fi
+
 printf '  API       http://localhost:%s   (proxied at /api)\n' "$API_PORT"
 printf '  Sources   %s of 19 keyed; the rest report "inert" rather than guessing\n' "${KEYED:-?}"
 printf '  Logs      %s\n            %s\n' "$API_LOG" "$WEB_LOG"

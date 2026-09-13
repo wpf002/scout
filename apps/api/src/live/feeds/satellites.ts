@@ -1,6 +1,7 @@
+import { z } from "zod";
 import * as satellite from "satellite.js";
-import { persistent } from "../cache.js";
-import { getText } from "../http.js";
+import { cached, persistent } from "../cache.js";
+import { getJson, getText } from "../http.js";
 import { point, usable, type Feature, type FeatureCollection } from "../types.js";
 
 /**
@@ -130,6 +131,14 @@ interface Element {
  * the disk copy is what a refused refetch falls back to.
  */
 const TTL_MS = 2 * 60 * 60_000;
+
+/**
+ * Which publisher supplied the elements on screen.
+ *
+ * Reported in the layer's meta. An operator reading positions is entitled to
+ * know they are looking at a tenth of the catalogue, and which tenth.
+ */
+let lastSource = "CelesTrak";
 const MAX_STALE_MS = 7 * 24 * 60 * 60_000;
 
 /**
@@ -186,10 +195,28 @@ async function fetchGroup(group: string, timeoutMs: number): Promise<Element[]> 
     throw new RateLimited("CelesTrak refused a request in this window already");
   }
 
-  const body = await getText(`${CELESTRAK}?GROUP=${group}&FORMAT=tle`, {
-    timeoutMs,
-    allowStatus: [403],
-  });
+  let body: string;
+  try {
+    body = await getText(`${CELESTRAK}?GROUP=${group}&FORMAT=tle`, {
+      timeoutMs,
+      allowStatus: [403],
+    });
+  } catch (error) {
+    /*
+     * A refusal is a 403 with an explanation in the body. This is the other
+     * failure: the connection never opens, which is what CelesTrak does to an
+     * address it has firewalled — and it firewalls one after enough errors in
+     * a two-hour window.
+     *
+     * That has to trip the same breaker. Without it the thirty-five label
+     * groups each waited out their own timeout against a host that was never
+     * going to answer: nine minutes of nothing, against a request that gives
+     * up at twenty-five seconds.
+     */
+    refusedUntil = Date.now() + TTL_MS;
+    throw error;
+  }
+
   assertElements(body, group);
   const elements = parseTle(body);
   if (elements.length === 0) {
@@ -198,8 +225,58 @@ async function fetchGroup(group: string, timeoutMs: number): Promise<Element[]> 
   return elements;
 }
 
+/**
+ * The other publisher.
+ *
+ * CelesTrak is the better catalogue by a wide margin — sixteen thousand
+ * objects against seventeen hundred — and it is also a single point of failure
+ * for six of Scout's layers. It rate limits per address and firewalls one
+ * outright after enough errors in a two-hour window, and when it does, every
+ * satellite layer goes dark with nothing to show.
+ *
+ * SatNOGS publishes current elements for the objects its ground stations
+ * track: a tenth of the catalogue, updated daily, one request, no key. That is
+ * not a replacement and is not presented as one — the layer reports which
+ * source it is on and that the catalogue is partial. It is the difference
+ * between a thinner sky and no sky.
+ */
+const SATNOGS = "https://db.satnogs.org/api/tle/?format=json";
+
+const SATNOGS_SCHEMA = z.array(
+  z.object({
+    tle0: z.string(),
+    tle1: z.string(),
+    tle2: z.string(),
+    norad_cat_id: z.number(),
+  }),
+);
+
+async function loadSatnogs(): Promise<Element[]> {
+  const body = await getJson(SATNOGS, { timeoutMs: 20_000 });
+  const rows = SATNOGS_SCHEMA.parse(body);
+
+  return rows
+    .filter((row) => row.tle1.startsWith("1 ") && row.tle2.startsWith("2 "))
+    .map((row) => ({
+      // SatNOGS keeps the raw TLE line-0 marker on the name, so every
+      // satellite arrives as "0 NEMO-HD". Left alone it shows up that way on
+      // the map and defeats every name match here.
+      name: row.tle0.trim().replace(/^0\s+/, ""),
+      noradId: String(row.norad_cat_id),
+      line1: row.tle1,
+      line2: row.tle2,
+    }));
+}
+
 async function loadActive(): Promise<Element[]> {
-  return fetchGroup("active", 90_000);
+  /*
+   * Twenty seconds, not ninety. The route answers with a reason at
+   * twenty-five, so a ninety-second wait here could never produce anything —
+   * the request was over long before CelesTrak gave up, and seven satellite
+   * layers each sat on a dead socket for the full ceiling. Failing early is
+   * what lets the disk copy be reached at all.
+   */
+  return fetchGroup("active", 20_000);
 }
 
 interface Labelled {
@@ -224,7 +301,7 @@ async function loadLabels(): Promise<Labelled> {
   // retrying is what gets it firewalled.
   for (const label of LABEL_GROUPS) {
     try {
-      for (const element of await fetchGroup(label.group, 40_000)) {
+      for (const element of await fetchGroup(label.group, 15_000)) {
         labels[element.noradId] ??= label;
         if (!byId.has(element.noradId)) byId.set(element.noradId, element);
       }
@@ -256,8 +333,53 @@ interface Catalogued extends Element {
  * the same and has to happen on every request, or the map would show where
  * things were rather than where they are.
  */
+/**
+ * Category from the satellite's own name.
+ *
+ * Categories normally come from CelesTrak's group files, which are
+ * authoritative — a satellite is in the `starlink` group because CelesTrak says
+ * so. When those groups are unavailable the whole sky lands in "other" and four
+ * of the six category toggles show nothing, which is a worse answer than a
+ * confident one about the constellations that name themselves.
+ *
+ * These are the ones that do. It is the same kind of inference as the military
+ * programme regex above and carries the same caveat: it recognises fleets, not
+ * missions, and anything it does not recognise stays "other" rather than being
+ * guessed into a category.
+ */
+const FLEET: Array<{ test: RegExp; label: Label }> = [
+  {
+    test: /^(STARLINK|ONEWEB|KUIPER|IRIDIUM|GLOBALSTAR|ORBCOMM|SES-|INTELSAT|EUTELSAT|INMARSAT|THURAYA|YAMAL|EXPRESS-|ASTRA |TELSTAR|VIASAT|ECHOSTAR|HUGHES)/i,
+    label: { group: "name", category: "comms", mission: "Communications" },
+  },
+  {
+    test: /^(GPS |NAVSTAR|GALILEO|GLONASS|COSMOS 2\d{3}|BEIDOU|QZS-|IRNSS|NAVIC)/i,
+    label: { group: "name", category: "navigation", mission: "Navigation" },
+  },
+  {
+    test: /^(NOAA |METOP|LANDSAT|SENTINEL|TERRA|AQUA|SUOMI|JPSS|GOES|HIMAWARI|METEOSAT|PLANETSCOPE|SKYSAT|DOVE |FLOCK |ICEYE|CAPELLA|WORLDVIEW|SPOT |PLEIADES|RADARSAT|SMOS|CRYOSAT|SWOT|GRACE)/i,
+    label: { group: "name", category: "earth_obs", mission: "Earth Observation" },
+  },
+  {
+    test: /^(ISS|CSS |ZARYA|TIANGONG|HUBBLE|HST|CXO|CHANDRA|SWIFT|FERMI|TESS|CUBESAT|OSCAR|AO-|SO-|FO-|LILACSAT|XW-|BEESAT|UNISAT|DELFI|GRBALPHA|SPROUT)/i,
+    label: { group: "name", category: "science", mission: "Science" },
+  },
+];
+
+function fleetLabel(name: string): Label | undefined {
+  return FLEET.find((entry) => entry.test.test(name))?.label;
+}
+
 async function loadCatalogue(): Promise<Catalogued[]> {
-  const [activeResult, labelled] = await Promise.all([
+  /*
+   * Both publishers at once, not one after the other.
+   *
+   * Asking SatNOGS only after CelesTrak has failed sounds thriftier and does
+   * not work: CelesTrak failing takes as long as its timeout, and by then the
+   * request has already been answered with an error. One extra half-megabyte
+   * fetch every two hours buys a sky that survives the outage.
+   */
+  const [activeResult, labelled, satnogs] = await Promise.all([
     persistent("celestrak:active", TTL_MS, MAX_STALE_MS, loadActive).catch(
       () => null,
     ),
@@ -267,6 +389,9 @@ async function loadCatalogue(): Promise<Catalogued[]> {
       MAX_STALE_MS,
       loadLabels,
     ).catch((): Labelled => ({ labels: {}, elements: [] })),
+    persistent("satnogs:tle", TTL_MS, MAX_STALE_MS, loadSatnogs).catch(
+      (): Element[] => [],
+    ),
   ]);
 
   /*
@@ -278,15 +403,28 @@ async function loadCatalogue(): Promise<Catalogued[]> {
    * bucket, so it is available exactly when `active` is not. It self-heals to
    * the full set on the next successful fetch.
    */
-  const elements = activeResult ?? labelled.elements;
+  let elements = activeResult ?? labelled.elements;
+  let source = activeResult !== null ? "CelesTrak" : "CelesTrak (label groups)";
+
+  if (elements.length === 0) {
+    // Both CelesTrak paths are gone. Rather than an empty sky, fall back to
+    // the other publisher and say so.
+    elements = satnogs;
+    source = "SatNOGS";
+  }
+
   if (elements.length === 0) {
     throw new Error(
-      "CelesTrak is rate limiting and nothing is cached. Elements republish every two hours.",
+      "Neither CelesTrak nor SatNOGS answered, and nothing is cached.",
     );
   }
 
+  lastSource = source;
+
   return elements.map((element) => {
-    const label = labelled.labels[element.noradId];
+    // CelesTrak's groups first, because they are authoritative. The name is
+    // only consulted when they are not there to consult.
+    const label = labelled.labels[element.noradId] ?? fleetLabel(element.name);
     const military = MILITARY_NAME.test(element.name);
 
     let record: satellite.SatRec | null = null;
@@ -359,16 +497,42 @@ export async function satellites(): Promise<FeatureCollection> {
     meta: {
       categoryCounts: counts,
       catalogued: catalogue.length,
+      source: lastSource,
       // Worth saying: a partial catalogue looks like a working one.
       complete: catalogue.length > 10_000,
     },
   };
 }
 
+/**
+ * The whole sky, computed once for everyone who wants a slice of it.
+ *
+ * The rail offers six category toggles plus the full set, and each used to call
+ * `satellites()` for itself — seven independent fetches of the catalogue and
+ * seven SGP4 propagations of sixteen thousand objects, for one sky. Node runs
+ * that on one thread, so warming them concurrently did not make it faster; it
+ * made all seven slow at once and stalled the startup warm-up behind them.
+ *
+ * The TTL matches the layer's own, so a category is never showing a sky older
+ * than the full view beside it.
+ */
+async function sky(): Promise<FeatureCollection> {
+  return cached("satellites:sky", SKY_TTL_MS, satellites);
+}
+
+/**
+ * How long one propagation serves every satellite layer.
+ *
+ * Thirty seconds of drift is about 225 km at low-Earth orbital speed, which
+ * sounds like a lot and is roughly one dot's width at the zoom these are read
+ * at. Recomputing more often costs more than it shows.
+ */
+const SKY_TTL_MS = 30_000;
+
 /** One category, for the per-category toggles the rail offers. */
 export function satellitesIn(category: Category) {
   return async (): Promise<FeatureCollection> => {
-    const all = await satellites();
+    const all = await sky();
     return {
       type: "FeatureCollection",
       features: all.features.filter((f) => f.properties["category"] === category),

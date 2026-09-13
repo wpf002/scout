@@ -417,12 +417,19 @@ export async function incidents(): Promise<FeatureCollection> {
    * single call to either is the ceiling — asking both and deduplicating on
    * the event id is the only way to see past it.
    */
+  /*
+   * Twenty seconds, not forty. The route gives a layer twenty-five before it
+   * answers with a reason instead, so a forty-second wait here could never
+   * produce anything: the request was already over by the time GDACS gave up.
+   * Failing inside the ceiling is what lets the failure be reported rather than
+   * merely arrived at.
+   */
   const [search, app] = await Promise.allSettled([
     getJson("https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH", {
-      timeoutMs: 40_000,
+      timeoutMs: 20_000,
     }),
     getJson("https://www.gdacs.org/gdacsapi/api/events/geteventlist/EVENTS4APP", {
-      timeoutMs: 40_000,
+      timeoutMs: 20_000,
     }),
   ]);
 

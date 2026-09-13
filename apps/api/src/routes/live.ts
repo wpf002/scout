@@ -3,10 +3,46 @@ import { z } from "zod";
 import { badRequest } from "../errors.js";
 import { cached } from "../live/cache.js";
 import { BY_ID, availableLayers, capabilities } from "../live/registry.js";
+import { layerHealth } from "../live/warm.js";
 import { markets } from "../live/feeds/markets.js";
 import { news } from "../live/feeds/news.js";
 
 export { clearLiveCache } from "../live/cache.js";
+
+/**
+ * How long a cold layer may take before it answers with a reason instead.
+ *
+ * The dashboard proxies these, and the proxy gives up at thirty seconds. A
+ * layer slower than that did not merely feel slow — it reached the browser as a
+ * 500 with nothing in it, which is the one outcome this route is written to
+ * avoid. Answering below the proxy's ceiling means the operator gets the same
+ * "unavailable, and here is why" every other failure produces.
+ *
+ * The load is not cancelled. It keeps running and fills the cache, so the next
+ * request — a few seconds later, when the layer polls again — is served from it.
+ */
+const LOAD_CEILING_MS = 25_000;
+
+async function withTimeout<T>(
+  work: Promise<T>,
+  ms: number,
+  what: string,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${what} did not answer within ${ms / 1000}s`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 /**
  * Live geospatial layers.
@@ -30,6 +66,44 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         name: layer.name,
         refreshSeconds: Math.round(layer.ttlMs / 1000),
       })),
+    };
+  });
+
+  /**
+   * Whether the layers are actually ready, not merely registered.
+   *
+   * `/health` answers "the process is up", which is a different question. A
+   * freshly started Scout is up and every heavy layer is still cold, so the
+   * first switch flipped pays a twenty-five second wait. This is what the start
+   * script waits on, and what says which upstream is refusing when one is.
+   */
+  app.get("/live/ready", async () => {
+    const layers = layerHealth();
+    const warm = layers.filter((layer) => layer.state === "warm");
+    const failed = layers.filter((layer) => layer.state === "failed");
+    const cold = layers.filter((layer) => layer.state === "cold");
+
+    return {
+      // "Settled", not "ready": a layer whose upstream is down will never be
+      // warm, and a start script that waited for warmth alone would wait for
+      // ever. Settled means every layer has been tried.
+      settled: cold.length === 0,
+      ready: cold.length === 0 && failed.length === 0,
+      total: layers.length,
+      warm: warm.length,
+      failed: failed.length,
+      cold: cold.length,
+      slowest: warm
+        .slice()
+        .sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0))
+        .slice(0, 3)
+        .map((layer) => ({ id: layer.id, ms: layer.ms })),
+      unavailable: failed.map((layer) => ({
+        id: layer.id,
+        name: layer.name,
+        error: layer.error,
+      })),
+      pending: cold.map((layer) => layer.id),
     };
   });
 
@@ -74,7 +148,11 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      const collection = await cached(`layer:${layer.id}`, layer.ttlMs, layer.load);
+      const collection = await withTimeout(
+        cached(`layer:${layer.id}`, layer.ttlMs, layer.load),
+        LOAD_CEILING_MS,
+        layer.name,
+      );
       return reply.header("cache-control", "no-store").send(collection);
     } catch (error) {
       /*

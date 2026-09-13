@@ -3,6 +3,7 @@ import { config } from "./config.js";
 import { prisma } from "@scout/db";
 import { startMonitorScheduler } from "./monitor/scheduler.js";
 import type { MonitorScheduler } from "./monitor/scheduler.js";
+import { keepWarm } from "./live/warm.js";
 
 async function main(): Promise<void> {
   const app = await buildServer();
@@ -19,8 +20,15 @@ async function main(): Promise<void> {
     });
   }
 
+  // Same reasoning as the scheduler above: a timer that makes outbound
+  // requests belongs to the running server, not to every server a test builds.
+  const stopWarming = keepWarm((id, ms, ok) => {
+    app.log.debug({ layer: id, ms, ok }, "warmed live layer");
+  });
+
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, "shutting down");
+    stopWarming();
     scheduler?.stop();
     await app.close();
     await prisma.$disconnect();
