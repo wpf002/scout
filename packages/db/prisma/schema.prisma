@@ -758,6 +758,13 @@ model EntityEdge {
   confidenceBp           Int
   /// Never empty. Enforced in the write path; a check constraint backs it.
   evidenceObservationIds String[]
+  /// How the edge was derived, machine-readable: `co-location:2000m/30min`,
+  /// `shared:PHONE`, `shared:DEVICE_ID`, or `asserted` for an analyst's own.
+  basis                  String        @default("asserted")
+  /// Identity of a derived edge across runs: from, to, relation, basis,
+  /// window and evidence. A re-derivation that produces the same fingerprint
+  /// keeps the row; one that does not supersedes it.
+  fingerprint            String?
   authorizationId        String
   authorization          Authorization @relation(fields: [authorizationId], references: [id])
   createdAt              DateTime      @default(now())
@@ -767,7 +774,8 @@ model EntityEdge {
 
   @@index([fromEntityId, validFrom])
   @@index([toEntityId, validFrom])
-  @@index([authorizationId])
+  @@index([authorizationId, supersededAt])
+  @@index([authorizationId, fingerprint])
   @@index([createdAt])
 }
 

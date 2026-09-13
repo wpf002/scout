@@ -22,6 +22,7 @@ LOCK="$RUN_DIR/start.pid"
 
 API_PORT="${PORT:-3001}"
 WEB_PORT="${WEB_PORT:-3000}"
+RES_PORT="${RESOLUTION_PORT:-8100}"
 
 step() { printf '\033[36m==>\033[0m %s\n' "$1"; }
 
@@ -32,6 +33,7 @@ patterns=(
   "filter @scout/api run dev"
   "filter @scout/web run dev"
   "next dev -p ${WEB_PORT}"
+  "uvicorn resolution.main:app"
 )
 
 stopped=0
@@ -55,7 +57,7 @@ done
 
 # Then whatever is still holding a port, whoever started it. This catches the
 # grandchildren `pnpm run dev` spawns, which do not match any pattern above.
-for port in "$API_PORT" "$WEB_PORT"; do
+for port in "$API_PORT" "$WEB_PORT" "$RES_PORT"; do
   pids="$(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true)"
   [ -z "$pids" ] && continue
   # shellcheck disable=SC2086

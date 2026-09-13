@@ -131,7 +131,10 @@ function fakeResolve(body: string): Response {
     adjudications: { left: string; right: string; decision: string }[];
   };
   const HARD = new Set(["ICAO_HEX", "TAIL_NUMBER", "MMSI", "IMO", "DOCUMENT_NO", "EMAIL", "PHONE", "DEVICE_ID"]);
-  const norm = (v: string) => v.toLowerCase().replace(/[\s-]/g, "");
+  // The stand-in normalizes the way the service does for the kinds the suite
+  // uses: phones to digits, everything else case-folded without spaces.
+  const norm = (kind: string, v: string) =>
+    kind === "PHONE" ? v.replace(/\D/g, "").replace(/^1(\d{10})$/, "$1") : v.toLowerCase().replace(/[\s-]/g, "");
   const key = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
   const byHard = new Map<string, string[]>();
   const byName = new Map<string, string[]>();
@@ -139,7 +142,7 @@ function fakeResolve(body: string): Response {
     for (const i of o.identifiers) {
       const bucket = HARD.has(i.kind) ? byHard : i.kind === "NAME" ? byName : null;
       if (bucket === null) continue;
-      const k = `${i.kind}:${norm(i.value)}`;
+      const k = `${i.kind}:${norm(i.kind, i.value)}`;
       bucket.set(k, [...(bucket.get(k) ?? []), o.id]);
     }
   }

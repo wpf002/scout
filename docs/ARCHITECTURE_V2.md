@@ -10,7 +10,7 @@ tiers, the scope gate, the audit log, or the live map.
 | Layer | Where | Language | State |
 |---|---|---|---|
 | Scope context and prohibitions | `packages/scope/src/context.ts`, `prohibitions.ts` | TS | Phase 2 |
-| Observations, collectors, temporal predicate | `packages/fusion` | TS | Phase 2 |
+| Observations, collectors, temporal predicate | `packages/fusion` | TS | Built |
 | Schema | `packages/db/prisma/schema.prisma` (v2 section) | Prisma | Phase 2 |
 | Collection routes and collectors | `apps/api/src/routes/v2.ts`, `apps/api/src/v2/` | TS | Built: ADS-B, SEC EDGAR |
 | Resolution | `services/resolution`, `apps/api/src/v2/resolution.ts` | Python + TS | Built: PERSON, VESSEL, AIRCRAFT, ORG |
@@ -48,12 +48,54 @@ tiers, the scope gate, the audit log, or the live map.
  console / reasoning / agent    all through the same scope-checked read path
 ```
 
+## Derived edges
+
+Three rules, in `apps/api/src/v2/links.ts`, each writing the observations that
+evidence it onto the edge:
+
+| Basis | Relation | Confidence |
+|---|---|---|
+| `shared:DEVICE_ID` | SAME_DEVICE | 9000 bp |
+| `shared:EMAIL` / `PHONE` / `HANDLE` / `ADDRESS` | ASSOCIATED_WITH | 8000 / 7500 / 7000 / 5500 bp |
+| `co-location:<radius>m/<window>min` | CO_LOCATED, one edge per merged window | 6000–9000 bp by closest approach |
+
+A value shared by more than twenty entities is a switchboard, not a link, and
+is skipped and counted. OWNS, OPERATES, MEMBER_OF, TRANSACTED_WITH and
+COMMUNICATED_WITH wait for a source that asserts them; nothing infers them.
+
+Re-running keeps edges whose fingerprint (ends, relation, basis, window,
+evidence) is unchanged and supersedes the rest. Nothing is deleted, so the
+graph as it was known at an earlier moment still reads back.
+
+## Graph operations
+
+`apps/api/src/v2/graph.ts`, all taking a scope context and `asOf`:
+neighbors (≤3 hops), path-between (≤6 hops), timeline-for-entity,
+co-location-window, edges. Each hop checks the boundary on its own; an
+entity reachable in the graph is not automatically readable. Every read
+writes an AccessLog row with the ids returned and the query text.
+
+The consistency job: `pnpm graph:check` (exits non-zero when the graph
+disagrees with itself) and `POST /v2/graph/consistency` scoped to one
+authorization.
+
 ## Two clocks
 
 Every edge and membership has valid time (`validFrom`, `validUntil`) and
-knowledge time (`createdAt`, `supersededAt`). A query at `asOf = T` returns
-rows that held at T and were known by T. `packages/fusion/src/temporal.ts`
-holds the predicate in one place, as a function and as SQL.
+knowledge time (`createdAt`, `supersededAt`). Every graph read takes both:
+
+| Parameter | Question | Default |
+|---|---|---|
+| `asOf` | What held at this instant? | now |
+| `knownAs` | What had Scout learned by this instant? | now |
+
+`asOf` alone asks "given everything known today, what held then", which is
+what the console's scrubber asks. `asOf` and `knownAs` set to the same
+instant ask "exactly as it was known then", which is what an audit asks. A
+co-location learned after it ended is visible at the moment it happened
+under the first reading and at no moment under the second, and both answers
+are right. `packages/fusion/src/temporal.ts` holds the predicate in one place,
+as a function and as SQL.
 
 ## No graph database
 

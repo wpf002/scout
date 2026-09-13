@@ -50,7 +50,16 @@ printf '%s' "$$" > "$LOCK"
 
 API_PORT="${PORT:-3001}"
 WEB_PORT="${WEB_PORT:-3000}"
+RES_PORT="${RESOLUTION_PORT:-8100}"
+RES_DIR="$ROOT/services/resolution"
+RES_LOG="$RUN_DIR/resolution.log"
 WATCH_EVERY="${SCOUT_WATCH_SECONDS:-10}"
+
+# The resolution service is part of the app when it is installed. It is
+# Python, run through uv; a machine without uv still gets the map and the
+# case tiers, and the v2 resolution routes say the service is unavailable
+# rather than failing the whole start.
+resolution_available() { [ -f "$RES_DIR/pyproject.toml" ] && command -v uv >/dev/null 2>&1; }
 
 # ── config ─────────────────────────────────────────────────────────────────
 if [ ! -f .env ]; then
@@ -145,7 +154,10 @@ free_port() {
   return 1
 }
 
-for port in "$API_PORT" "$WEB_PORT"; do
+PORTS_TO_FREE=("$API_PORT" "$WEB_PORT")
+resolution_available() { [ -f "$RES_DIR/pyproject.toml" ] && command -v uv >/dev/null 2>&1; }
+resolution_available && PORTS_TO_FREE+=("$RES_PORT")
+for port in "${PORTS_TO_FREE[@]}"; do
   if [ -n "$(port_pids "$port")" ]; then
     warn "Port $port is already in use. Stopping what is on it."
     free_port "$port" || die "Could not free port $port. Stop it by hand and re-run."
@@ -238,8 +250,10 @@ fi
 stop_servers() {
   [ -n "${API_PID:-}" ] && kill "$API_PID" 2>/dev/null || true
   [ -n "${WEB_PID:-}" ] && kill "$WEB_PID" 2>/dev/null || true
+  [ -n "${RES_PID:-}" ] && kill "$RES_PID" 2>/dev/null || true
   free_port "$API_PORT" || true
   free_port "$WEB_PORT" || true
+  resolution_available && { free_port "$RES_PORT" || true; }
 }
 
 SHUTTING_DOWN=0
@@ -263,6 +277,12 @@ start_web() {
   WEB_PID=$!
 }
 
+start_resolution() {
+  resolution_available || return 0
+  (cd "$RES_DIR" && exec uv run --quiet uvicorn resolution.main:app --host 127.0.0.1 --port "$RES_PORT") >"$RES_LOG" 2>&1 &
+  RES_PID=$!
+}
+
 # `next dev` cannot run on top of a production build — it looks for dev
 # manifests that `next build` never writes and fails with a wall of ENOENT that
 # names none of this. BUILD_ID is only written by a production build, so its
@@ -277,6 +297,12 @@ step "Starting the API on :$API_PORT"
 start_api
 step "Starting the dashboard on :$WEB_PORT"
 start_web
+if resolution_available; then
+  step "Starting the resolution service on :$RES_PORT"
+  start_resolution
+else
+  warn "Resolution service not installed (needs uv and services/resolution); v2 resolution routes will report it unavailable."
+fi
 
 ready() { curl -fsS -o /dev/null --max-time 3 "$1" 2>/dev/null; }
 
@@ -320,7 +346,14 @@ client_ok() {
     | grep -q '"status":"ok"'
 }
 
-verify() { api_ok && web_ok && proxy_ok && client_ok; }
+# Answers when the service is not installed at all: absence is a known state,
+# not a failure. A service that is installed and not answering is a failure.
+resolution_ok() {
+  resolution_available || return 0
+  ready "http://127.0.0.1:$RES_PORT/healthz"
+}
+
+verify() { api_ok && web_ok && proxy_ok && client_ok && resolution_ok; }
 
 await() {
   for _ in $(seq 1 "$1"); do
@@ -351,6 +384,7 @@ if [ "${UP:-0}" != "1" ]; then
   rm -rf apps/web/.next
   start_api
   start_web
+  start_resolution
   await 120 && UP=1 || RC=$?
 fi
 
@@ -444,6 +478,12 @@ fi
 
 printf '  API       http://localhost:%s   (proxied at /api)\n' "$API_PORT"
 printf '  Sources   %s of 19 keyed; the rest report "inert" rather than guessing\n' "${KEYED:-?}"
+if resolution_available; then
+  MODELS="$(curl -fsS --max-time 3 "http://127.0.0.1:$RES_PORT/healthz" 2>/dev/null | tr ',' '\n' | grep -oE '"(PERSON|ORG|VESSEL|AIRCRAFT)":"[^"]+' | cut -d'"' -f2 | tr '\n' ' ')"
+  printf '  Resolve   http://127.0.0.1:%s   models: %s\n' "$RES_PORT" "${MODELS:-none trained}"
+else
+  printf '  Resolve   not installed\n'
+fi
 printf '  Logs      %s\n            %s\n' "$API_LOG" "$WEB_LOG"
 printf '  Watchdog   checking every %ss; restarts either server if it stops\n' "$WATCH_EVERY"
 printf '\n  Ctrl-C stops both.\n\n'
@@ -482,6 +522,11 @@ while [ "$SHUTTING_DOWN" = "0" ]; do
     warn "The dashboard stopped answering. Restarting it."
     free_port "$WEB_PORT" || true
     start_web
+  fi
+  if ! resolution_ok; then
+    warn "The resolution service stopped answering. Restarting it."
+    free_port "$RES_PORT" || true
+    start_resolution
   fi
 
   if await 90; then

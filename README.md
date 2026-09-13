@@ -259,6 +259,9 @@ rather than erase.
 | `GET` | `/v2/entities` | v2. Resolved entities with members, sources consulted and status. Read is logged. |
 | `GET` | `/v2/review` | v2. Pairs in the review band awaiting a human. Read is logged. |
 | `POST` | `/v2/adjudicate` | v2. Pin a pair: match, non-match or indeterminate. Outranks every later run. Audited. |
+| `POST` | `/v2/links/derive` | v2. Derives SAME_DEVICE, ASSOCIATED_WITH and CO_LOCATED edges from observations, with evidence and validity windows. Idempotent. Audited. |
+| `GET` | `/v2/graph/edges`, `/neighbors`, `/path`, `/timeline`, `/colocation` | v2. The graph as it was known at `asOf`. Every hop scope-checked; every read logged. |
+| `POST` | `/v2/graph/consistency` | v2. The consistency check for one authorization. `pnpm graph:check` runs it for everything. |
 
 Subject terms travel in POST bodies, never URL params, and request bodies are
 stripped from logs.

@@ -238,6 +238,40 @@ export function describeEvent(event: CaseEvent): Described {
       };
     }
 
+    case "v2.resolution.ran":
+      return {
+        label: "Resolution Ran",
+        detail: list([
+          text(d["entityKind"]),
+          count(d["observations"], "observation"),
+          count(d["entities"], "entity", "entities"),
+          num(d["review"]) === null ? null : `${num(d["review"]) as number} for review`,
+          num(d["disputed"]) === null || num(d["disputed"]) === 0 ? null : `${num(d["disputed"]) as number} disputed`,
+        ]),
+        weight: "normal",
+      };
+
+    case "v2.adjudicated":
+      return {
+        label: "Pair Adjudicated",
+        detail: list([text(d["decision"]), text(d["note"])]),
+        weight: "notable",
+      };
+
+    case "v2.links.derived":
+      return {
+        label: "Links Derived",
+        detail: list([count(d["entities"], "entity", "entities"), count(d["candidate"], "edge")]),
+        weight: "normal",
+      };
+
+    case "v2.graph.checked":
+      return {
+        label: d["clean"] === true ? "Graph Consistent" : "Graph Inconsistent",
+        detail: d["clean"] === true ? "" : list([count(d["danglingEvidence"], "dangling evidence edge"), count(d["resolvedWithoutMembers"], "empty resolved entity", "empty resolved entities")]),
+        weight: d["clean"] === true ? "normal" : "notable",
+      };
+
     case "report.exported":
       return {
         label: "Report Exported",

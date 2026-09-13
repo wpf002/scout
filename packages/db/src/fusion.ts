@@ -93,6 +93,40 @@ export async function positionsOf(
   return out;
 }
 
+export interface CoLocatedPair {
+  leftObservationId: string;
+  rightObservationId: string;
+  meters: number;
+  leftObservedAt: Date;
+  rightObservedAt: Date;
+}
+
+/**
+ * Pairs of positioned observations under one authorization that were within
+ * `radiusM` of each other and within `windowSeconds` in time. PostGIS does
+ * the distance on the geography type, so metres are metres everywhere on the
+ * globe. The caller maps observations to entities and skips pairs inside one.
+ */
+export async function coLocatedObservations(
+  authorizationId: string,
+  radiusM: number,
+  windowSeconds: number,
+  limit = 20_000,
+): Promise<CoLocatedPair[]> {
+  return prisma.$queryRaw<CoLocatedPair[]>`
+    SELECT a."id" AS "leftObservationId", b."id" AS "rightObservationId",
+           ST_Distance(a."geom", b."geom") AS "meters",
+           a."observedAt" AS "leftObservedAt", b."observedAt" AS "rightObservedAt"
+    FROM "Observation" a
+    JOIN "Observation" b ON a."id" < b."id"
+    WHERE a."authorizationId" = ${authorizationId} AND b."authorizationId" = ${authorizationId}
+      AND a."geom" IS NOT NULL AND b."geom" IS NOT NULL
+      AND ST_DWithin(a."geom", b."geom", ${radiusM})
+      AND abs(extract(epoch FROM (a."observedAt" - b."observedAt"))) <= ${windowSeconds}
+    ORDER BY a."id", b."id"
+    LIMIT ${limit}`;
+}
+
 export interface EdgeAsOf {
   id: string;
   fromEntityId: string;
@@ -105,15 +139,18 @@ export interface EdgeAsOf {
 }
 
 /**
- * The edges of the graph as it was known at `asOf`, optionally limited to
- * edges touching the given entities. Both clocks apply; see
- * packages/fusion/src/temporal.ts for why.
+ * The edges that held at `asOf` and were known by `knownAs`, optionally
+ * limited to edges touching the given entities. `knownAs` defaults to `asOf`
+ * (the strict reading); `asOf: null` applies the knowledge clock only. See
+ * packages/fusion/src/temporal.ts for why there are two.
  */
 export async function edgesAsOf(
-  asOf: Date,
-  filter: { entityIds?: readonly string[]; authorizationId?: string } = {},
+  asOf: Date | null,
+  filter: { entityIds?: readonly string[]; authorizationId?: string; knownAs?: Date } = {},
 ): Promise<EdgeAsOf[]> {
-  const predicate = Prisma.raw(asOfSql("e", "$1"));
+  const knownAs = filter.knownAs ?? asOf ?? new Date();
+  const held = asOf ?? knownAs;
+  const predicate = Prisma.raw(asOfSql("e", asOf === null ? null : "$1", "$2"));
   const entityClause =
     filter.entityIds !== undefined && filter.entityIds.length > 0
       ? Prisma.sql`AND (e."fromEntityId" = ANY(${filter.entityIds}::text[]) OR e."toEntityId" = ANY(${filter.entityIds}::text[]))`
@@ -123,13 +160,13 @@ export async function edgesAsOf(
       ? Prisma.sql`AND e."authorizationId" = ${filter.authorizationId}`
       : Prisma.empty;
 
-  // $1 is asOf. Prisma numbers parameters in order of appearance, so asOf is
-  // bound first and the raw predicate refers to it as $1.
+  // $1 is asOf and $2 is knownAs: bound first, in that order, so the raw
+  // predicate's placeholders line up with Prisma's numbering.
   return prisma.$queryRaw<EdgeAsOf[]>`
     SELECT e."id", e."fromEntityId", e."toEntityId", e."relation"::text AS "relation",
            e."validFrom", e."validUntil", e."confidenceBp", e."evidenceObservationIds"
     FROM "EntityEdge" e
-    WHERE ${asOf}::timestamptz IS NOT NULL AND ${predicate}
+    WHERE ${held}::timestamptz IS NOT NULL AND ${knownAs}::timestamptz IS NOT NULL AND ${predicate}
       ${entityClause} ${authClause}
     ORDER BY e."validFrom", e."id"`;
 }
@@ -153,8 +190,19 @@ export interface ConsistencyReport {
  * relational tables can still disagree with themselves in ways no constraint
  * catches, and this names each way.
  */
-export async function checkGraphConsistency(limit = 200): Promise<ConsistencyReport> {
+export async function checkGraphConsistency(
+  limit = 200,
+  authorizationId?: string,
+): Promise<ConsistencyReport> {
   const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
+  // Scoped to one authorization when asked (the route), global when not (the
+  // job). The same four questions either way.
+  const edgeScope =
+    authorizationId === undefined ? Prisma.empty : Prisma.sql`AND e."authorizationId" = ${authorizationId}`;
+  const entityScope =
+    authorizationId === undefined
+      ? Prisma.empty
+      : Prisma.sql`AND EXISTS (SELECT 1 FROM "ResolutionRun" r WHERE r."id" = en."resolutionRunId" AND r."authorizationId" = ${authorizationId})`;
 
   const danglingEvidence = ids(
     await prisma.$queryRaw<{ id: string }[]>`
@@ -162,7 +210,7 @@ export async function checkGraphConsistency(limit = 200): Promise<ConsistencyRep
       WHERE EXISTS (
         SELECT 1 FROM unnest(e."evidenceObservationIds") AS x(obs)
         WHERE NOT EXISTS (SELECT 1 FROM "Observation" o WHERE o."id" = x.obs)
-      ) LIMIT ${limit}`,
+      ) ${edgeScope} LIMIT ${limit}`,
   );
 
   const resolvedWithoutMembers = ids(
@@ -171,19 +219,19 @@ export async function checkGraphConsistency(limit = 200): Promise<ConsistencyRep
       WHERE en."status" = 'RESOLVED'
         AND NOT EXISTS (
           SELECT 1 FROM "EntityMember" m WHERE m."entityId" = en."id" AND m."supersededAt" IS NULL
-        ) LIMIT ${limit}`,
+        ) ${entityScope} LIMIT ${limit}`,
   );
 
   const selfEdges = ids(
     await prisma.$queryRaw<{ id: string }[]>`
-      SELECT "id" FROM "EntityEdge" WHERE "fromEntityId" = "toEntityId" LIMIT ${limit}`,
+      SELECT e."id" FROM "EntityEdge" e WHERE e."fromEntityId" = e."toEntityId" ${edgeScope} LIMIT ${limit}`,
   );
 
   const supersededBeforeCreated = ids(
     await prisma.$queryRaw<{ id: string }[]>`
-      SELECT "id" FROM "EntityEdge" WHERE "supersededAt" IS NOT NULL AND "supersededAt" < "createdAt"
+      SELECT e."id" FROM "EntityEdge" e WHERE e."supersededAt" IS NOT NULL AND e."supersededAt" < e."createdAt" ${edgeScope}
       UNION ALL
-      SELECT "id" FROM "EntityMember" WHERE "supersededAt" IS NOT NULL AND "supersededAt" < "addedAt"
+      SELECT m."id" FROM "EntityMember" m WHERE m."supersededAt" IS NOT NULL AND m."supersededAt" < m."addedAt"
       LIMIT ${limit}`,
   );
 

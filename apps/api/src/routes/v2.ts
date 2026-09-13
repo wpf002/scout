@@ -28,6 +28,9 @@ import { logEvent } from "../observability.js";
 import { upstreamMessage } from "../adapters/base.js";
 import { scopeContextForCase } from "../v2/scope.js";
 import { runResolution } from "../v2/resolution.js";
+import { deriveLinks } from "../v2/links.js";
+import { coLocationWindow, neighbors, pathBetween, timelineForEntity, visibleEntities } from "../v2/graph.js";
+import { checkGraphConsistency, edgesAsOf } from "@scout/db";
 import {
   NORMALIZATION_VERSION,
   ensureCollectionSource,
@@ -88,6 +91,21 @@ const adjudicateSchema = z.object({
   rightObservationId: z.string().min(1),
   decision: z.enum(["MATCH", "NON_MATCH", "INDETERMINATE"]),
   note: z.string().trim().min(1).max(2000),
+});
+
+const deriveSchema = z.object({
+  caseId: z.string().min(1),
+  radiusM: z.coerce.number().int().min(10).max(50_000).optional(),
+  windowMinutes: z.coerce.number().int().min(1).max(1_440).optional(),
+});
+
+const asOfQuery = z.object({
+  caseId: z.string().min(1),
+  /** Valid time: what held then. Defaults to now. */
+  asOf: z.coerce.date().optional(),
+  /** Knowledge time: what Scout knew by then. Defaults to now; pass the same
+   * instant as asOf for the strict "exactly as it was known at T". */
+  knownAs: z.coerce.date().optional(),
 });
 
 const observationsQuery = z.object({
@@ -613,5 +631,90 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
       detail: { adjudicationId: row.id, left, right, decision: body.decision, note: body.note },
     });
     return reply.status(201).send(row);
+  });
+
+  // ── the temporal graph ─────────────────────────────────────────────────
+
+  app.post("/v2/links/derive", async (request) => {
+    const body = deriveSchema.parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(body.caseId, operator);
+    return deriveLinks({
+      ctx, caseId, operator,
+      options: { ...(body.radiusM === undefined ? {} : { radiusM: body.radiusM }), ...(body.windowMinutes === undefined ? {} : { windowMinutes: body.windowMinutes }) },
+    });
+  });
+
+  const logRead = async (operator: string, authorizationId: string, targetType: string, targetIds: string[], queryText: string) =>
+    prisma.accessLog.create({ data: { actor: operator, authorizationId, action: "read", targetType, targetIds, queryText, resultCount: targetIds.length } });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/graph/edges", async (request) => {
+    const query = asOfQuery.extend({ entityId: z.string().min(1).optional() }).parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const asOf = query.asOf ?? new Date();
+    const knownAs = query.knownAs ?? new Date();
+    const nodes = await visibleEntities(ctx, knownAs, query.entityId === undefined ? undefined : [query.entityId]);
+    const edges = (await edgesAsOf(asOf, { authorizationId: ctx.authorizationId, knownAs, ...(query.entityId === undefined ? {} : { entityIds: [query.entityId] }) }))
+      .filter((e) => (query.entityId === undefined ? true : nodes.has(query.entityId)));
+    const endpoints = await visibleEntities(ctx, knownAs, [...new Set(edges.flatMap((e) => [e.fromEntityId, e.toEntityId]))]);
+    const shown = edges.filter((e) => endpoints.has(e.fromEntityId) && endpoints.has(e.toEntityId));
+    await logRead(operator, ctx.authorizationId, "EntityEdge", shown.map((e) => e.id), `edges asOf=${asOf.toISOString()} knownAs=${knownAs.toISOString()}`);
+    return { caseId, asOf, knownAs, count: shown.length, nodes: [...endpoints.values()], edges: shown };
+  });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/graph/neighbors", async (request) => {
+    const query = asOfQuery.extend({ entityId: z.string().min(1), hops: z.coerce.number().int().min(1).max(3).default(1) }).parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const result = await neighbors({ ctx, entityId: query.entityId, asOf: query.asOf ?? new Date(), knownAs: query.knownAs ?? new Date(), hops: query.hops });
+    await logRead(operator, ctx.authorizationId, "Entity", result.nodes.map((n) => n.id), `neighbors ${query.entityId} hops=${query.hops} asOf=${result.asOf.toISOString()}`);
+    return { caseId, ...result };
+  });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/graph/path", async (request) => {
+    const query = asOfQuery.extend({ from: z.string().min(1), to: z.string().min(1), maxHops: z.coerce.number().int().min(1).max(6).default(4) }).parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const result = await pathBetween({ ctx, from: query.from, to: query.to, asOf: query.asOf ?? new Date(), knownAs: query.knownAs ?? new Date(), maxHops: query.maxHops });
+    await logRead(operator, ctx.authorizationId, "Entity", result.nodes.map((n) => n.id), `path ${query.from}→${query.to} maxHops=${query.maxHops} asOf=${result.asOf.toISOString()}`);
+    return { caseId, ...result };
+  });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/graph/timeline", async (request) => {
+    const query = asOfQuery.extend({ entityId: z.string().min(1) }).parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const result = await timelineForEntity({ ctx, entityId: query.entityId, asOf: query.asOf ?? new Date(), knownAs: query.knownAs ?? new Date() });
+    await logRead(operator, ctx.authorizationId, "Entity", [query.entityId], `timeline ${query.entityId} asOf=${result.asOf.toISOString()}`);
+    return { caseId, ...result };
+  });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/graph/colocation", async (request) => {
+    const query = z.object({ caseId: z.string().min(1), entityId: z.string().min(1), from: z.coerce.date(), to: z.coerce.date() }).parse(request.query);
+    if (query.to <= query.from) throw badRequest("to must be after from.");
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const result = await coLocationWindow({ ctx, entityId: query.entityId, from: query.from, to: query.to });
+    await logRead(operator, ctx.authorizationId, "EntityEdge", result.edges.map((e) => e.id), `colocation ${query.entityId} ${query.from.toISOString()}..${query.to.toISOString()}`);
+    return { caseId, from: query.from, to: query.to, ...result };
+  });
+
+  app.post("/v2/graph/consistency", async (request) => {
+    const body = z.object({ caseId: z.string().min(1) }).parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(body.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const report = await checkGraphConsistency(200, ctx.authorizationId);
+    await recordAuditEvent({
+      caseId, action: "v2.graph.checked", actor: operator,
+      detail: { authorizationId: ctx.authorizationId, clean: report.clean, danglingEvidence: report.danglingEvidence.length, resolvedWithoutMembers: report.resolvedWithoutMembers.length, selfEdges: report.selfEdges.length, supersededBeforeCreated: report.supersededBeforeCreated.length },
+    });
+    return { caseId, ...report };
   });
 }

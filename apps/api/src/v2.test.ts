@@ -397,4 +397,161 @@ run("Scout v2 — stage 3: collection", () => {
       expect(r.statusCode).toBe(404);
     });
   });
+
+  describe("links and the temporal graph", () => {
+    let graphCase: string;
+    let graphAuth: string;
+    const T0 = new Date(Date.now() - 2 * 60 * 60_000);
+    const at = (minutes: number) => new Date(T0.getTime() + minutes * 60_000);
+    const obs: Record<string, string> = {};
+    const ent: Record<string, string> = {};
+
+    async function place(name: string, identifiers: { kind: string; value: string }[], observedAt: Date, position: { lon: number; lat: number } | null) {
+      const [id] = await insertObservations([{
+        sourceId: "adsb-live", authorizationId: graphAuth, caseId: graphCase, collectedAt: new Date(), observedAt,
+        rawPayload: { seeded: name }, normalizedPayload: { seeded: name, graph: T0.getTime() },
+        contentHash: `graph-${name}-${T0.getTime()}`, position, confidenceBp: null, indeterminate: false, entityKind: "PERSON",
+      }]);
+      await prisma.identifier.createMany({
+        data: identifiers.map((i) => ({ observationId: id as string, kind: i.kind as never, value: i.value, normalizedValue: naiveNormalize(i.kind as never, i.value), normalizationVersion: "naive-1" })),
+      });
+      obs[name] = id as string;
+    }
+
+    beforeAll(async () => {
+      graphCase = await newCase("graph");
+      graphAuth = (await authorize(graphCase)).id;
+      const portland = { lon: -122.676, lat: 45.523 };
+      await place("P1a", [{ kind: "PHONE", value: "+14155550100" }, { kind: "DEVICE_ID", value: "dev-1" }], at(0), portland);
+      await place("P1b", [{ kind: "PHONE", value: "(415) 555-0100" }, { kind: "NAME", value: "Bob Smith" }], at(5), { lon: -122.677, lat: 45.524 });
+      await place("P2", [{ kind: "DEVICE_ID", value: "dev-1" }, { kind: "NAME", value: "Alice Jones" }, { kind: "EMAIL", value: "alice@example.org" }], at(60), { lon: -63.573, lat: 44.649 });
+      // ~500 m from P1b, three minutes later.
+      await place("P3", [{ kind: "NAME", value: "Carol Diaz" }, { kind: "EMAIL", value: "carol@example.org" }], at(8), { lon: -122.671, lat: 45.526 });
+      // Same minute, fifty kilometres away.
+      await place("P4", [{ kind: "NAME", value: "Dan Roe" }], at(9), { lon: -122.1, lat: 45.9 });
+
+      // The device is shared by two different people: a pinned non-match keeps
+      // the stand-in resolver from merging them on it.
+      await post("/v2/adjudicate", { caseId: graphCase, leftObservationId: obs["P1a"], rightObservationId: obs["P2"], decision: "NON_MATCH", note: "shared household device" });
+      const resolved = (await post("/v2/resolve", { caseId: graphCase, entityKind: "PERSON" })).json();
+      for (const e of resolved.entities as { id: string; members: string[] }[]) {
+        for (const [name, id] of Object.entries(obs)) if (e.members.includes(id)) ent[name] = e.id;
+      }
+      expect(ent["P1a"]).toBe(ent["P1b"]);
+      expect(ent["P2"]).not.toBe(ent["P1a"]);
+    });
+
+    it("derives shared-device and co-location edges with evidence and windows", async () => {
+      const r = await post("/v2/links/derive", { caseId: graphCase, radiusM: 2000, windowMinutes: 30 });
+      expect(r.statusCode).toBe(200);
+      const body = r.json();
+      expect(body.created).toBe(2);
+      expect(body.byBasis).toEqual({ "shared:DEVICE_ID": 1, "co-location:2000m/30min": 1 });
+
+      const device = body.edges.find((e: { relation: string }) => e.relation === "SAME_DEVICE");
+      expect([device.fromEntityId, device.toEntityId].sort()).toEqual([ent["P1a"], ent["P2"]].sort());
+      expect(device.evidenceObservationIds).toEqual(expect.arrayContaining([obs["P1a"], obs["P2"]]));
+      expect(device.validUntil).toBeNull();
+
+      // Both of E1's sightings are within reach of P3, so one window covers
+      // them: from the first sighting to the last plus the window.
+      const near = body.edges.find((e: { relation: string }) => e.relation === "CO_LOCATED");
+      expect([near.fromEntityId, near.toEntityId].sort()).toEqual([ent["P1b"], ent["P3"]].sort());
+      expect(new Date(near.validFrom).getTime()).toBe(at(0).getTime());
+      expect(new Date(near.validUntil).getTime()).toBe(at(8 + 30).getTime());
+      expect(near.evidenceObservationIds.sort()).toEqual([obs["P1a"], obs["P1b"], obs["P3"]].sort());
+      expect(near.confidenceBp).toBeGreaterThan(8000);
+      expect(body.edges.some((e: { fromEntityId: string; toEntityId: string }) => e.fromEntityId === ent["P4"] || e.toEntityId === ent["P4"])).toBe(false);
+
+      const event = await prisma.auditEvent.findFirst({ where: { caseId: graphCase, action: "v2.links.derived" } });
+      expect(event).not.toBeNull();
+    });
+
+    it("keeps the same edges on a re-run instead of duplicating them", async () => {
+      const body = (await post("/v2/links/derive", { caseId: graphCase })).json();
+      expect(body.created).toBe(0);
+      expect(body.kept).toBe(2);
+      expect(body.superseded).toBe(0);
+    });
+
+    it("answers neighbours on both clocks", async () => {
+      // Now: the shared device still holds; the co-location ended an hour ago.
+      const now = (await get(`/v2/graph/neighbors?caseId=${graphCase}&entityId=${ent["P1a"]}&hops=1`)).json();
+      expect(now.nodes.map((n: { id: string }) => n.id).sort()).toEqual([ent["P1a"], ent["P2"]].sort());
+      expect(now.edges).toHaveLength(1);
+
+      // At T0+20min, given everything known today: both held.
+      const then = (await get(`/v2/graph/neighbors?caseId=${graphCase}&entityId=${ent["P1a"]}&asOf=${at(20).toISOString()}`)).json();
+      expect(then.nodes.map((n: { id: string }) => n.id).sort()).toEqual([ent["P1a"], ent["P2"], ent["P3"]].sort());
+      expect(then.edges).toHaveLength(2);
+
+      // At T0+20min, as it was known at T0+20min: nothing had been learned.
+      // The entity itself did not exist yet, so the answer is 404, not an
+      // empty graph pretending the entity was there.
+      const strict = await get(`/v2/graph/neighbors?caseId=${graphCase}&entityId=${ent["P1a"]}&asOf=${at(20).toISOString()}&knownAs=${at(20).toISOString()}`);
+      expect(strict.statusCode).toBe(404);
+
+      // The last logged read is the T0+20 one: three nodes, ids recorded.
+      const log = await prisma.accessLog.findFirst({ where: { authorizationId: graphAuth, queryText: { startsWith: "neighbors" } }, orderBy: { createdAt: "desc" } });
+      expect(log?.resultCount).toBe(3);
+      expect(log?.targetIds.sort()).toEqual(then.nodes.map((n: { id: string }) => n.id).sort());
+    });
+
+    it("finds a path within the hop cap and none beyond it", async () => {
+      const at20 = at(20).toISOString();
+      const two = (await get(`/v2/graph/path?caseId=${graphCase}&from=${ent["P2"]}&to=${ent["P3"]}&maxHops=2&asOf=${at20}`)).json();
+      expect(two.found).toBe(true);
+      expect(two.hops).toBe(2);
+      expect(two.nodes.map((n: { id: string }) => n.id)).toEqual([ent["P2"], ent["P1a"], ent["P3"]]);
+
+      const one = (await get(`/v2/graph/path?caseId=${graphCase}&from=${ent["P2"]}&to=${ent["P3"]}&maxHops=1&asOf=${at20}`)).json();
+      expect(one.found).toBe(false);
+
+      // Now, the co-location has ended: no path holds.
+      const now = (await get(`/v2/graph/path?caseId=${graphCase}&from=${ent["P2"]}&to=${ent["P3"]}&maxHops=3`)).json();
+      expect(now.found).toBe(false);
+    });
+
+    it("tells an entity's timeline in order, with edges starting and ending", async () => {
+      const r = (await get(`/v2/graph/timeline?caseId=${graphCase}&entityId=${ent["P1a"]}`)).json();
+      const kinds = r.events.map((e: { kind: string }) => e.kind);
+      expect(kinds.filter((k: string) => k === "observation")).toHaveLength(2);
+      expect(kinds).toContain("edge-start");
+      expect(kinds).toContain("edge-end");
+      const times = r.events.map((e: { at: string }) => new Date(e.at).getTime());
+      expect([...times].sort((a, b) => a - b)).toEqual(times);
+    });
+
+    it("answers a co-location window", async () => {
+      const hit = (await get(`/v2/graph/colocation?caseId=${graphCase}&entityId=${ent["P1a"]}&from=${T0.toISOString()}&to=${at(60).toISOString()}`)).json();
+      expect(hit.edges).toHaveLength(1);
+      expect(hit.others.map((n: { id: string }) => n.id)).toEqual([ent["P3"]]);
+      const miss = (await get(`/v2/graph/colocation?caseId=${graphCase}&entityId=${ent["P1a"]}&from=${at(120).toISOString()}&to=${at(180).toISOString()}`)).json();
+      expect(miss.edges).toHaveLength(0);
+    });
+
+    it("lists edges as of a moment and logs the read", async () => {
+      expect((await get(`/v2/graph/edges?caseId=${graphCase}`)).json().count).toBe(1);
+      const r = (await get(`/v2/graph/edges?caseId=${graphCase}&asOf=${at(20).toISOString()}`)).json();
+      expect(r.count).toBe(2);
+      const log = await prisma.accessLog.findFirst({ where: { authorizationId: graphAuth, targetType: "EntityEdge" }, orderBy: { createdAt: "desc" } });
+      expect(log?.targetIds.sort()).toEqual(r.edges.map((e: { id: string }) => e.id).sort());
+    });
+
+    it("refuses the graph to an authorization without READ_GRAPH", async () => {
+      const id = await newCase("no-read");
+      await authorize(id, { actionClasses: ["COLLECT"] });
+      const r = await get(`/v2/graph/edges?caseId=${id}`);
+      expect(r.statusCode).toBe(403);
+      expect(r.json().reason).toBe("action-not-permitted");
+    });
+
+    it("reports the graph consistent for this authorization", async () => {
+      const r = await post("/v2/graph/consistency", { caseId: graphCase });
+      expect(r.statusCode).toBe(200);
+      expect(r.json().clean).toBe(true);
+      const event = await prisma.auditEvent.findFirst({ where: { caseId: graphCase, action: "v2.graph.checked" } });
+      expect((event?.detail as { clean: boolean }).clean).toBe(true);
+    });
+  });
 });

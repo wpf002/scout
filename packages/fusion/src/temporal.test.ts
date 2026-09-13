@@ -46,7 +46,27 @@ describe("knownAt", () => {
   });
 });
 
+describe("knownAt with a separate knowledge clock", () => {
+  it("shows what held at T given what is known now", () => {
+    const edge = { validFrom: d("2026-03-01T00:00:00Z"), validUntil: d("2026-03-02T00:00:00Z"), createdAt: d("2026-05-15T00:00:00Z"), supersededAt: null };
+    const then = d("2026-03-01T12:00:00Z");
+    // Learned in May about March. Strictly "as known in March": invisible.
+    expect(knownAt(edge, then)).toBe(false);
+    // "What held in March, given what we know in June": visible.
+    expect(knownAt(edge, then, d("2026-06-01T00:00:00Z"))).toBe(true);
+    // And it no longer holds now, whatever we know.
+    expect(knownAt(edge, d("2026-06-01T00:00:00Z"))).toBe(false);
+  });
+});
+
 describe("asOfSql", () => {
+  it("applies only the knowledge clock when asOf is null", () => {
+    const sql = asOfSql("e", null, "$2");
+    expect(sql.startsWith("TRUE AND")).toBe(true);
+    expect(sql).toContain('e."createdAt" <= $2');
+    expect(sql).not.toContain("validFrom");
+  });
+
   it("emits both clocks against the given placeholder", () => {
     const sql = asOfSql("e", "$1");
     expect(sql).toContain('e."validFrom" <= $1');

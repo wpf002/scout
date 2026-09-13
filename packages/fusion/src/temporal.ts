@@ -25,22 +25,34 @@ export interface TemporalRow {
   supersededAt: Date | null;
 }
 
-/** True when the row both held at `asOf` and was known to Scout by `asOf`. */
-export function knownAt(row: TemporalRow, asOf: Date): boolean {
+/**
+ * True when the row held at `asOf` and was known to Scout by `knownAs`.
+ *
+ * The two default to the same instant, which is the strict "exactly as it
+ * was known at T". Passing `knownAs = now` with an earlier `asOf` asks the
+ * other useful question: given everything known today, what held at T. A
+ * co-location learned after it ended is invisible under the first reading at
+ * every T, and visible under the second at the T it happened; the console
+ * scrubber asks the second, the audit trail the first.
+ */
+export function knownAt(row: TemporalRow, asOf: Date, knownAs: Date = asOf): boolean {
   const held =
     row.validFrom <= asOf && (row.validUntil === null || row.validUntil > asOf);
   const known =
-    row.createdAt <= asOf && (row.supersededAt === null || row.supersededAt > asOf);
+    row.createdAt <= knownAs && (row.supersededAt === null || row.supersededAt > knownAs);
   return held && known;
 }
 
 /**
- * The same predicate as SQL, for raw queries. `param` is the positional
- * placeholder holding `asOf` (e.g. `$1`), and `alias` the table alias.
+ * The same predicate as SQL, for raw queries. `asOf` and `knownAs` are the
+ * positional placeholders holding the two instants (e.g. `$1`, `$2`); pass
+ * `asOf: null` to apply the knowledge clock only.
  */
-export function asOfSql(alias: string, param: string): string {
-  return (
-    `${alias}."validFrom" <= ${param} AND (${alias}."validUntil" IS NULL OR ${alias}."validUntil" > ${param})` +
-    ` AND ${alias}."createdAt" <= ${param} AND (${alias}."supersededAt" IS NULL OR ${alias}."supersededAt" > ${param})`
-  );
+export function asOfSql(alias: string, asOf: string | null, knownAs: string = asOf ?? "$1"): string {
+  const held =
+    asOf === null
+      ? "TRUE"
+      : `${alias}."validFrom" <= ${asOf} AND (${alias}."validUntil" IS NULL OR ${alias}."validUntil" > ${asOf})`;
+  const known = `${alias}."createdAt" <= ${knownAs} AND (${alias}."supersededAt" IS NULL OR ${alias}."supersededAt" > ${knownAs})`;
+  return `${held} AND ${known}`;
 }

@@ -25,7 +25,8 @@
     "test": "vitest run",
     "operator": "tsx prisma/operator.ts",
     "lint": "eslint src",
-    "seed:v2": "tsx prisma/seed-v2.ts"
+    "seed:v2": "tsx prisma/seed-v2.ts",
+    "graph:check": "tsx src/bin/check-graph.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
