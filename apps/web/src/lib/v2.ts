@@ -1,4 +1,4 @@
-import { request } from "./api";
+import { BASE, getOperatorToken, request } from "./api";
 
 /**
  * The v2 routes, typed. Read paths only in the console; every one of them is
@@ -187,6 +187,23 @@ export interface AskResult {
   };
 }
 
+export interface ImageryTile {
+  id: string;
+  sourceId: string;
+  sceneId: string;
+  sensedAt: string;
+  cloudCoverPct: number | null;
+  /** west, south, east, north */
+  bbox: [number, number, number, number];
+  hasPreview: boolean;
+  bytes: number;
+  widthPx: number;
+  heightPx: number;
+  resolutionM: number;
+  format: string;
+  cloudOptimized: boolean;
+}
+
 export interface TimelineEvent {
   at: string;
   kind: "observation" | "membership" | "edge-start" | "edge-end";
@@ -223,6 +240,19 @@ export const v2 = {
 
   entities: (caseId: string, kind?: EntityKind, limit = 500) =>
     request<{ count: number; sources: SourceCoverage[]; entities: Entity[] }>(`/v2/entities?${q({ caseId, kind, limit })}`),
+
+  imageryTiles: (caseId: string) => request<{ count: number; tiles: ImageryTile[] }>(`/v2/imagery/tiles?${q({ caseId })}`),
+
+  /** The stored preview as an object URL the map can draw. The caller revokes it. */
+  imageryPreview: async (caseId: string, tileId: string): Promise<string> => {
+    const token = getOperatorToken();
+    const response = await fetch(`${BASE}/v2/imagery/preview/${encodeURIComponent(tileId)}?${q({ caseId })}`, {
+      headers: token === null ? {} : { authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Preview ${tileId} answered ${response.status}.`);
+    return URL.createObjectURL(await response.blob());
+  },
 
   ask: (caseId: string, question: string) => request<AskResult>("/v2/ask", { method: "POST", body: { caseId, question } }),
 

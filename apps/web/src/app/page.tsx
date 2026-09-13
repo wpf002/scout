@@ -23,7 +23,7 @@ import { Filters } from "@/components/Filters";
 import { Aoi, type Box } from "@/components/Aoi";
 import { CaseFile } from "@/components/CaseFile";
 import { Investigation } from "@/components/Investigation";
-import { EMPTY_LAYER, type MapLayer } from "@/lib/investigation";
+import { EMPTY_LAYER, type ImageryOverlay, type MapLayer } from "@/lib/investigation";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
 /**
@@ -102,6 +102,7 @@ export default function Page() {
   const [drawingAoi, setDrawingAoi] = useState(false);
   const [aoiFeatures, setAoiFeatures] = useState<GeoJSON.Feature[]>([]);
   const [investigation, setInvestigation] = useState<MapLayer>(EMPTY_LAYER);
+  const [imagery, setImagery] = useState<ImageryOverlay[]>([]);
   const [pick, setPick] = useState<{ entityId: string; nonce: number } | null>(null);
   const [track, setTrack] = useState<{
     path: [number, number][];
@@ -598,6 +599,7 @@ export default function Page() {
         onAoi={onAoi}
         aoiFeatures={aoiFeatures}
         investigation={investigation}
+        imagery={imagery}
         route={route}
         stops={stops}
         picking={picking}
@@ -694,7 +696,10 @@ export default function Page() {
                   if (next !== "aoi") setDrawingAoi(false);
                   // The console's picture belongs to the console; closing it
                   // takes the picture off the live map.
-                  if (next !== "investigation") setInvestigation(EMPTY_LAYER);
+                  if (next !== "investigation") {
+                    setInvestigation(EMPTY_LAYER);
+                    setImagery([]);
+                  }
                   return next;
                 })
               }
@@ -943,7 +948,7 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <div className="tool-panel-body">
-            <Investigation onLayer={setInvestigation} onFly={setFlyTo} pick={pick} />
+            <Investigation onLayer={setInvestigation} onImagery={setImagery} onFly={setFlyTo} pick={pick} />
           </div>
         </section>
       ) : null}

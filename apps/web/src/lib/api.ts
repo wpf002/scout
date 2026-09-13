@@ -27,7 +27,7 @@ import type {
  * mistyped port or a stale CORS allowlist cannot produce a page that loads and
  * then silently shows nothing.
  */
-const BASE = `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api`;
+export const BASE = `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api`;
 
 /** Long enough for a slow upstream sweep, short enough to not look like a hang. */
 const REQUEST_TIMEOUT_MS = 30_000;

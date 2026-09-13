@@ -8,6 +8,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { insertObservations, prisma } from "@scout/db";
+import { clearStoredObjects, storedObjectKeys } from "./test/network.js";
+import { resetObjectStore } from "./v2/storage.js";
 import { naiveNormalize } from "./v2/collectors/index.js";
 
 const DB = process.env["DATABASE_URL"];
@@ -92,7 +94,7 @@ run("Scout v2 — stage 3: collection", () => {
     it("lists both with their licensing terms and configuration state", async () => {
       const body = (await get("/v2/collectors")).json();
       const ids = body.collectors.map((c: { id: string }) => c.id).sort();
-      expect(ids).toEqual(["adsb-live", "sec-edgar"]);
+      expect(ids).toEqual(expect.arrayContaining(["adsb-live", "sec-edgar"]));
       for (const c of body.collectors) {
         expect(c.licensingTerms.length).toBeGreaterThan(40);
         expect(typeof c.configured).toBe("boolean");
@@ -411,6 +413,137 @@ run("Scout v2 — stage 3: collection", () => {
     it("refuses an adjudication about an observation outside the authorization", async () => {
       const r = await post("/v2/adjudicate", { caseId, leftObservationId: ids["A1"], rightObservationId: "obs_not_ours", decision: "MATCH", note: "x" });
       expect(r.statusCode).toBe(404);
+    });
+  });
+
+  describe("stage 9: connectors and imagery", () => {
+    let nineCase: string;
+    let nineAuth: string;
+    const box = [5.3, 60.39, 5.32, 60.4];
+    const window = { from: "2026-08-20T00:00:00Z", to: "2026-09-10T00:00:00Z" };
+
+    beforeAll(async () => {
+      nineCase = await newCase("stage9", [{ kind: "domain", value: "example.org" }, { kind: "domain", value: "closed.example" }]);
+      nineAuth = (await authorize(nineCase, {
+        sourceClasses: ["SENSOR", "PUBLIC_RECORD", "OPEN_WEB", "FIRST_PARTY", "SATELLITE"],
+        entityKinds: ["VESSEL", "DEVICE", "ORG", "LOCATION", "PERSON"],
+      })).id;
+      process.env["S3_ENDPOINT"] = "http://127.0.0.1:9000";
+      process.env["S3_ACCESS_KEY"] = "test";
+      process.env["S3_SECRET_KEY"] = "test";
+      process.env["S3_BUCKET_TILES"] = "scout-tiles-test";
+      resetObjectStore();
+      clearStoredObjects();
+    });
+
+    it("collects AIS vessels from the national feeds with attribution on the row", async () => {
+      const r = await post("/v2/collect", { caseId: nineCase, collectorId: "ais-live" });
+      expect(r.statusCode).toBe(200);
+      expect(r.json().written).toBe(1);
+      const row = await prisma.observation.findUnique({ where: { id: r.json().observationIds[0] }, include: { identifiers: true } });
+      expect(row?.entityKind).toBe("VESSEL");
+      expect((row?.normalizedPayload as { upstream: string }).upstream).toBe("Kystverket (Norway)");
+      expect(row?.identifiers.map((i) => i.kind).sort()).toEqual(["IMO", "MMSI", "NAME"]);
+      expect(row?.observedAt.toISOString()).toBe("2026-09-13T11:58:00.000Z");
+    });
+
+    it("ingests first-party telemetry under a consent reference, and refuses without one", async () => {
+      const refused = await post("/v2/collect", { caseId: nineCase, collectorId: "first-party-telemetry", params: { deviceId: "truck-12", points: [{ at: "2026-09-13T10:00:00Z", lon: 5, lat: 60 }] } });
+      expect(refused.statusCode).toBe(400);
+      const r = await post("/v2/collect", { caseId: nineCase, collectorId: "first-party-telemetry", params: { consentRef: "CONSENT-77", deviceId: "truck-12", points: [{ at: "2026-09-13T10:00:00Z", lon: 5, lat: 60 }, { at: "2026-09-13T10:05:00Z", lon: 5.01, lat: 60.01, speedKn: 9 }] } });
+      expect(r.statusCode).toBe(200);
+      expect(r.json().written).toBe(2);
+      const ids = await prisma.identifier.findMany({ where: { observationId: { in: r.json().observationIds } } });
+      expect(ids.every((i) => i.kind === "DEVICE_ID" && i.value === "truck-12")).toBe(true);
+    });
+
+    it("fetches one open-web page under a covered domain, obeying robots.txt", async () => {
+      const r = await post("/v2/collect", { caseId: nineCase, collectorId: "open-web", subject: { kind: "domain", value: "example.org" } });
+      expect(r.statusCode).toBe(200);
+      expect(r.json().written).toBe(1);
+      const row = await prisma.observation.findUnique({ where: { id: r.json().observationIds[0] }, include: { identifiers: true } });
+      expect(row?.identifiers.map((i) => `${i.kind}:${i.value}`)).toEqual(expect.arrayContaining(["DOMAIN:example.org", "EMAIL:hello@example.org", "HANDLE:@examplesons", "NAME:Example & Sons"]));
+
+      const closed = await post("/v2/collect", { caseId: nineCase, collectorId: "open-web", subject: { kind: "domain", value: "closed.example" } });
+      expect(closed.statusCode).toBe(200);
+      expect(closed.json().status).toBe("error");
+      expect(closed.json().message).toMatch(/robots\.txt disallows/);
+      const outside = await post("/v2/collect", { caseId: nineCase, collectorId: "open-web", subject: { kind: "domain", value: "elsewhere.example" } });
+      expect(outside.statusCode).toBe(403);
+    });
+
+    it("is inert for the satellite catalogues without their keys", async () => {
+      for (const collectorId of ["sentinel-2", "planet-scenes", "maxar-catalog"]) {
+        const r = await post("/v2/collect", { caseId: nineCase, collectorId, params: { bbox: box, ...window } });
+        expect(r.statusCode).toBe(200);
+        expect(r.json().status).toBe("inert");
+      }
+    });
+
+    it("refuses a box too large for one request before touching a provider", async () => {
+      process.env["SENTINELHUB_CLIENT_ID"] = "id";
+      process.env["SENTINELHUB_CLIENT_SECRET"] = "secret";
+      const r = await post("/v2/collect", { caseId: nineCase, collectorId: "sentinel-2", params: { bbox: [5, 60, 6, 61], ...window } });
+      expect(r.statusCode).toBe(400);
+    });
+
+    it("stores each Sentinel-2 scene over the box once, indexes it, and serves the preview", async () => {
+      const first = await post("/v2/collect", { caseId: nineCase, collectorId: "sentinel-2", params: { bbox: box, ...window, maxScenes: 2 } });
+      expect(first.statusCode).toBe(200);
+      expect(first.json().written).toBe(2);
+      const keys = storedObjectKeys();
+      expect(keys.filter((k) => k.endsWith(".tif"))).toHaveLength(2);
+      expect(keys.filter((k) => k.endsWith(".png"))).toHaveLength(2);
+      expect(keys.every((k) => k.startsWith("http://127.0.0.1:9000/scout-tiles-test/sentinel-2/"))).toBe(true);
+      const tiles = await prisma.imageryTile.findMany({ where: { authorizationId: nineAuth } });
+      expect(tiles).toHaveLength(2);
+      expect(tiles.every((t) => t.cloudOptimized === false && t.previewKey !== null && t.resolutionM === 10)).toBe(true);
+      const obs = await prisma.observation.findUnique({ where: { id: first.json().observationIds[0] } });
+      expect(obs?.entityKind).toBe("LOCATION");
+      expect((obs?.normalizedPayload as { tileId: string }).tileId).toBe(tiles.find((t) => t.sceneId === (obs?.normalizedPayload as { sceneId: string }).sceneId)?.id);
+
+      // The same request again: nothing fetched, nothing written, same rows.
+      const again = await post("/v2/collect", { caseId: nineCase, collectorId: "sentinel-2", params: { bbox: box, ...window, maxScenes: 2 } });
+      expect(again.json().written).toBe(0);
+      expect(again.json().skipped).toBe(2);
+      expect(storedObjectKeys()).toEqual(keys);
+      expect(await prisma.imageryTile.count({ where: { authorizationId: nineAuth } })).toBe(2);
+
+      const listed = await get(`/v2/imagery/tiles?caseId=${nineCase}&bbox=5.31,60.395,5.315,60.398`);
+      expect(listed.json().count).toBe(2);
+      const far = await get(`/v2/imagery/tiles?caseId=${nineCase}&bbox=10,50,11,51`);
+      expect(far.json().count).toBe(0);
+      const log = await prisma.accessLog.findFirst({ where: { authorizationId: nineAuth, targetType: "ImageryTile" }, orderBy: { createdAt: "desc" } });
+      expect(log).not.toBeNull();
+
+      const tile = tiles[0] as { id: string };
+      const preview = await get(`/v2/imagery/preview/${tile.id}?caseId=${nineCase}`);
+      expect(preview.statusCode).toBe(200);
+      expect(preview.headers["content-type"]).toBe("image/png");
+      expect(preview.rawPayload.subarray(1, 4).toString()).toBe("PNG");
+
+      // Another case's authorization: the tile is not there.
+      const other = await newCase("stage9-other");
+      await authorize(other, { sourceClasses: ["SATELLITE"], entityKinds: ["LOCATION"] });
+      expect((await get(`/v2/imagery/preview/${tile.id}?caseId=${other}`)).statusCode).toBe(404);
+      expect((await get(`/v2/imagery/tiles?caseId=${other}`)).json().count).toBe(0);
+    });
+
+    it("records Planet and Maxar catalogue scenes as metadata when keyed", async () => {
+      process.env["PLANET_API_KEY"] = "pk";
+      process.env["MAXAR_API_KEY"] = "mk";
+      const planet = await post("/v2/collect", { caseId: nineCase, collectorId: "planet-scenes", params: { bbox: box, ...window } });
+      expect(planet.json().written).toBe(1);
+      const maxar = await post("/v2/collect", { caseId: nineCase, collectorId: "maxar-catalog", params: { bbox: box, ...window } });
+      expect(maxar.json().written).toBe(1);
+      const rows = await prisma.observation.findMany({ where: { id: { in: [...planet.json().observationIds, ...maxar.json().observationIds] } } });
+      expect(rows.map((r) => (r.normalizedPayload as { provider: string; stored: boolean }).provider).sort()).toEqual(["maxar", "planet"]);
+      expect(rows.every((r) => (r.normalizedPayload as { stored: boolean }).stored === false)).toBe(true);
+      expect(storedObjectKeys().some((k) => k.includes("planet") || k.includes("maxar"))).toBe(false);
+      delete process.env["PLANET_API_KEY"];
+      delete process.env["MAXAR_API_KEY"];
+      delete process.env["SENTINELHUB_CLIENT_ID"];
+      delete process.env["SENTINELHUB_CLIENT_SECRET"];
     });
   });
 

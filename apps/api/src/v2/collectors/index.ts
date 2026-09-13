@@ -1,13 +1,21 @@
+import type { z } from "zod";
 import type { Subject } from "@scout/sources";
 import {
   CollectorRegistry,
+  defineCollector,
   type Collector,
   type FusionEntityKind,
   type IdentifierKind,
 } from "@scout/fusion";
 import { prisma } from "@scout/db";
 import { adsbCollector } from "./adsb.js";
+import { aisCollector } from "./ais.js";
 import { secEdgarCollector } from "./sec-edgar.js";
+import { openWebCollector } from "./open-web.js";
+import { telemetryCollector } from "./telemetry.js";
+import { sentinel2Collector } from "./sentinel2.js";
+import { planetCollector } from "./planet.js";
+import { maxarCollector } from "./maxar.js";
 
 /**
  * A collector the API can actually run.
@@ -29,12 +37,78 @@ export interface RunnableCollector extends Collector {
    * collector reports itself inert rather than guessing (locked invariant 6).
    */
   configuredBy?: string;
-  fetch(input: { subject?: Subject | undefined }): Promise<unknown>;
+  /**
+   * The collector's own parameters, parsed by the route before anything runs
+   * so a malformed request is a 400 rather than an audited upstream error.
+   */
+  paramsSchema?: z.ZodType<unknown>;
+  fetch(input: CollectInput): Promise<unknown>;
+}
+
+/** What a run is given: the subject, if any, the collector's own parameters, and whose run it is. */
+export interface CollectInput {
+  subject?: Subject | undefined;
+  params?: Record<string, unknown> | undefined;
+  authorizationId: string;
+  caseId: string;
 }
 
 export const collectors = new CollectorRegistry();
 collectors.register(adsbCollector);
+collectors.register(aisCollector);
 collectors.register(secEdgarCollector);
+collectors.register(openWebCollector);
+collectors.register(telemetryCollector);
+collectors.register(sentinel2Collector);
+collectors.register(planetCollector);
+collectors.register(maxarCollector);
+
+/**
+ * A licensed broker is an adapter interface, not a vendor. One registers
+ * with a contract reference and the terms it operates under, or not at all;
+ * Scout ships no broker and hardcodes none.
+ */
+export interface BrokerAdapterInput {
+  id: string;
+  name: string;
+  /** The contract this adapter operates under. Required; a broker without one does not register. */
+  contractRef: string;
+  tosUrl: string;
+  licensingTerms: string;
+  refreshCadenceSeconds: number;
+  entityKind: FusionEntityKind;
+  credentialsEnv: string;
+  fetch: RunnableCollector["fetch"];
+  normalize: Collector["normalize"];
+}
+
+export function defineBrokerAdapter(input: BrokerAdapterInput): RunnableCollector {
+  if (input.contractRef.trim().length === 0) {
+    throw new Error(`Broker adapter "${input.id}" has no contract reference. A licensed broker registers under a contract or not at all.`);
+  }
+  if (input.credentialsEnv.trim().length === 0) {
+    throw new Error(`Broker adapter "${input.id}" names no credentials variable; a broker without credentials cannot be run and should not be registered.`);
+  }
+  const base = defineCollector(
+    {
+      id: input.id,
+      name: input.name,
+      sourceClass: "BROKER",
+      licensingTerms: `${input.licensingTerms} Contract: ${input.contractRef}.`,
+      tosUrl: input.tosUrl,
+      refreshCadenceSeconds: input.refreshCadenceSeconds,
+      rateLimit: { perMinute: 30 },
+      credentialsRef: input.credentialsEnv,
+    },
+    input.normalize,
+  );
+  return { ...base, entityKind: input.entityKind, subjectRequired: true, configuredBy: input.credentialsEnv, fetch: input.fetch };
+}
+
+export function registerBroker(adapter: RunnableCollector): void {
+  if (adapter.sourceClass !== "BROKER") throw new Error(`${adapter.id} is not a broker adapter.`);
+  collectors.register(adapter);
+}
 
 export function getRunnable(id: string): RunnableCollector | undefined {
   return collectors.get(id) as RunnableCollector | undefined;

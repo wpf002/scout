@@ -93,7 +93,79 @@ const SEC_TICKERS = JSON.stringify({
   "2": { cik_str: 1018724, ticker: "AMZN", title: "Amazon Com Inc" },
 });
 
+// One Norwegian vessel, as Kystverket publishes it: a short track whose last
+// coordinate is where the ship is.
+const KYSTVERKET = JSON.stringify({
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: [[5.30, 60.39], [5.31, 60.40]] },
+      properties: { mmsi: 257123456, ship_name: "MS TESTFJORD", imo: 9123456, callsign: "LATE", ship_type: 60, destination: "BERGEN", speed: 11.5, true_heading: 42, cog: 40, draught: 4.2, length: 88, date_time_utc: "2026-09-13T11:58:00Z" },
+    },
+  ],
+});
+const DIGITRAFFIC = JSON.stringify({ type: "FeatureCollection", features: [] });
+
+const EXAMPLE_ROBOTS = "User-agent: *\nDisallow: /private/\nAllow: /\n";
+const EXAMPLE_PAGE = `<html><head><title>Example &amp; Sons</title><meta name="description" content="A family firm since 1900."></head>
+<body><script>var x = "hidden@nowhere.test";</script><p>Write to hello@example.org or call +44 20 7946 0958.</p><a href="https://x.com/examplesons">X</a></body></html>`;
+const CLOSED_ROBOTS = "User-agent: *\nDisallow: /\n";
+
+// Sentinel Hub: a token, one scene in the catalogue, and the process API
+// answering with a tiny PNG and a TIFF header, whatever the box.
+const SH_TOKEN = JSON.stringify({ access_token: "sh-test-token", expires_in: 3600 });
+const SH_CATALOG = JSON.stringify({
+  features: [
+    { id: "S2B_MSIL2A_20260901T103629_N0511_R008_T32VKM_20260901T130000", properties: { datetime: "2026-09-01T10:36:29Z", "eo:cloud_cover": 12.4 } },
+    { id: "S2A_MSIL2A_20260827T103631_N0511_R008_T32VKM_20260827T130000", properties: { datetime: "2026-08-27T10:36:31Z", "eo:cloud_cover": 3.1 } },
+  ],
+});
+const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+const TIFF_STUB = Buffer.from("II*\u0000\u0008\u0000\u0000\u0000scout-test-tiff", "latin1");
+
+const PLANET_SEARCH = JSON.stringify({
+  features: [{ id: "20260902_101512_12_2455", properties: { acquired: "2026-09-02T10:15:12Z", cloud_cover: 0.08, item_type: "PSScene", satellite_id: "2455", gsd: 3.9 } }],
+});
+const MAXAR_SEARCH = JSON.stringify({
+  features: [{ id: "10300100E1F2A300", collection: "wv03-vis", properties: { datetime: "2026-09-03T11:02:00Z", "eo:cloud_cover": 5, platform: "worldview-03", gsd: 0.31 } }],
+});
+
+/**
+ * Object storage, in memory: the S3 verbs the pipeline uses, keyed by URL.
+ * The signature is not checked; the store client's own tests cover that.
+ */
+const objects = new Map<string, { body: Uint8Array; contentType: string }>();
+export function storedObjectKeys(): string[] {
+  return [...objects.keys()].sort();
+}
+export function clearStoredObjects(): void {
+  objects.clear();
+}
+async function s3(url: string, init: RequestInit | undefined): Promise<Response> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method === "PUT") {
+    const raw = init?.body;
+    const body = raw instanceof Uint8Array ? raw : typeof raw === "string" ? new TextEncoder().encode(raw) : new Uint8Array(await new Response(raw as ConstructorParameters<typeof Response>[0]).arrayBuffer());
+    objects.set(url, { body, contentType: String((init?.headers as Record<string, string> | undefined)?.["content-type"] ?? "application/octet-stream") });
+    return new Response(null, { status: 200 });
+  }
+  const hit = objects.get(url);
+  if (hit === undefined) return new Response("NoSuchKey", { status: 404 });
+  if (method === "HEAD") return new Response(null, { status: 200, headers: { "content-length": String(hit.body.byteLength), "content-type": hit.contentType } });
+  return new Response(hit.body, { status: 200, headers: { "content-type": hit.contentType } });
+}
+
 const ROUTES: Array<{ match: RegExp; reply: () => Response }> = [
+  { match: /^https:\/\/kystdatahuset\.no\//, reply: () => text(KYSTVERKET, "application/json") },
+  { match: /^https:\/\/meri\.digitraffic\.fi\//, reply: () => text(DIGITRAFFIC, "application/json") },
+  { match: /^https:\/\/example\.org\/robots\.txt$/, reply: () => text(EXAMPLE_ROBOTS, "text/plain") },
+  { match: /^https:\/\/example\.org\/$/, reply: () => text(EXAMPLE_PAGE, "text/html") },
+  { match: /^https:\/\/closed\.example\/robots\.txt$/, reply: () => text(CLOSED_ROBOTS, "text/plain") },
+  { match: /^https:\/\/services\.sentinel-hub\.com\/auth\//, reply: () => text(SH_TOKEN, "application/json") },
+  { match: /^https:\/\/services\.sentinel-hub\.com\/api\/v1\/catalog\//, reply: () => text(SH_CATALOG, "application/json") },
+  { match: /^https:\/\/api\.planet\.com\/data\/v1\/quick-search/, reply: () => text(PLANET_SEARCH, "application/json") },
+  { match: /^https:\/\/api\.maxar\.com\/discovery\/v1\/search/, reply: () => text(MAXAR_SEARCH, "application/json") },
   { match: /^https:\/\/opensky-network\.org\//, reply: () => text(OPENSKY, "application/json") },
   { match: /^https:\/\/(api\.adsb\.lol|opendata\.adsb\.fi)\//, reply: () => text(ADSB_EMPTY, "application/json") },
   { match: /^https:\/\/www\.sec\.gov\/files\/company_tickers\.json/, reply: () => text(SEC_TICKERS, "application/json") },
@@ -199,6 +271,12 @@ const offline: typeof fetch = async (input, init) => {
 
   if (/^http:\/\/127\.0\.0\.1:8100\/resolve$/.test(url) && typeof init?.body === "string") {
     return fakeResolve(init.body);
+  }
+  if (/^http:\/\/127\.0\.0\.1:9000\//.test(url)) return s3(url, init);
+  // The process API answers in the format the caller accepted.
+  if (/^https:\/\/services\.sentinel-hub\.com\/api\/v1\/process$/.test(url)) {
+    const accept = String((init?.headers as Record<string, string> | undefined)?.["accept"] ?? "image/tiff");
+    return new Response(accept === "image/png" ? PNG_1PX : TIFF_STUB, { status: 200, headers: { "content-type": accept } });
   }
 
   const route = ROUTES.find((entry) => entry.match.test(url));

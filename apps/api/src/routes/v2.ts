@@ -22,12 +22,13 @@ import {
   toScopeEntry,
   type ObservationRow,
 } from "@scout/db";
-import { badRequest, notFound } from "../errors.js";
+import { HttpError, badRequest, notFound } from "../errors.js";
 import { operatorOf } from "../auth.js";
 import { logEvent } from "../observability.js";
 import { upstreamMessage } from "../adapters/base.js";
 import { scopeContextForCase } from "../v2/scope.js";
 import { ask } from "../v2/reason.js";
+import { objectStore, TILES_BUCKET } from "../v2/storage.js";
 import { runResolution } from "../v2/resolution.js";
 import { deriveLinks } from "../v2/links.js";
 import { coLocationWindow, neighbors, pathBetween, timelineForEntity, visibleEntities } from "../v2/graph.js";
@@ -73,6 +74,8 @@ const collectSchema = z.object({
   caseId: z.string().min(1),
   collectorId: z.string().min(1),
   subject: subjectSchema.optional(),
+  /** Collector-specific parameters (a bounding box, a time window, a consent record). Each collector validates its own. */
+  params: z.record(z.string(), z.unknown()).optional(),
 });
 
 const resolveSchema = z.object({
@@ -294,6 +297,10 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
       ctx.assertCovers(body.subject);
     }
 
+    // The collector's own parameters, checked before anything is fetched or
+    // audited: a bad bounding box is the caller's error, not an upstream's.
+    const params = collector.paramsSchema === undefined ? body.params : (collector.paramsSchema.parse(body.params ?? {}) as Record<string, unknown>);
+
     await ensureCollectionSource(collector);
 
     if (!isConfigured(collector)) {
@@ -317,7 +324,7 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
 
     let raw: unknown;
     try {
-      raw = await collector.fetch({ subject: body.subject });
+      raw = await collector.fetch({ subject: body.subject, params, authorizationId: ctx.authorizationId, caseId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await recordAuditEvent({
@@ -685,6 +692,52 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
 
   const logRead = async (operator: string, authorizationId: string, targetType: string, targetIds: string[], queryText: string) =>
     prisma.accessLog.create({ data: { actor: operator, authorizationId, action: "read", targetType, targetIds, queryText, resultCount: targetIds.length } });
+
+  // ── imagery ────────────────────────────────────────────────────────────
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/imagery/tiles", async (request) => {
+    const query = z.object({
+      caseId: z.string().min(1),
+      /** west,south,east,north; only tiles overlapping it are listed. */
+      bbox: z.string().regex(/^-?[\d.]+,-?[\d.]+,-?[\d.]+,-?[\d.]+$/).optional(),
+      limit: z.coerce.number().int().min(1).max(500).default(200),
+    }).parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    const box = query.bbox === undefined ? null : (query.bbox.split(",").map(Number) as [number, number, number, number]);
+    const rows = await prisma.imageryTile.findMany({ where: { authorizationId: ctx.authorizationId }, orderBy: [{ sensedAt: "desc" }, { id: "asc" }], take: query.limit });
+    const tiles = rows.filter((t) => {
+      if (box === null) return true;
+      const [w, s, e, n] = t.bbox as [number, number, number, number];
+      return e >= box[0] && w <= box[2] && n >= box[1] && s <= box[3];
+    });
+    await logRead(operator, ctx.authorizationId, "ImageryTile", tiles.map((t) => t.id), `tiles${box === null ? "" : ` bbox=${query.bbox}`}`);
+    return {
+      caseId,
+      count: tiles.length,
+      tiles: tiles.map((t) => ({
+        id: t.id, sourceId: t.sourceId, sceneId: t.sceneId, sensedAt: t.sensedAt, cloudCoverPct: t.cloudCoverPct, bbox: t.bbox,
+        hasPreview: t.previewKey !== null, bytes: t.bytes, widthPx: t.widthPx, heightPx: t.heightPx, resolutionM: t.resolutionM, format: t.format, cloudOptimized: t.cloudOptimized,
+      })),
+    };
+  });
+
+  app.get<{ Params: { tileId: string }; Querystring: Record<string, string | undefined> }>("/v2/imagery/preview/:tileId", async (request, reply) => {
+    const query = z.object({ caseId: z.string().min(1) }).parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+    // A tile under another authorization is not "forbidden", it is not there.
+    const tile = await prisma.imageryTile.findFirst({ where: { id: request.params.tileId, authorizationId: ctx.authorizationId } });
+    if (tile === null || tile.previewKey === null) throw notFound(`No preview for tile ${request.params.tileId} under this authorization.`);
+    const store = objectStore();
+    if (store === null) throw new HttpError(503, "storage-unavailable", "Object storage is not configured, so stored imagery cannot be served.");
+    const object = await store.get(TILES_BUCKET(), tile.previewKey);
+    if (object === null) throw notFound(`The preview for tile ${tile.id} is indexed but missing from storage.`);
+    await logRead(operator, ctx.authorizationId, "ImageryTile", [tile.id], `preview ${tile.id}`);
+    return reply.header("content-type", object.contentType ?? "image/png").header("cache-control", "private, max-age=3600").send(Buffer.from(object.body));
+  });
 
   app.get<{ Querystring: Record<string, string | undefined> }>("/v2/graph/edges", async (request) => {
     const query = asOfQuery.extend({ entityId: z.string().min(1).optional() }).parse(request.query);

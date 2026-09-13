@@ -12,7 +12,7 @@ tiers, the scope gate, the audit log, or the live map.
 | Scope context and prohibitions | `packages/scope/src/context.ts`, `prohibitions.ts` | TS | Phase 2 |
 | Observations, collectors, temporal predicate | `packages/fusion` | TS | Built |
 | Schema | `packages/db/prisma/schema.prisma` (v2 section) | Prisma | Phase 2 |
-| Collection routes and collectors | `apps/api/src/routes/v2.ts`, `apps/api/src/v2/` | TS | Built: ADS-B, SEC EDGAR |
+| Collection routes and collectors | `apps/api/src/routes/v2.ts`, `apps/api/src/v2/collectors/` | TS | Built: ADS-B, AIS, SEC EDGAR, open web, first-party telemetry, Sentinel-2, Planet and Maxar catalogues, broker interface |
 | Resolution | `services/resolution`, `apps/api/src/v2/resolution.ts` | Python + TS | Built: PERSON, VESSEL, AIRCRAFT, ORG |
 | Recognition | `services/recognition` | Python | Phase 10, flag off |
 | Reasoning | `packages/reason`, `apps/api/src/v2/reason.ts` | TS | Stage 8 |
@@ -198,6 +198,27 @@ parsed and validated, never executed.
 `AccessLog` row with the question and the cited observation ids. The console
 has the Ask box under the coverage bands; citations are buttons that select
 the entity holding the observation.
+
+## Imagery
+
+`apps/api/src/v2/collectors/imagery.ts` is the pipeline every satellite
+connector shares: a box (at most half a degree a side), a window, a cloud
+limit, and `storeScene()`. The index (`ImageryTile`, one row per source ×
+scene × box, with a PostGIS polygon) is checked first, then the bucket by
+HEAD, and only a scene missing from both is rendered and written: the
+GeoTIFF as the provider returned it and a PNG preview beside it. The
+observation the collector writes is the scene over the box (where, when,
+cloud cover, which tile) so it sits in the same graph as everything else.
+
+`GET /v2/imagery/tiles` lists a case's tiles (scope-checked, logged);
+`GET /v2/imagery/preview/:tileId` serves the stored PNG from the bucket
+after the same check. The console loads the previews as object URLs and
+draws them as image sources under the observation layer, filtered by the
+scrubber's `asOf` like everything else on the map.
+
+Object storage is reached through `storage.ts`, a hand-signed SigV4 client
+for PUT, GET and HEAD: MinIO locally, any S3-compatible store in production,
+selected by `S3_ENDPOINT`.
 
 ## No graph database
 

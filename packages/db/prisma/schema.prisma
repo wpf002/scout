@@ -865,6 +865,38 @@ model BiometricComparison {
 /// Every read of the v2 graph. Who, under what authorization, what action,
 /// which targets (ids, never payloads), how many came back, when. Same
 /// immutability trigger as QueryLog. `AuditEvent` keeps its v1 shape.
+/// One stored image of one scene over one box: the tile index the spec asks
+/// for. The bytes live in object storage under `objectKey` (GeoTIFF) and
+/// `previewKey` (PNG the console can draw); the row is what makes a second
+/// request for the same scene and box a lookup rather than a download.
+model ImageryTile {
+  id              String   @id @default(cuid())
+  sourceId        String
+  authorizationId String
+  caseId          String?
+  sceneId         String
+  sensedAt        DateTime
+  cloudCoverPct   Int?
+  /// `west,south,east,north` in degrees, and its hash for the unique key.
+  bbox            Float[]
+  bboxHash        String
+  /// PostGIS geography polygon of the box, for spatial lookup. Written by raw SQL.
+  geom            Unsupported("geography(Polygon,4326)")?
+  objectKey       String
+  previewKey      String?
+  bytes           Int
+  widthPx         Int
+  heightPx        Int
+  resolutionM     Int
+  format          String
+  /// True only when the stored GeoTIFF was written as a Cloud Optimized GeoTIFF.
+  cloudOptimized  Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@unique([sourceId, sceneId, bboxHash])
+  @@index([authorizationId, sensedAt])
+}
+
 model AccessLog {
   id              String   @id @default(cuid())
   actor           String

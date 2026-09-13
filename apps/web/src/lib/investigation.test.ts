@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { coverageBands, describeConfidence, earliest, lastPosition, mapLayer, stamp } from "./investigation";
+import { cornersOf, coverageBands, describeConfidence, earliest, lastPosition, mapLayer, stamp } from "./investigation";
 import type { Entity, GraphEdge, Observation } from "./v2";
 
 const obs = (id: string, sourceId: string, observedAt: string, position: { lon: number; lat: number } | null): Observation => ({
@@ -94,5 +94,9 @@ describe("earliest and describeConfidence", () => {
   it("stamps every timestamp the same way", () => {
     expect(stamp("2026-08-14T13:00:59.000Z")).toBe("2026-08-14 13:00Z");
     expect(stamp("nope")).toBe("—");
+  });
+
+  it("orders a box's corners the way an image source wants them", () => {
+    expect(cornersOf([5.2, 60.3, 5.4, 60.5])).toEqual([[5.2, 60.5], [5.4, 60.5], [5.4, 60.3], [5.2, 60.3]]);
   });
 });

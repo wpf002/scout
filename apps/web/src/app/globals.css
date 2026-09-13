@@ -3844,3 +3844,16 @@ a:hover {
 .investigation .answer-trace {
   margin: 8px 0 0;
 }
+
+.investigation .imagery-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.investigation .coverage-silent {
+  margin: 4px 0 0;
+  line-height: 1.5;
+}

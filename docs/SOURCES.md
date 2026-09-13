@@ -8,17 +8,23 @@ one that does not). This table is the human-readable copy and must match.
 | Collector | Class | Licence / ToS | Cadence | Resolution | Cost | Status |
 |---|---|---|---|---|---|---|
 | `adsb-live` — OpenSky Network, adsb.lol, adsb.fi | SENSOR | OpenSky terms; free tier is non-commercial. adsb.lol/adsb.fi ODbL with attribution. | 20 s | position, ~1 s | Free tier; 400 OpenSky credits/day | **Built.** Wraps the live map's assembly. |
-| AISStream.io (AIS) | SENSOR | AISStream ToS; free key, global. | streaming | position, per message | Free | Phase 5 |
-| Sentinel-2 via Sentinel Hub | SATELLITE | ESA Copernicus open data; Sentinel Hub ToS for the API. | ~5 days revisit | 10 m multispectral | Free tier | Phase 9 |
-| Planet | SATELLITE | Commercial contract. | daily | 3–5 m | Paid | Phase 9, adapter only |
-| Maxar | SATELLITE | Commercial contract, tasked. | tasked | 30 cm | Paid | Phase 9, adapter only |
+| `ais-live` — Kystverket (Norway), Digitraffic (Finland), AISStream.io | SENSOR | National feeds under NLOD / CC BY 4.0 with attribution on every row. AISStream.io under its ToS when `AISSTREAM_API_KEY` is set; keyless runs cover the national feeds only. | 60 s | position, per message | Free | **Built.** Wraps the live map's maritime assembly; a keyed run also listens to the global stream for a bounded window. |
+| `sentinel-2` — Sentinel-2 L2A via Sentinel Hub | SATELLITE | Copernicus Sentinel data, free and open (attribution: contains modified Copernicus Sentinel data). Sentinel Hub ToS and free-tier processing units. Inert without `SENTINELHUB_CLIENT_ID`/`_SECRET`. | ~5 days revisit | 10 m, true colour | Free tier | **Built.** Catalogue search, then one GeoTIFF and one PNG per scene over the box, stored once in the tiles bucket and indexed in `ImageryTile`. |
+| `planet-scenes` — Planet Data API | SATELLITE | Commercial contract held by the customer; `PLANET_API_KEY` is its credential. Catalogue metadata only; activation and download draw on the contract and are not done. | daily | 3–5 m | Paid | **Built, catalogue only.** Inert without the key. |
+| `maxar-catalog` — Maxar Discovery (STAC) | SATELLITE | Commercial contract, tasked; `MAXAR_API_KEY` is its credential. Catalogue metadata only; ordering is a contract action and is not done. | tasked | 30 cm | Paid | **Built, catalogue only.** Inert without the key. |
 | `sec-edgar` — SEC EDGAR company registry | PUBLIC_RECORD | US government work, public domain. SEC fair-access policy: declared User-Agent with contact (`SEC_EDGAR_USER_AGENT`), ≤10 req/s. Inert without it. | daily | n/a | none | **Built.** Jurisdiction: US federal. Further jurisdictions are new adapters, each with its own terms row. |
-| Open web | OPEN_WEB | robots.txt and site ToS respected; no auth bypass. Routes through v1's fetch path. | on demand | n/a | none | Phase 9 |
-| Licensed broker | BROKER | Contract terms required at registration; no vendor hardcoded. | per contract | n/a | paid | interface only |
-| First-party telemetry | FIRST_PARTY | Customer-owned, enrolled with consent record. | streaming | per device | none | Phase 5 |
+| `open-web` — one page under a subject domain | OPEN_WEB | robots.txt obeyed (a closed page is not fetched and the run says why); Scout's declared user agent; no login, cookies or bypass. Content is the publisher's; Scout keeps what the page states about itself. | on demand | n/a | none | **Built.** Title, description, published contact details as identifiers, the URL as provenance. |
+| Licensed broker | BROKER | `defineBrokerAdapter()` refuses an adapter without a contract reference and a credentials variable; no vendor is shipped or hardcoded. | per contract | n/a | paid | **Interface built.** Nothing registered. |
+| `first-party-telemetry` | FIRST_PARTY | Customer-owned device data ingested through `/v2/collect` under a named consent record (`consentRef`, required; the reference is stored, never the document). | streaming | per device | none | **Built.** Every point is an observation with `DEVICE_ID`; refused without a consent reference. |
 
-Imagery is stored as Cloud Optimized GeoTIFFs in the tiles bucket with a
-PostGIS tile index, and is not re-downloaded per view.
+Imagery is stored in the tiles bucket (`S3_BUCKET_TILES`) as the GeoTIFF the
+provider returned plus a PNG preview, and indexed in `ImageryTile` with a
+PostGIS polygon. A scene over a box is requested once: the index is checked,
+then the bucket, then the provider. `cloudOptimized` on the row is true only
+when the stored file carries GDAL's COG layout marker; Sentinel Hub's
+process API returns a plain GeoTIFF, so it is false until a conversion step
+with GDAL is added. The console draws the previews under the observations
+and serves them from the bucket, not the provider.
 
 ## v1 sources and live layers
 

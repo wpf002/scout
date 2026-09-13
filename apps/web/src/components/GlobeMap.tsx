@@ -64,6 +64,8 @@ export interface Props {
   aoiFeatures: GeoJSON.Feature[];
   /** The investigation console's picture at one moment: observations, per-entity traces, links. */
   investigation: { points: GeoJSON.Feature[]; lines: GeoJSON.Feature[]; links: GeoJSON.Feature[] };
+  /** Stored imagery previews, each pinned to its box's four corners. */
+  imagery: Array<{ id: string; url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] }>;
   /** The selected aircraft's recorded track and filed route. */
   track: {
     path: [number, number][];
@@ -129,6 +131,7 @@ function GlobeMapImpl({
   onAoi,
   aoiFeatures,
   investigation,
+  imagery,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -1062,6 +1065,28 @@ function GlobeMapImpl({
       infraSource.setData(infraData);
     }
   }, [aoi, aoiFeatures, ready, redraw]);
+
+  // ── Imagery previews: one image source per stored tile ──────────────────
+  const imageryShown = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+    const wanted = new Map(imagery.map((tile) => [`imagery-${tile.id}`, tile]));
+    for (const id of [...imageryShown.current]) {
+      if (wanted.has(id)) continue;
+      if (instance.getLayer(id) !== undefined) instance.removeLayer(id);
+      if (instance.getSource(id) !== undefined) instance.removeSource(id);
+      imageryShown.current.delete(id);
+    }
+    for (const [id, tile] of wanted) {
+      if (instance.getSource(id) !== undefined) continue;
+      instance.addSource(id, { type: "image", url: tile.url, coordinates: tile.coordinates });
+      // Under the console's points and traces, which are added later and so
+      // draw above; over the basemap and terrain.
+      instance.addLayer({ id, type: "raster", source: id, paint: { "raster-opacity": 0.85, "raster-fade-duration": 0 } }, instance.getLayer("investigation-traces") !== undefined ? "investigation-traces" : undefined);
+      imageryShown.current.add(id);
+    }
+  }, [imagery, ready, redraw]);
 
   // ── Investigation console: what was observed by a moment ────────────────
   useEffect(() => {

@@ -29,6 +29,19 @@ export interface MapLayer {
 
 export const EMPTY_LAYER: MapLayer = { points: [], lines: [], links: [], selected: null };
 
+export interface ImageryOverlay {
+  id: string;
+  url: string;
+  /** Top-left, top-right, bottom-right, bottom-left: the order MapLibre's image source wants. */
+  coordinates: [[number, number], [number, number], [number, number], [number, number]];
+}
+
+/** A west,south,east,north box as the four corners an image source takes. */
+export function cornersOf(bbox: readonly [number, number, number, number]): ImageryOverlay["coordinates"] {
+  const [w, s, e, n] = bbox;
+  return [[w, n], [e, n], [e, s], [w, s]];
+}
+
 /** "2026-08-14 13:00Z": the reading every timestamp in the console uses. */
 export function stamp(at: string | number | Date): string {
   const d = new Date(at);

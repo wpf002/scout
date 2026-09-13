@@ -10,6 +10,7 @@ import {
   v2,
   type AskResult,
   type Authorization,
+  type ImageryTile,
   type Entity,
   type EntityKind,
   type GraphEdge,
@@ -19,10 +20,12 @@ import {
   type TimelineEvent,
 } from "@/lib/v2";
 import {
+  cornersOf,
   coverageBands,
   describeConfidence,
   earliest,
   EMPTY_LAYER,
+  type ImageryOverlay,
   KIND_COLOUR,
   lastPosition,
   mapLayer,
@@ -77,10 +80,12 @@ interface Pick {
 
 export function Investigation({
   onLayer,
+  onImagery,
   onFly,
   pick,
 }: {
   onLayer: (layer: MapLayer) => void;
+  onImagery: (overlays: ImageryOverlay[]) => void;
   onFly: (place: { lat: number; lon: number; zoom?: number; offset?: [number, number] }) => void;
   /** An entity chosen on the map. The nonce makes re-picking the same one count. */
   pick: Pick | null;
@@ -104,6 +109,10 @@ export function Investigation({
   });
   const [asOfMs, setAsOfMs] = useState(() => Date.now());
   const [strict, setStrict] = useState(false);
+
+  const [tiles, setTiles] = useState<ImageryTile[]>([]);
+  const [showImagery, setShowImagery] = useState(true);
+  const previews = useRef<Map<string, string>>(new Map());
 
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState<AskResult | null>(null);
@@ -147,11 +156,16 @@ export function Investigation({
           setLoaded(true);
           return;
         }
-        const [obs, ents] = await Promise.all([v2.observations(caseId), v2.entities(caseId)]);
+        const [obs, ents, imagery] = await Promise.all([
+          v2.observations(caseId),
+          v2.entities(caseId),
+          v2.imageryTiles(caseId).catch(() => ({ count: 0, tiles: [] as ImageryTile[] })),
+        ]);
         if (cancelled) return;
         setObservations(obs.observations);
         setEntities(ents.entities);
         setSources(ents.sources);
+        setTiles(imagery.tiles);
         const to = Date.now();
         const from = earliest(obs.observations, new Date(to - DEFAULT_SPAN_MS)).getTime();
         setRange({ from: Math.min(from, to - 60_000), to });
@@ -225,6 +239,45 @@ export function Investigation({
   }, [observations, entities, edges, asOf, selectedId, loaded, authorization, onLayer]);
 
   useEffect(() => () => onLayer(EMPTY_LAYER), [onLayer]);
+
+  // ── Stored imagery, sensed by the moment, as previews the map can draw ──
+  useEffect(() => {
+    if (!loaded || !authorization || !showImagery || caseId === "") {
+      onImagery([]);
+      return;
+    }
+    let cancelled = false;
+    const wanted = tiles.filter((t) => t.hasPreview && new Date(t.sensedAt) <= asOf);
+    (async () => {
+      const overlays: ImageryOverlay[] = [];
+      for (const tile of wanted) {
+        let url = previews.current.get(tile.id);
+        if (url === undefined) {
+          try {
+            url = await v2.imageryPreview(caseId, tile.id);
+          } catch {
+            continue;
+          }
+          previews.current.set(tile.id, url);
+        }
+        overlays.push({ id: tile.id, url, coordinates: cornersOf(tile.bbox) });
+      }
+      if (!cancelled) onImagery(overlays);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tiles, asOf, showImagery, loaded, authorization, caseId, onImagery]);
+
+  // Object URLs are memory until revoked; the console owns them.
+  useEffect(() => {
+    const held = previews.current;
+    return () => {
+      for (const url of held.values()) URL.revokeObjectURL(url);
+      held.clear();
+      onImagery([]);
+    };
+  }, [caseId, onImagery]);
 
   // ── Derived views ──────────────────────────────────────────────────────
   const byId = useMemo(() => new Map(entities.map((e) => [e.id, e])), [entities]);
@@ -351,6 +404,13 @@ export function Investigation({
             </div>
 
             <Coverage bands={bands} bucketAt={bucketAt} from={range.from} to={range.to} />
+
+            {tiles.length > 0 ? (
+              <label className="tiny imagery-toggle" title="Stored satellite imagery over this case's areas, drawn under the observations">
+                <input type="checkbox" checked={showImagery} onChange={(event) => setShowImagery(event.target.checked)} />
+                Imagery · {tiles.filter((t) => new Date(t.sensedAt) <= asOf).length} of {tiles.length} tiles by this moment
+              </label>
+            ) : null}
 
             {/* ── Ask ── */}
             <form
@@ -558,13 +618,19 @@ function describeError(caught: unknown): string {
 function Coverage({ bands, bucketAt, from, to }: { bands: ReturnType<typeof coverageBands>; bucketAt: number; from: number; to: number }) {
   const max = Math.max(1, ...bands.flatMap((b) => b.counts));
   if (bands.length === 0) return <p className="tiny faint">No sources have been consulted for this authorization.</p>;
+  // A band is drawn for a source that had data. The ones that had none are
+  // named on one line rather than given eight empty rows each: named, so
+  // the absence is still on the record, and short, so the list below it
+  // keeps its room.
+  const spoke = bands.filter((b) => b.total > 0);
+  const silent = bands.filter((b) => b.total === 0);
   return (
     <div className="coverage" role="table" aria-label="Source coverage">
       <div className="coverage-axis tiny faint mono">
         <span>{stamp(from)}</span>
         <span>{stamp(to)}</span>
       </div>
-      {bands.map((b) => (
+      {spoke.map((b) => (
         <div className="coverage-row" key={b.sourceId} role="row">
           <span className="coverage-name mono" title={b.sourceId}>
             {b.sourceId}
@@ -580,9 +646,14 @@ function Coverage({ bands, bucketAt, from, to }: { bands: ReturnType<typeof cove
             ))}
             <i className="coverage-cursor" style={{ left: `${((bucketAt + 0.5) / BUCKETS) * 100}%` }} />
           </div>
-          <span className={`coverage-total mono ${b.total === 0 ? "faint" : ""}`}>{b.total === 0 ? "nothing" : b.total}</span>
+          <span className="coverage-total mono">{b.total}</span>
         </div>
       ))}
+      {silent.length > 0 ? (
+        <p className="tiny faint coverage-silent">
+          <span className="mono">{silent.length}</span> {silent.length === 1 ? "source" : "sources"} consulted with nothing: <span className="mono">{silent.map((b) => b.sourceId).join(", ")}</span>
+        </p>
+      ) : null}
     </div>
   );
 }
