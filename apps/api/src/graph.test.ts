@@ -56,7 +56,10 @@ run("Scout entity graph — Phase 6", () => {
       kind: "subdomain",
       hostname: "WWW.Example.com",
     });
-    await saveFinding("securitytrails", "www in DNS history", {
+    // `certspotter`, not `securitytrails` — the latter was removed from the
+    // source registry, so this seed was silently rejected and the test failed
+    // on a graph that was missing a source it had never actually saved.
+    await saveFinding("certspotter", "www in a second CT log", {
       kind: "subdomain",
       hostname: "www.example.com",
     });
@@ -109,8 +112,8 @@ run("Scout entity graph — Phase 6", () => {
       );
       // Reported by three sources under two spellings; one entity.
       expect(www.sourceIds.sort()).toEqual([
+        "certspotter",
         "crtsh",
-        "securitytrails",
         "shodan",
       ]);
     });

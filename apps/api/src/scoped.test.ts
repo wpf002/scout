@@ -519,7 +519,13 @@ run("Scout scoped tier — Phase 5", () => {
         method: "GET",
         url: "/scoped/adapters",
       });
-      expect(response.json().count).toBe(4);
+      // Not a magic number. `SCOPED_ADAPTERS` is a static registry, so the
+      // count only changes when an adapter is added — and hardcoding it here
+      // meant adding one broke a test that had nothing to say about it. What
+      // matters is that the route reports the whole registry and that every
+      // adapter in it is scope-gated, which is the actual invariant.
+      expect(response.json().count).toBe(SCOPED_ADAPTERS.length);
+      expect(response.json().count).toBeGreaterThan(0);
       for (const adapter of response.json().adapters) {
         expect(adapter.requiresScope).toBe(true);
       }

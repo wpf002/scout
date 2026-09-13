@@ -57,7 +57,10 @@ run("Scout reporting — Phase 7", () => {
       method: "POST",
       url: `/cases/${caseId}/findings`,
       payload: {
-        sourceId: "dehashed",
+        // `hibp`, not `dehashed` — the latter is no longer in the source
+        // registry, so this finding was rejected on creation and the test that
+        // asserts it gets redacted was searching a report it was never in.
+        sourceId: "hibp",
         title: "Credential for bob@example.com in ExampleBreach",
         summary: "Validated: the password hunter2sekrit still works on the VPN.",
         queryTerm: "bob@example.com",
