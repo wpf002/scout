@@ -1,0 +1,122 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: 10
+  NODE_VERSION: 24
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  typescript:
+    name: typescript (typecheck, lint, tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # PostGIS, as the local Docker cluster runs it. The API's test setup
+        # derives scout_test from DATABASE_URL and migrates it.
+        image: imresamu/postgis:16-3.4
+        env:
+          POSTGRES_USER: scout
+          POSTGRES_PASSWORD: scout
+          POSTGRES_DB: scout
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scout -d scout"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://scout:scout@localhost:5432/scout?schema=public
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the packages the apps import from dist
+        run: pnpm exec turbo run build --filter='./packages/*'
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - name: Migrate the dev database the tests derive theirs from
+        run: pnpm --filter @scout/db exec prisma migrate deploy
+      - run: pnpm test
+
+  python:
+    name: python (resolution accuracy gate, recognition)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Resolution service
+        working-directory: services/resolution
+        run: |
+          # The linkage stack (Splink, DuckDB, pandas) is the `scoring` extra.
+          uv sync --frozen --extra scoring
+          uv run --quiet pytest -q
+          # The accuracy gate: recall per kind may not fall past the committed baseline.
+          uv run python -m eval.evaluate --check
+      - name: Recognition service (models extra not installed; gates and arithmetic only)
+        working-directory: services/recognition
+        run: |
+          uv sync --frozen
+          uv run --quiet pytest -q
+
+  e2e:
+    name: console end to end
+    runs-on: ubuntu-latest
+    needs: [typescript]
+    services:
+      postgres:
+        image: imresamu/postgis:16-3.4
+        env:
+          POSTGRES_USER: scout
+          POSTGRES_PASSWORD: scout
+          POSTGRES_DB: scout
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scout -d scout"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://scout:scout@localhost:5432/scout?schema=public
+      RESOLUTION_SERVICE_URL: http://127.0.0.1:8100
+      SCOUT_WEB_URL: http://localhost:3000
+      SCOUT_API_URL: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build --filter='./packages/*'
+      - run: pnpm --filter @scout/web exec playwright install --with-deps chromium
+      - name: Start the stack, seed the synthetic case, resolve it, run the walk
+        run: bash scripts/ci-e2e.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+            /tmp/scout-ci/*.log
+          if-no-files-found: ignore

@@ -116,8 +116,8 @@ export async function registerTrackRoutes(app: FastifyInstance): Promise<void> {
     ]);
 
     // The recorded track.
-    let path: Array<[number, number]> = [];
-    let altitudes: Array<number | null> = [];
+    const path: Array<[number, number]> = [];
+    const altitudes: Array<number | null> = [];
     let since: number | null = null;
     let aircraft: Record<string, unknown> = {};
 

@@ -346,7 +346,6 @@ function GlobeMapImpl({
       // MapLibre reports tile and style failures here rather than throwing.
       // Swallowing them silently is how a half-loaded basemap looks like a
       // working one.
-      // eslint-disable-next-line no-console
       console.warn("map:", event.error?.message ?? event);
     });
 
@@ -1849,7 +1848,6 @@ function GlobeMapImpl({
                   * which is what lazy loading would otherwise be protecting
                   * against — and a deferred image in a panel the operator
                   * deliberately opened just reads as a broken preview.
-                  * eslint-disable-next-line @next/next/no-img-element
                   */}
                 <img
                   src={preview.url}

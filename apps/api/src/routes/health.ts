@@ -6,7 +6,7 @@ export async function registerHealthRoutes(
   app: FastifyInstance,
 ): Promise<void> {
   app.get("/health", async (_request, reply) => {
-    let database: "up" | "down" = "down";
+    let database: "up" | "down";
     try {
       await prisma.$queryRaw`SELECT 1`;
       database = "up";

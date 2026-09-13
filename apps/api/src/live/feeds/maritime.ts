@@ -262,7 +262,7 @@ function referenceFeatures(vessels: Feature[]): Feature[] {
 export async function maritime(): Promise<FeatureCollection> {
   // A failing AIS feed must not cost the ports and chokepoints, which are the
   // globally meaningful part of this layer.
-  let vessels: Feature[] = [];
+  let vessels: Feature[];
   let authorities = 0;
   try {
     const { items } = await merge<Feature>([finland, norway]);

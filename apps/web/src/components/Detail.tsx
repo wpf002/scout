@@ -161,7 +161,6 @@ export function Detail({
         * page, which is not a trade worth making for a thumbnail.
         */}
       {stillUrl !== null ? (
-        // eslint-disable-next-line @next/next/no-img-element
         <img className="detail-still" src={stillUrl} alt={selection.label} />
       ) : null}
 

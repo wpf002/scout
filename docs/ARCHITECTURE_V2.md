@@ -280,6 +280,7 @@ comparison are refused; galleries can still be prepared.
 | Reversibility: pin, re-run, memberships superseded, history intact | `apps/api/src/v2.test.ts` (resolution) |
 | Recognition gates, arithmetic, diarisation | `services/recognition/tests`, `apps/api/src/v2.test.ts` (stage 10) |
 | Console E2E (Playwright): load, scrub, open an entity, adjudicate, confirm the audit trail | `apps/web/e2e/console.spec.ts` (`pnpm --filter @scout/web run test:e2e` against a running app with the synthetic case seeded) |
+| CI: typecheck, lint, every TS suite on PostGIS; resolution tests + accuracy gate; recognition tests; the console walk end to end | `.github/workflows/ci.yml`, `scripts/ci-e2e.sh` |
 | Load: 1M observations, 100k entities; resolution wall time, query p95, frame rate | `apps/api/src/load/`, `apps/web/e2e/load.spec.ts`; results and the ceilings found in `docs/LOAD_TEST.md` |
 
 ## The agent

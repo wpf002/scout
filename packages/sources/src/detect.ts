@@ -89,7 +89,7 @@ export function normalizeIndicator(raw: string): string {
   value = value.replace(/\.$/, "");
 
   // Angle brackets and quotes come along with copied text.
-  value = value.replace(/^[<"'(\[]+/, "").replace(/[>"')\]]+$/, "");
+  value = value.replace(/^[<"'([]+/, "").replace(/[>"')\]]+$/, "");
 
   return value.trim();
 }

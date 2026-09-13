@@ -7,7 +7,6 @@ import {
   LAYERS,
   LAYER_BY_ID,
   parseLayers,
-  layersToSearch,
 } from "@/lib/layers";
 import type { BasemapId } from "@/lib/basemap";
 import type { Selection } from "@/components/GlobeMap";
