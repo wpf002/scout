@@ -90,7 +90,7 @@ run("v2 schema guarantees", () => {
       ).rejects.toThrow(/23502|not-null|null value/);
     });
 
-    it("dedupes on (source, contentHash)", async () => {
+    it("dedupes on (source, authorization, contentHash), not on the fact alone", async () => {
       const hash = randomUUID();
       const first = await seedObservation(hash);
       const again = await insertObservations([
@@ -101,6 +101,23 @@ run("v2 schema guarantees", () => {
       ]);
       expect(first).toBeTruthy();
       expect(again).toEqual([]);
+
+      // The same public fact collected under a second authorization is a
+      // second row: each row names the authorization that collected it.
+      const other = await prisma.authorization.create({
+        data: {
+          id: `${AUTH}_other`, reference: `V2TEST-${suffix}-other`, issuedBy: "vitest",
+          boundary: { scope: [], entityKinds: [] }, sourceClasses: ["SENSOR"], actionClasses: ["COLLECT"],
+          validFrom: new Date("2026-01-01T00:00:00Z"), validUntil: new Date("2027-01-01T00:00:00Z"),
+        },
+      });
+      const underOther = await insertObservations([
+        {
+          sourceId: SRC, authorizationId: other.id, collectedAt: new Date(), observedAt: new Date(),
+          rawPayload: {}, normalizedPayload: { hash }, contentHash: hash, position: null, confidenceBp: null, indeterminate: false,
+        },
+      ]);
+      expect(underOther).toHaveLength(1);
     });
 
     it("refuses a confidence outside basis points", async () => {

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { ScopeError } from "@scout/scope";
+import { ProhibitionError, ScopeError } from "@scout/scope";
+import { ProvenanceError } from "@scout/fusion";
 import { ZodError } from "zod";
 import { logEvent } from "./observability.js";
 
@@ -40,6 +41,29 @@ export function registerErrorHandler(app: FastifyInstance): void {
         reason: error.reason,
         message: error.message,
         sourceId: error.sourceId ?? null,
+      });
+    }
+
+    // A prohibition guard refused an act. Same treatment as a scope denial:
+    // a stable code, the guard that fired, and an event worth alerting on.
+    if (error instanceof ProhibitionError) {
+      logEvent(request.log, "prohibition.refused", {
+        prohibition: error.prohibition,
+      });
+      return reply.status(403).send({
+        error: "prohibited",
+        prohibition: error.prohibition,
+        message: error.message,
+      });
+    }
+
+    // An observation arrived without its provenance. Named fields, so the
+    // caller fixes the record rather than reading a constraint name.
+    if (error instanceof ProvenanceError) {
+      return reply.status(422).send({
+        error: "provenance-missing",
+        missing: error.missing,
+        message: error.message,
       });
     }
 

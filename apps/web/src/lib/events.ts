@@ -202,6 +202,42 @@ export function describeEvent(event: CaseEvent): Described {
         weight: "notable",
       };
 
+    case "authorization.created": {
+      const until = text(d["validUntil"]);
+      return {
+        label: "Authorization Created",
+        detail: list([
+          text(d["issuedBy"]) === null ? null : `issued by ${text(d["issuedBy"]) as string}`,
+          names(d["sourceClasses"]) === null ? null : `sources: ${names(d["sourceClasses"]) as string}`,
+          names(d["actionClasses"]) === null ? null : `actions: ${names(d["actionClasses"]) as string}`,
+          until === null ? null : `until ${until.slice(0, 10)}`,
+        ]),
+        weight: "grave",
+      };
+    }
+
+    case "authorization.revoked":
+      return {
+        label: "Authorization Revoked",
+        detail: text(d["reason"]) ?? "",
+        weight: "grave",
+      };
+
+    case "v2.collection.ran": {
+      const outcome = text(d["outcome"]);
+      return {
+        label: outcome === "ok" ? "Collection Ran" : outcome === "inert" ? "Collection Inert" : "Collection Failed",
+        detail: list([
+          text(d["collectorId"]),
+          outcome === "ok" ? count(d["written"], "observation") : null,
+          outcome === "ok" ? `${num(d["skipped"]) ?? 0} already held` : null,
+          text(d["reason"]),
+          text(d["errorMessage"]),
+        ]),
+        weight: outcome === "error" ? "notable" : "normal",
+      };
+    }
+
     case "report.exported":
       return {
         label: "Report Exported",

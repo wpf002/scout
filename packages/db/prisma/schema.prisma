@@ -531,7 +531,10 @@ model Observation {
 
   rawPayload        Json
   normalizedPayload Json
-  /// sha256 of the canonical normalized payload. Dedupe key per source.
+  /// sha256 of the canonical normalized payload. Dedupe key per source and
+  /// per authorization: the same public fact collected under two
+  /// authorizations is two rows, because each row says which authorization
+  /// collected it and a row can only say one.
   contentHash       String
   /// PostGIS. Null when the observation has no position. Written through raw
   /// SQL; the Prisma client omits Unsupported fields.
@@ -543,7 +546,7 @@ model Observation {
   identifiers Identifier[]
   memberships EntityMember[]
 
-  @@unique([sourceId, contentHash])
+  @@unique([sourceId, authorizationId, contentHash])
   @@index([authorizationId, observedAt])
   @@index([observedAt])
   @@index([caseId])

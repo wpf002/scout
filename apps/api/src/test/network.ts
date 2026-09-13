@@ -72,7 +72,31 @@ function text(body: string, type: string): Response {
   return new Response(body, { status: 200, headers: { "content-type": type } });
 }
 
+// OpenSky's positional state vectors: 0 icao24, 1 callsign, 2 origin country,
+// 5 longitude, 6 latitude, 7 baro altitude, 8 on ground, 9 velocity, 10 track,
+// 14 squawk. Two aircraft, one airline and one private.
+const OPENSKY = JSON.stringify({
+  time: 1789300000,
+  states: [
+    ["abc123", "UAL123  ", "United States", 1789299990, 1789299995, -122.4, 37.6, 3000.0, false, 200.0, 90.0, 0, null, 3100.0, "1200", false, 0],
+    ["4b1805", "N123AB  ", "United States", 1789299990, 1789299995, -73.9, 40.7, 1500.0, false, 120.0, 180.0, 0, null, 1600.0, null, false, 0],
+  ],
+});
+
+// Community ADS-B feeds answer with an empty aircraft list in the suite.
+const ADSB_EMPTY = JSON.stringify({ ac: [] });
+
+// Three registrants, the whole registry as far as the suite is concerned.
+const SEC_TICKERS = JSON.stringify({
+  "0": { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." },
+  "1": { cik_str: 789019, ticker: "MSFT", title: "Microsoft Corp" },
+  "2": { cik_str: 1018724, ticker: "AMZN", title: "Amazon Com Inc" },
+});
+
 const ROUTES: Array<{ match: RegExp; reply: () => Response }> = [
+  { match: /^https:\/\/opensky-network\.org\//, reply: () => text(OPENSKY, "application/json") },
+  { match: /^https:\/\/(api\.adsb\.lol|opendata\.adsb\.fi)\//, reply: () => text(ADSB_EMPTY, "application/json") },
+  { match: /^https:\/\/www\.sec\.gov\/files\/company_tickers\.json/, reply: () => text(SEC_TICKERS, "application/json") },
   { match: /^https:\/\/crt\.sh\//, reply: () => text(CRTSH, "application/json") },
   {
     match: /^https:\/\/api\.hackertarget\.com\//,

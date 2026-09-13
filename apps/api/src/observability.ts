@@ -33,7 +33,11 @@ export type ScoutEvent =
   /** Investigative content was purged. */
   | "case.purged"
   /** A request failed authentication. */
-  | "auth.rejected";
+  | "auth.rejected"
+  /** One of the five prohibition guards refused an act. */
+  | "prohibition.refused"
+  /** A v2 collector ran and wrote (or declined to write) observations. */
+  | "collection.ran";
 
 /**
  * Emits a structured event.

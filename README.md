@@ -250,6 +250,11 @@ rather than erase.
 | `POST` | `/datasets/:sourceId` | One dataset source. `confirm: true` when the kind is gated. |
 | `POST` | `/datasets/sweep` | Batch the ungated dataset sources. Reports exclusions. |
 | `GET` | `/datasets/adapters` | Which dataset adapters are built, and their `scopedKinds`. |
+| `GET`/`POST` | `/cases/:id/authorization` | v2. The authorization a case runs under: issuer, source and action classes, window. `confirmAuthorized: true` required; audited. |
+| `POST` | `/cases/:id/authorization/revoke` | v2. Nothing runs under it afterwards. Audited. |
+| `GET` | `/v2/collectors` | v2. Registered collectors with licensing terms and whether each is configured. |
+| `POST` | `/v2/collect` | v2. Runs one collector under the case's authorization. Refuses before fetching; writes provenanced observations; audited. |
+| `GET` | `/v2/observations` | v2. What was collected. Every read writes an `AccessLog` row with ids, not payloads. |
 
 Subject terms travel in POST bodies, never URL params, and request bodies are
 stripped from logs.

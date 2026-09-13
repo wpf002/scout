@@ -19,6 +19,7 @@ import { registerReportRoutes } from "./routes/report.js";
 import { registerRetentionRoutes } from "./routes/retention.js";
 import { registerGraphRoutes } from "./routes/graph.js";
 import { registerMonitorRoutes } from "./routes/monitors.js";
+import { registerV2Routes } from "./routes/v2.js";
 import { config } from "./config.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -75,6 +76,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerRetentionRoutes(app);
   await registerGraphRoutes(app);
   await registerMonitorRoutes(app);
+  await registerV2Routes(app);
 
   return app;
 }

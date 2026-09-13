@@ -32,8 +32,8 @@ export interface ObservationRow {
 const CHUNK = 500;
 
 /**
- * Inserts observations, skipping any whose (source, contentHash) already
- * exists. Returns the ids actually written, in input order for those written.
+ * Inserts observations, skipping any whose (source, authorization,
+ * contentHash) already exists. Returns the ids actually written, in input order for those written.
  *
  * NOT NULL on the four provenance columns is the last line of defence; the
  * caller is expected to have run `assertProvenance()` first, which names the
@@ -59,7 +59,7 @@ export async function insertObservations(
         ("id", "sourceId", "authorizationId", "caseId", "collectedAt", "observedAt",
          "rawPayload", "normalizedPayload", "contentHash", "geom", "confidenceBp", "indeterminate")
       VALUES ${Prisma.join(values)}
-      ON CONFLICT ("sourceId", "contentHash") DO NOTHING
+      ON CONFLICT ("sourceId", "authorizationId", "contentHash") DO NOTHING
       RETURNING "id"`;
     written.push(...inserted.map((r) => r.id));
   }
@@ -76,6 +76,19 @@ export async function positionOf(
   const row = rows[0];
   if (row === undefined || row.lon === null || row.lat === null) return null;
   return { lon: row.lon, lat: row.lat };
+}
+
+/** Positions for many observations in one query. Rows without one are absent. */
+export async function positionsOf(
+  ids: readonly string[],
+): Promise<Map<string, { lon: number; lat: number }>> {
+  const out = new Map<string, { lon: number; lat: number }>();
+  if (ids.length === 0) return out;
+  const rows = await prisma.$queryRaw<{ id: string; lon: number; lat: number }[]>`
+    SELECT "id", ST_X("geom"::geometry) AS lon, ST_Y("geom"::geometry) AS lat
+    FROM "Observation" WHERE "id" = ANY(${[...ids]}::text[]) AND "geom" IS NOT NULL`;
+  for (const row of rows) out.set(row.id, { lon: row.lon, lat: row.lat });
+  return out;
 }
 
 export interface EdgeAsOf {

@@ -44,6 +44,9 @@ importers:
       '@scout/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@scout/fusion':
+        specifier: workspace:*
+        version: link:../../packages/fusion
       '@scout/graph':
         specifier: workspace:*
         version: link:../../packages/graph

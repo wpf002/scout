@@ -78,6 +78,27 @@ describe("describeEvent", () => {
     );
   });
 
+  it("reads a v2 authorization and a collection run", () => {
+    const created = describeEvent({
+      action: "authorization.created",
+      detail: { issuedBy: "court order 2026-CV-1", sourceClasses: ["SENSOR"], actionClasses: ["COLLECT", "READ_GRAPH"], validUntil: "2027-01-01T00:00:00.000Z" },
+    });
+    expect(created.label).toBe("Authorization Created");
+    expect(created.detail).toBe("issued by court order 2026-CV-1 · sources: SENSOR · actions: COLLECT, READ_GRAPH · until 2027-01-01");
+    expect(created.weight).toBe("grave");
+
+    const ran = describeEvent({
+      action: "v2.collection.ran",
+      detail: { collectorId: "adsb-live", outcome: "ok", written: 2, skipped: 40 },
+    });
+    expect(ran.label).toBe("Collection Ran");
+    expect(ran.detail).toBe("adsb-live · 2 observations · 40 already held");
+
+    const inert = describeEvent({ action: "v2.collection.ran", detail: { collectorId: "sec-edgar", outcome: "inert", reason: "not-configured" } });
+    expect(inert.label).toBe("Collection Inert");
+    expect(inert.detail).toBe("sec-edgar · not-configured");
+  });
+
   it("falls back to the raw record for an action it does not know", () => {
     // Inventing a description for an unrecognised act would be worse than
     // showing the JSON: the reader could not tell the difference.

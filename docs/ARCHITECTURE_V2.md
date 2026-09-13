@@ -12,7 +12,7 @@ tiers, the scope gate, the audit log, or the live map.
 | Scope context and prohibitions | `packages/scope/src/context.ts`, `prohibitions.ts` | TS | Phase 2 |
 | Observations, collectors, temporal predicate | `packages/fusion` | TS | Phase 2 |
 | Schema | `packages/db/prisma/schema.prisma` (v2 section) | Prisma | Phase 2 |
-| Collection routes | `apps/api/src/routes/v2/` | TS | Phase 5 |
+| Collection routes and collectors | `apps/api/src/routes/v2.ts`, `apps/api/src/v2/` | TS | Built: ADS-B, SEC EDGAR |
 | Resolution | `services/resolution` | Python | Phase 6 |
 | Recognition | `services/recognition` | Python | Phase 10, flag off |
 | Reasoning seam | `packages/reason` | TS | Phase 8 |
