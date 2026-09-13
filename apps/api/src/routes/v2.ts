@@ -537,15 +537,15 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
       where: { authorizationId: ctx.authorizationId, status: "COMPLETE" },
       orderBy: { startedAt: "desc" },
     });
-    const latestByKind = new Map<string, string>();
+    const latestByKind = new Map<string, { runId: string; modelVersion: string; startedAt: Date }>();
     for (const run of runs) {
       const kindRow = await prisma.entity.findFirst({ where: { resolutionRunId: run.id }, select: { kind: true } });
       const kind = kindRow?.kind ?? "UNKNOWN";
-      if (!latestByKind.has(kind)) latestByKind.set(kind, run.id);
+      if (!latestByKind.has(kind)) latestByKind.set(kind, { runId: run.id, modelVersion: run.modelVersion, startedAt: run.startedAt });
     }
-    const runIds = [...latestByKind.entries()]
-      .filter(([kind]) => query.kind === undefined || kind === query.kind)
-      .map(([, id]) => id);
+    const chosen = [...latestByKind.entries()].filter(([kind]) => query.kind === undefined || kind === query.kind);
+    const runIds = chosen.map(([, run]) => run.runId);
+    const kindOfRun = new Map(chosen.map(([kind, run]) => [run.runId, kind]));
 
     const pending = runIds.length === 0 ? [] : await prisma.matchDecision.findMany({
       where: { runId: { in: runIds }, decision: "REVIEW" },
@@ -575,6 +575,28 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
       };
     };
 
+    // Decisions recorded since the run that produced each queue. The model
+    // hasn't seen them; the next run for that kind applies them as pins.
+    const kinds = await Promise.all(
+      chosen.map(async ([kind, run]) => {
+        const [row] = await prisma.$queryRaw<{ n: number }[]>`
+          SELECT count(*)::int AS n
+          FROM "Adjudication" a
+          JOIN "Observation" o ON o."id" = a."leftObservationId"
+          WHERE o."authorizationId" = ${ctx.authorizationId}
+            AND o."entityKind" = ${kind}::"FusionEntityKind"
+            AND a."createdAt" > ${run.startedAt}`;
+        return {
+          kind,
+          runId: run.runId,
+          modelVersion: run.modelVersion,
+          startedAt: run.startedAt,
+          open: open.filter((d) => d.runId === run.runId).length,
+          adjudicatedSinceRun: row?.n ?? 0,
+        };
+      }),
+    );
+
     await prisma.accessLog.create({
       data: {
         actor: operator, authorizationId: ctx.authorizationId, action: "read",
@@ -585,9 +607,11 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     return {
       caseId,
       count: open.length,
+      kinds,
       pairs: open.map((d) => ({
         decisionId: d.id,
         runId: d.runId,
+        kind: kindOfRun.get(d.runId) ?? "UNKNOWN",
         scoreBp: d.scoreBp,
         blockingKey: d.blockingKey,
         features: d.featureVector,

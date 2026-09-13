@@ -100,6 +100,61 @@ export interface GraphEdge {
   evidenceObservationIds: string[];
 }
 
+export type Decision = "MATCH" | "NON_MATCH" | "INDETERMINATE";
+
+export interface ReviewObservation {
+  id: string;
+  sourceId: string;
+  observedAt: string;
+  identifiers: { kind: string; value: string }[];
+  payload: Record<string, unknown>;
+}
+
+export interface PairFeatures {
+  match_weight?: number;
+  probability?: number;
+  levels?: Record<string, number>;
+  bayes_factors?: Record<string, number>;
+  pinned?: boolean;
+}
+
+export interface ReviewPair {
+  decisionId: string;
+  runId: string;
+  kind: EntityKind | "UNKNOWN";
+  scoreBp: number | null;
+  blockingKey: string;
+  features: PairFeatures;
+  left: ReviewObservation | null;
+  right: ReviewObservation | null;
+}
+
+export interface ReviewKind {
+  kind: EntityKind | "UNKNOWN";
+  runId: string;
+  modelVersion: string;
+  startedAt: string;
+  open: number;
+  adjudicatedSinceRun: number;
+}
+
+export interface AdjudicationRow {
+  id: string;
+  pairKey: string;
+  leftObservationId: string;
+  rightObservationId: string;
+  decision: Decision;
+  adjudicatedBy: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface ResolveResult {
+  runId: string;
+  modelVersion: string;
+  counts: { entities: number; match: number; review: number; disputed: number; pinned: number };
+}
+
 export interface TimelineEvent {
   at: string;
   kind: "observation" | "membership" | "edge-start" | "edge-end";
@@ -136,6 +191,15 @@ export const v2 = {
 
   entities: (caseId: string, kind?: EntityKind, limit = 500) =>
     request<{ count: number; sources: SourceCoverage[]; entities: Entity[] }>(`/v2/entities?${q({ caseId, kind, limit })}`),
+
+  review: (caseId: string, kind?: EntityKind, limit = 500) =>
+    request<{ count: number; kinds: ReviewKind[]; pairs: ReviewPair[] }>(`/v2/review?${q({ caseId, kind, limit })}`),
+
+  adjudicate: (caseId: string, body: { leftObservationId: string; rightObservationId: string; decision: Decision; note: string }) =>
+    request<AdjudicationRow>("/v2/adjudicate", { method: "POST", body: { caseId, ...body } }),
+
+  resolve: (caseId: string, entityKind: EntityKind) =>
+    request<ResolveResult>("/v2/resolve", { method: "POST", body: { caseId, entityKind } }),
 
   edges: (caseId: string, asOf?: string, knownAs?: string) =>
     request<{ asOf: string; knownAs: string; count: number; nodes: GraphNode[]; edges: GraphEdge[] }>(`/v2/graph/edges?${q({ caseId, asOf, knownAs })}`),

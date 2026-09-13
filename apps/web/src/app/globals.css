@@ -3558,3 +3558,198 @@ a:hover {
   padding-top: 6px;
   border-top: 1px solid var(--border);
 }
+
+/* ── Review queue ──────────────────────────────────────────────────────── */
+
+.review-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.review-waiting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-left-width: 2px;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.review-waiting-row b {
+  color: var(--text);
+}
+
+.review-split {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.review-list {
+  border-right: 1px solid var(--border);
+  padding-right: 10px;
+}
+
+.review-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.review-filters select {
+  height: 28px;
+  padding: 0 7px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.review-list ul {
+  max-height: 52vh;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.review-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-row:hover {
+  color: var(--text);
+  background: var(--bg-inset);
+}
+
+.review-row.on {
+  color: var(--text);
+  background: var(--bg-inset);
+  border-color: var(--border-strong);
+}
+
+.review-row .kind-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.review-row-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-detail h3 {
+  margin: 14px 0 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* The two observations, one field per row. Colour says agreement; the
+ * missing side prints a dash rather than nothing. Fixed columns, so a long
+ * address wraps inside its cell instead of pushing the right side off the
+ * panel. */
+.casefile-body .review-sides {
+  table-layout: fixed;
+}
+
+.casefile-body .review-sides th {
+  white-space: normal;
+}
+
+.casefile-body .review-sides th:first-child,
+.casefile-body .review-sides td:first-child {
+  width: 22%;
+}
+
+.casefile-body .review-sides td {
+  overflow-wrap: anywhere;
+}
+
+.review-sides tr.agreement-same td:not(:first-child) {
+  color: var(--ok);
+}
+
+.review-sides tr.agreement-differs td:not(:first-child) {
+  color: var(--warn);
+}
+
+.review-sides tr.agreement-one-sided td:not(:first-child) {
+  color: var(--text-dim);
+}
+
+.review-note {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.review-actions {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 6px;
+}
+
+.review-decide {
+  height: 30px;
+  padding: 0 14px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.review-decide:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.review-decide.match:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
+  color: var(--ok);
+}
+
+.review-decide.non_match:not(:disabled) {
+  border-color: color-mix(in srgb, var(--deny) 55%, transparent);
+  color: var(--deny);
+}

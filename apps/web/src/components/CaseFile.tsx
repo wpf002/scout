@@ -14,6 +14,7 @@ import { TimelineBoard } from "@/components/TimelineBoard";
 import { FindingsBoard } from "@/components/FindingsBoard";
 import { MonitorPanel } from "@/components/MonitorPanel";
 import { AuditPanel } from "@/components/AuditPanel";
+import { ReviewQueue } from "@/components/ReviewQueue";
 import { ExportPanel } from "@/components/ExportPanel";
 import type {
   AuditView,
@@ -43,6 +44,7 @@ type Tab =
   | "infra"
   | "datasets"
   | "graph"
+  | "review"
   | "timeline"
   | "findings"
   | "monitors"
@@ -55,6 +57,7 @@ const TABS: Array<{ id: Tab; name: string; hint: string }> = [
   { id: "infra", name: "Infrastructure", hint: "Sweep hosts, certificates, DNS" },
   { id: "datasets", name: "Datasets", hint: "Bulk and person-facing adapters" },
   { id: "graph", name: "Graph", hint: "How the entities connect" },
+  { id: "review", name: "Review", hint: "Pairs the resolution model could not decide" },
   { id: "timeline", name: "Timeline", hint: "What happened, in order" },
   { id: "findings", name: "Findings", hint: "What was kept, with provenance" },
   { id: "monitors", name: "Monitors", hint: "Watches that run on a schedule" },
@@ -84,6 +87,7 @@ export function CaseFile() {
   const [findings, setFindings] = useState<FindingRecord[]>([]);
   const [audit, setAudit] = useState<AuditView | null>(null);
   const [pivot, setPivot] = useState<PivotRequest | null>(null);
+  const [reviewCount, setReviewCount] = useState(0);
 
   useEffect(() => {
     api
@@ -208,7 +212,9 @@ export function CaseFile() {
               ? counts.findings
               : entry.id === "scope"
                 ? counts.scope
-                : 0;
+                : entry.id === "review"
+                  ? reviewCount
+                  : 0;
           return (
             <button
               key={entry.id}
@@ -257,6 +263,9 @@ export function CaseFile() {
             ) : null}
             {tab === "graph" ? (
               <GraphBoard record={record} onPivot={onPivot} />
+            ) : null}
+            {tab === "review" ? (
+              <ReviewQueue record={record} onCount={setReviewCount} onDecided={onFindingSaved} />
             ) : null}
             {tab === "timeline" ? <TimelineBoard record={record} /> : null}
             {tab === "findings" ? <FindingsBoard findings={findings} /> : null}

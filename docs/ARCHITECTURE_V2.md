@@ -134,6 +134,25 @@ Flying the camera to an entity offsets the target into the strip of map the
 panel leaves visible (`besidePanel()`), since the panel is `min(62vw,
 980px)` wide and a target at the centre would land under it.
 
+## Review queue
+
+The queue is a tab in the case file (`apps/web/src/components/ReviewQueue.tsx`),
+beside Graph, because it is about one case and it writes. `GET /v2/review`
+lists the pairs the latest completed run per kind scored inside the review
+band, minus the ones with an adjudication, and per kind says how many
+adjudications have been recorded since that run started
+(`adjudicatedSinceRun`). Each pair carries the model's own evidence: the
+comparison level per column and the Bayes factor it contributed, shown
+largest movement first, in numbers next to words.
+
+An adjudication needs a note and is written once (`POST /v2/adjudicate`,
+audited as `v2.adjudicated`, immutable). It changes nothing by itself. The
+panel counts the pins waiting and offers the run that applies them
+(`POST /v2/resolve` for that kind); the run supersedes memberships rather
+than deleting them, so the history of a pair is the sequence of
+`MatchDecision` rows across runs plus the adjudication that pinned it. An
+authorization without `RESOLVE` can read the queue and not record on it.
+
 ## No graph database
 
 The spec named Apache AGE as a projection. It is not used. Railway's managed

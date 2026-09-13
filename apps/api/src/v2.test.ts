@@ -334,6 +334,11 @@ run("Scout v2 — stage 3: collection", () => {
       const [pair] = r.json().pairs;
       expect([pair.left.id, pair.right.id].sort()).toEqual([ids["A3"], ids["A4"]].sort());
       expect(pair.scoreBp).toBe(8000);
+      expect(pair.kind).toBe("AIRCRAFT");
+      const summary = r.json().kinds.find((k: { kind: string }) => k.kind === "AIRCRAFT");
+      expect(summary.open).toBe(1);
+      expect(summary.adjudicatedSinceRun).toBe(0);
+      expect(typeof summary.modelVersion).toBe("string");
       const log = await prisma.accessLog.findFirst({ where: { authorizationId, targetType: "MatchDecision" }, orderBy: { createdAt: "desc" } });
       expect(log?.targetIds).toEqual([pair.decisionId]);
     });
@@ -345,6 +350,10 @@ run("Scout v2 — stage 3: collection", () => {
       expect(pin.statusCode).toBe(201);
       expect(pin.json().pairKey).toBe([ids["A1"], ids["A2"]].sort().join("|"));
 
+      // The queue says a decision is waiting to be applied, until the run applies it.
+      const waiting = (await get(`/v2/review?caseId=${caseId}&kind=AIRCRAFT`)).json().kinds[0];
+      expect(waiting.adjudicatedSinceRun).toBe(1);
+
       const r = await post("/v2/resolve", { caseId, entityKind: "AIRCRAFT" });
       const body = r.json();
       expect(body.counts.pinned).toBe(1);
@@ -352,6 +361,7 @@ run("Scout v2 — stage 3: collection", () => {
       const forA2 = body.entities.find((e: { members: string[] }) => e.members.includes(ids["A2"] as string));
       expect(forA1.id).not.toBe(forA2.id);
       expect(forA1.status).toBe("PROVISIONAL");
+      expect((await get(`/v2/review?caseId=${caseId}&kind=AIRCRAFT`)).json().kinds[0].adjudicatedSinceRun).toBe(0);
 
       const pinned = await prisma.matchDecision.findFirst({ where: { runId: body.runId, leftObservationId: [ids["A1"], ids["A2"]].sort()[0] } });
       expect(pinned?.decision).toBe("NON_MATCH");
