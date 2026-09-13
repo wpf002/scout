@@ -565,6 +565,66 @@ run("Scout v2 — stage 3: collection", () => {
       expect(r.json().reason).toBe("action-not-permitted");
     });
 
+    it("answers a question about an entity's links with citations that exist, and logs the question", async () => {
+      const r = await post("/v2/ask", { caseId: graphCase, question: "Who is connected to Bob Smith?" });
+      expect(r.statusCode).toBe(200);
+      const body = r.json();
+      expect(body.plannedBy).toBe("rules");
+      expect(body.shape).toBe("neighbors-of");
+      expect(body.answer.status).toBe("answered");
+      expect(body.answer.claims.length).toBeGreaterThan(0);
+      expect(body.answer.text).toMatch(/same device/);
+      for (const c of body.answer.claims) expect(c.observationIds.length).toBeGreaterThan(0);
+      // Every citation is a real observation under this authorization.
+      const cited = await prisma.observation.findMany({ where: { id: { in: body.answer.citations }, authorizationId: graphAuth }, select: { id: true } });
+      expect(cited.map((c) => c.id).sort()).toEqual([...body.answer.citations].sort());
+      const log = await prisma.accessLog.findFirst({ where: { authorizationId: graphAuth, targetType: "Reason" }, orderBy: { createdAt: "desc" } });
+      expect(log?.queryText).toBe("Who is connected to Bob Smith?");
+      expect([...(log?.targetIds ?? [])].sort()).toEqual([...body.answer.citations].sort());
+    });
+
+    it("refuses a subject it does not know, saying what would be needed", async () => {
+      const reference = (await get(`/cases/${graphCase}/authorization`)).json().authorization.reference;
+      const body = (await post("/v2/ask", { caseId: graphCase, question: "What do we know about Zed Nobody?" })).json();
+      expect(body.answer.status).toBe("refused");
+      expect(body.answer.refusal.reason).toBe("unknown-entity");
+      expect(body.answer.refusal.requires).toContain('Collection on "Zed Nobody"');
+      expect(body.answer.refusal.message).toContain(`#${reference}`);
+      expect(body.answer.citations).toEqual([]);
+    });
+
+    it("refuses a question it cannot plan and names the shapes it can", async () => {
+      const body = (await post("/v2/ask", { caseId: graphCase, question: "Is it raining in Portland today?" })).json();
+      expect(body.answer.status).toBe("refused");
+      expect(body.answer.refusal.reason).toBe("cannot-plan");
+      expect(body.answer.refusal.message).toContain("REASON_PROVIDER=none");
+      expect(body.plan).toBeNull();
+    });
+
+    it("says insufficient evidence instead of composing an answer", async () => {
+      const body = (await post("/v2/ask", { caseId: graphCase, question: `Who was near Dan Roe between ${T0.toISOString()} and ${at(60).toISOString()}?` })).json();
+      expect(body.shape).toBe("co-location-window");
+      expect(body.answer.status).toBe("insufficient-evidence");
+      expect(body.answer.claims).toEqual([]);
+      expect(body.answer.text).toContain('"Dan Roe"');
+    });
+
+    it("answers which sources were consulted from the collection log", async () => {
+      const body = (await post("/v2/ask", { caseId: graphCase, question: "Which sources were consulted?" })).json();
+      expect(body.answer.status).toBe("answered");
+      expect(body.answer.claims[0].basis).toBe("collection-log");
+      expect(body.answer.claims[0].sourceIds).toContain("adsb-live");
+      expect(body.answer.claims[0].text).toMatch(/sec-edgar.*returned nothing|returned nothing/);
+    });
+
+    it("refuses a question to an authorization without READ_GRAPH", async () => {
+      const id = await newCase("no-read-ask");
+      await authorize(id, { actionClasses: ["COLLECT"] });
+      const r = await post("/v2/ask", { caseId: id, question: "Who is connected to Bob Smith?" });
+      expect(r.statusCode).toBe(403);
+      expect(r.json().reason).toBe("action-not-permitted");
+    });
+
     it("reports the graph consistent for this authorization", async () => {
       const r = await post("/v2/graph/consistency", { caseId: graphCase });
       expect(r.statusCode).toBe(200);

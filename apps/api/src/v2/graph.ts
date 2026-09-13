@@ -181,6 +181,8 @@ export interface TimelineEvent {
   edgeId?: string;
   relation?: string;
   otherEntityId?: string;
+  /** The observations behind an edge event, so a citation can point at them. */
+  evidenceObservationIds?: string[];
   detail: string;
 }
 
@@ -208,9 +210,9 @@ export async function timelineForEntity(input: { ctx: ScopeContext; entityId: st
   for (const e of edges) {
     const other = e.fromEntityId === entityId ? e.toEntityId : e.fromEntityId;
     if (!others.has(other)) continue;
-    events.push({ at: e.validFrom, kind: "edge-start", edgeId: e.id, relation: e.relation, otherEntityId: other, detail: `${e.relation} with ${others.get(other)?.label ?? other} began` });
+    events.push({ at: e.validFrom, kind: "edge-start", edgeId: e.id, relation: e.relation, otherEntityId: other, evidenceObservationIds: e.evidenceObservationIds, detail: `${e.relation} with ${others.get(other)?.label ?? other} began` });
     if (e.validUntil !== null && e.validUntil <= asOf) {
-      events.push({ at: e.validUntil, kind: "edge-end", edgeId: e.id, relation: e.relation, otherEntityId: other, detail: `${e.relation} with ${others.get(other)?.label ?? other} ended` });
+      events.push({ at: e.validUntil, kind: "edge-end", edgeId: e.id, relation: e.relation, otherEntityId: other, evidenceObservationIds: e.evidenceObservationIds, detail: `${e.relation} with ${others.get(other)?.label ?? other} ended` });
     }
   }
   events.sort((a, b) => a.at.getTime() - b.at.getTime());

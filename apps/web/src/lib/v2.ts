@@ -155,6 +155,38 @@ export interface ResolveResult {
   counts: { entities: number; match: number; review: number; disputed: number; pinned: number };
 }
 
+export interface Claim {
+  text: string;
+  observationIds: string[];
+  basis: "observations" | "collection-log";
+  sourceIds?: string[];
+  entityIds?: string[];
+}
+
+export interface Refusal {
+  reason: string;
+  message: string;
+  requires: string | null;
+  authorizationReference: string;
+}
+
+export interface AskResult {
+  question: string;
+  plan: { steps: Array<{ id: string; op: string } & Record<string, unknown>> } | null;
+  plannedBy: "rules" | "model" | null;
+  shape: string | null;
+  cost: number | null;
+  trace: Array<{ id: string; op: string; nodes: number; edges: number; events: number; sources: number }>;
+  answer: {
+    status: "answered" | "insufficient-evidence" | "refused";
+    text: string;
+    claims: Claim[];
+    citations: string[];
+    refusal: Refusal | null;
+    synthesizedBy: "rules" | "model" | null;
+  };
+}
+
 export interface TimelineEvent {
   at: string;
   kind: "observation" | "membership" | "edge-start" | "edge-end";
@@ -191,6 +223,8 @@ export const v2 = {
 
   entities: (caseId: string, kind?: EntityKind, limit = 500) =>
     request<{ count: number; sources: SourceCoverage[]; entities: Entity[] }>(`/v2/entities?${q({ caseId, kind, limit })}`),
+
+  ask: (caseId: string, question: string) => request<AskResult>("/v2/ask", { method: "POST", body: { caseId, question } }),
 
   review: (caseId: string, kind?: EntityKind, limit = 500) =>
     request<{ count: number; kinds: ReviewKind[]; pairs: ReviewPair[] }>(`/v2/review?${q({ caseId, kind, limit })}`),

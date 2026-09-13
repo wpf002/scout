@@ -15,7 +15,7 @@ tiers, the scope gate, the audit log, or the live map.
 | Collection routes and collectors | `apps/api/src/routes/v2.ts`, `apps/api/src/v2/` | TS | Built: ADS-B, SEC EDGAR |
 | Resolution | `services/resolution`, `apps/api/src/v2/resolution.ts` | Python + TS | Built: PERSON, VESSEL, AIRCRAFT, ORG |
 | Recognition | `services/recognition` | Python | Phase 10, flag off |
-| Reasoning seam | `packages/reason` | TS | Phase 8 |
+| Reasoning | `packages/reason`, `apps/api/src/v2/reason.ts` | TS | Stage 8 |
 | Console | `apps/web/src/components/Investigation.tsx` | TS | Stage 6 |
 | Agent | `apps/api/src/agent/` | TS | Phase 11 |
 
@@ -152,6 +152,52 @@ panel counts the pins waiting and offers the run that applies them
 than deleting them, so the history of a pair is the sequence of
 `MatchDecision` rows across runs plus the adjudication that pinned it. An
 authorization without `RESOLVE` can read the queue and not record on it.
+
+## Reasoning
+
+`packages/reason` answers a plain-language question from the graph and
+nothing else. Four parts, in order:
+
+1. **Plan.** A `QueryPlan` is a typed list of at most six steps, each one
+   of `find-entity`, `neighbors-of`, `path-between`, `co-location-window`,
+   `timeline-for-entity`, `sources-consulted`, with parameters. There is no
+   step that takes query text. `validatePlan` checks the schema, that every
+   `{ref}` points at an earlier find, hop caps (3 for neighbours, 6 for a
+   path), and a cost budget of 12 (neighbours cost 1+hops, a path costs
+   maxHops, a window 2, the rest 1).
+2. **Planner.** Rules first: a handful of question shapes ("who is connected
+   to X", "path between X and Y", "who was near X on 2026-08-16", "timeline
+   of X", "what do we know about X", "which sources were consulted") become
+   plans with no model in the loop. Anything else goes to the planner model
+   if `REASON_PROVIDER` names one; its reply must validate as a plan or the
+   question is refused with `invalid-plan`. With no model, the refusal
+   names the shapes Scout can answer.
+3. **Execute.** The host (`apps/api/src/v2/reason.ts`) supplies the
+   operations, which are the same functions the graph routes run, with the
+   same per-hop scope checks. The executor refuses before running anything
+   when `READ_GRAPH` is missing or the plan is over budget, re-checks every
+   returned entity's kind against the authorization, and refuses a find
+   that matched nothing with what would be needed: `Collection on "X"
+   under an authorization that covers it`. It collects every observation
+   id any step produced; that set is what an answer may cite.
+4. **Synthesise.** The rules write one claim per fact with its observation
+   ids. A synthesis model, when configured, rewrites the claims and can
+   only cite from the evidence set: `enforceCitations` drops citations the
+   graph never produced and claims left with none. No claim left means the
+   answer is `insufficient-evidence`, with the subject and the
+   authorization named, rather than prose. A claim about which sources
+   returned nothing cites the collection log (source ids) rather than
+   observations, because there is no observation to cite for an absence.
+
+The model seam (`packages/reason/src/model.ts`) is Scout's own: plain HTTPS
+to Anthropic, an OpenAI-compatible endpoint, or Ollama, selected by
+`REASON_PROVIDER`; no vendor SDK is installed. The model's output is
+parsed and validated, never executed.
+
+`POST /v2/ask {caseId, question}` runs the four steps and writes one
+`AccessLog` row with the question and the cited observation ids. The console
+has the Ask box under the coverage bands; citations are buttons that select
+the entity holding the observation.
 
 ## No graph database
 

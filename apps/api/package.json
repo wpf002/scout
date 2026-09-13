@@ -15,15 +15,16 @@
   "dependencies": {
     "@fastify/cors": "^11.3.0",
     "@scout/db": "workspace:*",
+    "@scout/fusion": "workspace:*",
     "@scout/graph": "workspace:*",
+    "@scout/reason": "workspace:*",
     "@scout/scope": "workspace:*",
     "@scout/sources": "workspace:*",
     "docx": "^9.7.1",
     "fastify": "^5.2.0",
     "h3-js": "^4.5.0",
     "satellite.js": "^7.1.0",
-    "zod": "^3.24.1",
-    "@scout/fusion": "workspace:*"
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

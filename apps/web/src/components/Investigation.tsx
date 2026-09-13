@@ -8,6 +8,7 @@ import { Loading } from "@/components/Loading";
 import {
   ENTITY_KINDS,
   v2,
+  type AskResult,
   type Authorization,
   type Entity,
   type EntityKind,
@@ -25,6 +26,7 @@ import {
   KIND_COLOUR,
   lastPosition,
   mapLayer,
+  memberIndex,
   stamp,
   type MapLayer,
 } from "@/lib/investigation";
@@ -103,6 +105,10 @@ export function Investigation({
   const [asOfMs, setAsOfMs] = useState(() => Date.now());
   const [strict, setStrict] = useState(false);
 
+  const [question, setQuestion] = useState("");
+  const [asked, setAsked] = useState<AskResult | null>(null);
+  const [asking, setAsking] = useState(false);
+
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [neighborhood, setNeighborhood] = useState<{ nodes: GraphNode[]; edges: GraphEdge[]; truncated: boolean } | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[] | null>(null);
@@ -126,6 +132,7 @@ export function Investigation({
     setLoaded(false);
     setError(null);
     setSelectedId(null);
+    setAsked(null);
     setObservations([]);
     setEntities([]);
     setSources([]);
@@ -249,6 +256,21 @@ export function Investigation({
   const stepMs = Math.max(60_000, Math.round((range.to - range.from) / BUCKETS));
 
   const selected = selectedId === null ? null : (byId.get(selectedId) ?? null);
+  const entityOfObservation = useMemo(() => memberIndex(entities), [entities]);
+
+  const submitQuestion = async () => {
+    const text = question.trim();
+    if (text.length < 3 || caseId === "") return;
+    setAsking(true);
+    setError(null);
+    try {
+      setAsked(await v2.ask(caseId, text));
+    } catch (caught) {
+      setError(describeError(caught));
+    } finally {
+      setAsking(false);
+    }
+  };
 
   const choose = useCallback(
     (entity: Entity) => {
@@ -330,6 +352,35 @@ export function Investigation({
 
             <Coverage bands={bands} bucketAt={bucketAt} from={range.from} to={range.to} />
 
+            {/* ── Ask ── */}
+            <form
+              className="ask"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitQuestion();
+              }}
+            >
+              <input
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="Ask the graph: who is connected to …, path between … and …, who was near … on 2026-08-16, timeline of …, which sources were consulted"
+                aria-label="Ask the graph"
+                disabled={asking}
+                onKeyDown={(event) => {
+                  // Enter asks. The form would do this on its own in a
+                  // browser; done here so it also holds where key events
+                  // are synthesised (tests, automation).
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void submitQuestion();
+                  }
+                }}
+              />
+              <button type="submit" className="tiny" disabled={asking || question.trim().length < 3}>
+                {asking ? "Asking…" : "Ask"}
+              </button>
+            </form>
+
             <div className="investigation-split">
               {/* ── Who ── */}
               <div className="entity-list">
@@ -370,6 +421,21 @@ export function Investigation({
 
               {/* ── What ── */}
               <div className="entity-view">
+                {asked !== null ? (
+                  <AnswerView
+                    asked={asked}
+                    onClose={() => setAsked(null)}
+                    observations={observationById}
+                    onCite={(observationId) => {
+                      const owner = entityOfObservation.get(observationId);
+                      if (owner !== undefined) choose(owner);
+                    }}
+                    onEntity={(entityId) => {
+                      const target = byId.get(entityId);
+                      if (target !== undefined) choose(target);
+                    }}
+                  />
+                ) : null}
                 {selected === null ? (
                   <CaseOverview entities={entities} sources={sources} observations={observations} />
                 ) : (
@@ -395,6 +461,87 @@ export function Investigation({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * An answer, its claims, and what each rests on. A citation is a button
+ * when the observation is loaded, and it selects the entity that holds it;
+ * a refusal shows its reason and what would lift it.
+ */
+function AnswerView({
+  asked,
+  onClose,
+  observations,
+  onCite,
+  onEntity,
+}: {
+  asked: AskResult;
+  onClose: () => void;
+  observations: Map<string, Observation>;
+  onCite: (observationId: string) => void;
+  onEntity: (entityId: string) => void;
+}) {
+  const { answer } = asked;
+  const badge = answer.status === "answered" ? "ok" : answer.status === "insufficient-evidence" ? "warn" : "deny";
+  const label = answer.status === "answered" ? "Answered" : answer.status === "insufficient-evidence" ? "Insufficient Evidence" : "Refused";
+  return (
+    <div className="answer">
+      <div className="spread">
+        <h2>{asked.question}</h2>
+        <span className={`badge ${badge}`}>{label}</span>
+        <button className="link tiny answer-close" onClick={onClose} aria-label="Dismiss the answer">
+          ×
+        </button>
+      </div>
+      {answer.status !== "answered" ? <p className={answer.status === "refused" ? "error" : "notice"}>{answer.text}</p> : null}
+      {answer.refusal?.requires ? (
+        <p className="tiny">
+          <span className="faint">Requires:</span> {answer.refusal.requires}
+        </p>
+      ) : null}
+      {answer.claims.length > 0 ? (
+        <ul className="claims">
+          {answer.claims.map((claim, index) => (
+            <li key={index} className="claim">
+              <span>{claim.text}</span>
+              <span className="claim-cites">
+                {claim.basis === "collection-log"
+                  ? (claim.sourceIds ?? []).map((sourceId) => (
+                      <span className="cite faint" key={sourceId} title="From the collection log">
+                        {sourceId}
+                      </span>
+                    ))
+                  : claim.observationIds.map((id) => {
+                      const o = observations.get(id);
+                      const short = id.replace(/^obs_/, "").slice(0, 8);
+                      return o === undefined ? (
+                        <span className="cite faint" key={id} title={`${id} (not among the loaded observations)`}>
+                          {short}
+                        </span>
+                      ) : (
+                        <button className="cite" key={id} onClick={() => onCite(id)} title={`${id} · ${o.sourceId} · ${stamp(o.observedAt)}`}>
+                          {short}
+                        </button>
+                      );
+                    })}
+                {(claim.entityIds ?? []).length > 0 ? (
+                  <button className="cite entity" onClick={() => onEntity((claim.entityIds ?? [])[0] as string)} title="Select the entity">
+                    entity
+                  </button>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="tiny faint mono answer-trace">
+        {asked.plannedBy === null ? "not planned" : `planned by ${asked.plannedBy}${asked.shape === null ? "" : ` (${asked.shape})`}`}
+        {asked.cost === null ? "" : ` · cost ${asked.cost}`}
+        {asked.trace.map((t) => ` · ${t.id} ${t.op} ${t.nodes}n ${t.edges}e${t.events > 0 ? ` ${t.events}ev` : ""}${t.sources > 0 ? ` ${t.sources}s` : ""}`).join("")}
+        {answer.synthesizedBy === null ? "" : ` · written by ${answer.synthesizedBy}`}
+      </p>
     </div>
   );
 }

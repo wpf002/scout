@@ -50,6 +50,9 @@ importers:
       '@scout/graph':
         specifier: workspace:*
         version: link:../../packages/graph
+      '@scout/reason':
+        specifier: workspace:*
+        version: link:../../packages/reason
       '@scout/scope':
         specifier: workspace:*
         version: link:../../packages/scope
@@ -180,6 +183,22 @@ importers:
       '@scout/sources':
         specifier: workspace:*
         version: link:../sources
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.9.5)
+
+  packages/reason:
+    dependencies:
+      '@scout/scope':
+        specifier: workspace:*
+        version: link:../scope
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ^5.7.2

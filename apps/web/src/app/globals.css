@@ -3753,3 +3753,94 @@ a:hover {
   border-color: color-mix(in srgb, var(--deny) 55%, transparent);
   color: var(--deny);
 }
+
+/* ── Ask the graph ─────────────────────────────────────────────────────── */
+
+.investigation .ask {
+  display: flex;
+  gap: 6px;
+}
+
+.investigation .ask input {
+  flex: 1;
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.investigation .ask input::placeholder {
+  color: var(--text-faint);
+}
+
+.investigation .answer {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.investigation .answer h2 {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.investigation .answer-close {
+  margin-left: auto;
+}
+
+.investigation .claims {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.investigation .claim {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.investigation .claim-cites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.investigation .cite {
+  padding: 0 6px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 16px;
+  cursor: default;
+}
+
+.investigation button.cite {
+  cursor: pointer;
+}
+
+.investigation button.cite:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.investigation .cite.entity {
+  color: var(--scoped);
+}
+
+.investigation .answer-trace {
+  margin: 8px 0 0;
+}

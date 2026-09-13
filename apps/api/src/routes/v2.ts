@@ -27,6 +27,7 @@ import { operatorOf } from "../auth.js";
 import { logEvent } from "../observability.js";
 import { upstreamMessage } from "../adapters/base.js";
 import { scopeContextForCase } from "../v2/scope.js";
+import { ask } from "../v2/reason.js";
 import { runResolution } from "../v2/resolution.js";
 import { deriveLinks } from "../v2/links.js";
 import { coLocationWindow, neighbors, pathBetween, timelineForEntity, visibleEntities } from "../v2/graph.js";
@@ -656,6 +657,18 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
       detail: { adjudicationId: row.id, left, right, decision: body.decision, note: body.note },
     });
     return reply.status(201).send(row);
+  });
+
+  // ── reasoning ──────────────────────────────────────────────────────────
+
+  app.post("/v2/ask", async (request) => {
+    const body = z.object({ caseId: z.string().min(1), question: z.string().trim().min(3).max(1_000) }).parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(body.caseId, operator);
+    // The same 403 every graph read gives; the executor checks again inside.
+    ctx.assertAction("READ_GRAPH");
+    const asked = await ask({ ctx, operator, question: body.question });
+    return { caseId, authorizationId: ctx.authorizationId, ...asked };
   });
 
   // ── the temporal graph ─────────────────────────────────────────────────
