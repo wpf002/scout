@@ -1,3 +1,5 @@
+import { ProhibitionError } from "@scout/scope";
+import { auditStartupRefusal, validateV2Startup } from "./v2/prohibitions.js";
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import { registerErrorHandler } from "./errors.js";
@@ -23,6 +25,16 @@ import { registerV2Routes } from "./routes/v2.js";
 import { config } from "./config.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
+  // Two of the five prohibitions are configuration: a collapsed review band
+  // and an autonomous tier above "prepare". Either one means the process
+  // does not serve. The refusal is audited first, then thrown.
+  try {
+    validateV2Startup(process.env);
+  } catch (caught) {
+    if (caught instanceof ProhibitionError) await auditStartupRefusal(caught);
+    throw caught;
+  }
+
   const app = Fastify({
     logger: {
       level:

@@ -268,6 +268,20 @@ and distances, and the permanent comparison log. Media is read in the
 browser and sent once. With the flag off the tab shows why enrollment and
 comparison are refused; galleries can still be prepared.
 
+## Tests (Phase 11)
+
+| Requirement | Where |
+|---|---|
+| Unit: normalisers, blocking, scoring, thresholds, temporal windows | `services/resolution/tests`, `packages/fusion`, `packages/scope`, `packages/db` |
+| Resolution accuracy with a regression gate | `services/resolution/eval/evaluate.py` (`--check` against `baseline.json`) |
+| Authorization matrix: every case-taking route × missing / not started / expired / revoked / other subject / action class | `apps/api/src/v2-authz.test.ts` |
+| The five prohibitions, attempted, with audit events | `apps/api/src/v2-prohibitions.test.ts` |
+| Temporal: edges with windows read at several `asOf` values | `apps/api/src/v2.test.ts` (links and the temporal graph) |
+| Reversibility: pin, re-run, memberships superseded, history intact | `apps/api/src/v2.test.ts` (resolution) |
+| Recognition gates, arithmetic, diarisation | `services/recognition/tests`, `apps/api/src/v2.test.ts` (stage 10) |
+| Console E2E (Playwright) | not yet built |
+| Load: 1M observations, 100k entities | not yet built |
+
 ## No graph database
 
 The spec named Apache AGE as a projection. It is not used. Railway's managed

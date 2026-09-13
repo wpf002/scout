@@ -3,6 +3,7 @@ import { ProhibitionError, ScopeError } from "@scout/scope";
 import { ProvenanceError } from "@scout/fusion";
 import { ZodError } from "zod";
 import { logEvent } from "./observability.js";
+import { auditProhibition } from "./v2/prohibitions.js";
 
 /** A request-level failure with a stable machine-readable code. */
 export class HttpError extends Error {
@@ -24,7 +25,7 @@ export const badRequest = (message: string) =>
   new HttpError(400, "bad-request", message);
 
 export function registerErrorHandler(app: FastifyInstance): void {
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler(async (error, request, reply) => {
     // A scope denial is a first-class, expected outcome — 403 with the stable
     // reason string so the UI can explain exactly why, and so it lines up with
     // the `reason` written to the audit log.
@@ -50,6 +51,8 @@ export function registerErrorHandler(app: FastifyInstance): void {
       logEvent(request.log, "prohibition.refused", {
         prohibition: error.prohibition,
       });
+      // On the record before the reply: the attempt, the actor, the route.
+      await auditProhibition(request, error);
       return reply.status(403).send({
         error: "prohibited",
         prohibition: error.prohibition,

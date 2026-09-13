@@ -57,3 +57,27 @@ collect, resolve or read the v2 graph until it gets one.
 `authorization-not-started`, `action-not-permitted`,
 `source-class-not-permitted`. Appended to `DENY_REASONS`; existing values are
 untouched.
+
+## Verified by the matrix
+
+`apps/api/src/v2-authz.test.ts` calls every v2 route that takes a case
+against four cases (no authorization, window not yet open, window closed,
+revoked) and requires a 403 naming the state (`authorization-missing`,
+`authorization-not-started`, `authorization-expired`,
+`authorization-revoked`) from each, before anything is fetched, resolved,
+read or compared. It then sends the subject-taking routes a subject the
+boundary does not cover (`out-of-scope`, with no collection audit event
+written) and checks each action class independently of the window
+(`action-not-permitted`). A route added without the gate fails the matrix.
+
+`apps/api/src/v2-prohibitions.test.ts` attempts each of the five
+prohibitions through the API. Two are configuration and are refused before
+the process serves: `buildServer()` calls `validateV2Startup()`, which
+refuses `AGENT_MAX_AUTONOMOUS_TIER=consequential` and a collapsed review
+band (base thresholds and every per-kind override), writes
+`v2.startup.refused` to the audit log, and throws. Two have no route at
+all, which the suite asserts structurally before proving the guards would
+refuse. The fifth is attempted through the real routes. Every
+`ProhibitionError` the API answers is written to the audit log as
+`v2.prohibition.refused` with the actor, the route, the guard and the case
+named, by the error handler, so no route has to remember to.
