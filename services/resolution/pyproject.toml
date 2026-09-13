@@ -1,0 +1,37 @@
+[project]
+name = "scout-resolution"
+version = "0.1.0"
+description = "Scout resolution service: normalization, blocking, Fellegi–Sunter scoring via Splink, clustering with a transitivity guard (FastAPI)."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.141.1",
+  "uvicorn[standard]==0.52.4",
+  "pydantic==2.13.5",
+  "httpx==0.28.1",
+]
+
+# Resolved and pinned in uv.lock; these are the floors. The scoring stack is
+# its own group so the service skeleton installs and answers /healthz without
+# pulling DuckDB and Splink onto a machine that only wants the API up.
+[project.optional-dependencies]
+scoring = [
+  "splink>=4.0,<5",
+  "duckdb>=1.2",
+  "jellyfish>=1.1",
+  "python-geohash>=0.8.5",
+  "phonenumbers>=8.13",
+  "unidecode>=1.3",
+]
+
+[dependency-groups]
+dev = ["pytest==9.1.1"]
+
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["resolution"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

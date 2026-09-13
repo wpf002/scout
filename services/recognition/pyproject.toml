@@ -1,0 +1,37 @@
+[project]
+name = "scout-recognition"
+version = "0.1.0"
+description = "Scout recognition service: 1:N face and voice comparison against an enrolled gallery only. Disabled unless RECOGNITION_ENABLED=true."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.141.1",
+  "uvicorn[standard]==0.52.4",
+  "pydantic==2.13.5",
+]
+
+# The models are heavy and legally the most sensitive thing in Scout. They are
+# an optional group so nothing installs them by accident; Phase 10 adds them
+# behind the same flag.
+[project.optional-dependencies]
+models = [
+  "insightface>=0.7",
+  "onnxruntime>=1.20",
+  "speechbrain>=1.0",
+  "numpy>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx==0.28.1",
+    "pytest==9.1.1",
+]
+
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["recognition"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
