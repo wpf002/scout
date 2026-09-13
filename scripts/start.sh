@@ -196,8 +196,15 @@ fi
 pnpm --filter @scout/db exec prisma generate >/dev/null 2>&1
 
 step "Applying migrations"
-pnpm --filter @scout/db exec prisma migrate deploy 2>&1 \
-  | grep -E "Applying|already in sync|No pending|successfully applied" || true
+# The output used to be grepped for the happy lines and the exit code
+# discarded, so a failed migration printed nothing and the API came up against
+# a schema its client did not match. Every case query then 500ed while the
+# banner said the app was running.
+if ! MIGRATE_OUT="$(pnpm --filter @scout/db exec prisma migrate deploy 2>&1)"; then
+  printf '%s\n' "$MIGRATE_OUT" | grep -vE '^\s*$' | tail -20
+  die "Migrations failed. Nothing was started."
+fi
+printf '%s\n' "$MIGRATE_OUT" | grep -E "Applying|already in sync|No pending|successfully applied" || true
 
 # Seed only an empty database. Re-seeding one that already has work in it would
 # be a surprise, and a bad one. An unreadable count means "do not seed" rather

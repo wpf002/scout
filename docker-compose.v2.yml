@@ -1,0 +1,74 @@
+# Scout v2 local infrastructure.
+#
+# Postgres with PostGIS, and MinIO for object storage. Nothing else. Redis and
+# a job queue stay unbuilt for the same reason ROADMAP.md gives: nothing in v2
+# needs them yet, and infrastructure that exists to look finished is a cost
+# with no return.
+#
+# Port 5439, not 5432. The Homebrew cluster that scripts/dev-db.sh manages owns
+# 5432 on this machine, and .env.example already warns about a second Postgres
+# answering on the same port. Sibling projects hold 5433, 5435, 5437 and 5441.
+# Railway's PostGIS template runs PostGIS 3.4 on Postgres 16 as well, so the
+# schema and migrations are identical there.
+#
+# Apache AGE is deliberately absent. Railway's managed Postgres cannot load it,
+# and the temporal graph is answered from the relational tables directly
+# (packages/fusion/src/temporal.ts). See docs/ARCHITECTURE_V2.md.
+services:
+  db:
+    # imresamu/postgis, not postgis/postgis: the official image is amd64-only
+    # and runs under emulation on Apple silicon. This one is the same PostGIS
+    # 3.4 on Postgres 16, published for both arm64 and amd64, so local and
+    # Railway pull one tag.
+    image: imresamu/postgis:16-3.4
+    container_name: scout-v2-db
+    environment:
+      POSTGRES_USER: scout
+      POSTGRES_PASSWORD: scout
+      POSTGRES_DB: scout
+    ports:
+      - "5439:5432"
+    volumes:
+      - scout-v2-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scout -d scout"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    container_name: scout-v2-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: scout
+      MINIO_ROOT_PASSWORD: scout-minio-local
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - scout-v2-minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Creates the two buckets once MinIO answers, then exits. Idempotent: an
+  # existing bucket is left alone.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 scout scout-minio-local &&
+        mc mb --ignore-existing local/scout-media &&
+        mc mb --ignore-existing local/scout-tiles &&
+        echo 'buckets ready'
+      "
+
+volumes:
+  scout-v2-pgdata:
+  scout-v2-minio:

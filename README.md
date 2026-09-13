@@ -802,6 +802,47 @@ ever making a real request about a real person.
 
 ---
 
+## Scout v2
+
+v2 adds, on top of everything above and without changing it: collection with
+provenance on every row, probabilistic entity resolution with a human review
+band, a temporal entity graph you can scrub back in time, gallery-restricted
+biometrics (off by default), a reasoning layer that cites evidence or says it
+has none, an investigation console, and an agent that observes and proposes.
+
+Architecture: [docs/ARCHITECTURE_V2.md](./docs/ARCHITECTURE_V2.md). Authorization:
+[docs/AUTHORIZATION_MODEL.md](./docs/AUTHORIZATION_MODEL.md). Resolution:
+[docs/ENTITY_RESOLUTION.md](./docs/ENTITY_RESOLUTION.md). For counsel:
+[docs/LEGAL_POSTURE.md](./docs/LEGAL_POSTURE.md). Sources:
+[docs/SOURCES.md](./docs/SOURCES.md). Limits: [docs/COVERAGE_LIMITS.md](./docs/COVERAGE_LIMITS.md).
+
+### v2 quickstart
+
+```bash
+pnpm bootstrap:v2   # Docker PostGIS + MinIO, migrations, fixtures, health checklist
+pnpm start          # exactly as before
+```
+
+`bootstrap:v2` moves `DATABASE_URL` to the Docker Postgres on :5439 (PostGIS is
+needed; the Homebrew cluster on :5432 does not have it), keeps a backup of
+`.env`, and copies your existing cases across the first time.
+
+### What Scout will not do
+
+1. **Reach into systems it is not authorized for.** No credential testing, no
+   exploitation, no cameras or endpoints that were not enrolled by their owner.
+2. **Intercept communications.** No packet capture, no telecom interception,
+   no reading messages Scout is not a party to or explicitly authorized to receive.
+3. **Search the world for a face or a voice.** Matching runs only against an
+   enrolled gallery with a recorded lawful basis. Nothing is built from scraped images.
+4. **Act on its own.** Anything with an external effect waits for a recorded
+   human approval, tied to one proposal, that expires.
+5. **Force a match.** Resolution can answer "unresolved" or "indeterminate".
+   It never merges two records to avoid an empty answer.
+
+Each is a named guard in `packages/scope/src/prohibitions.ts` with a test that
+attempts the act and asserts refusal.
+
 ## What's next
 
 Phases 0–8 are shipped, plus monitoring and the watch floor on top. What is

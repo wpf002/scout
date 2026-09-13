@@ -10,7 +10,8 @@
     "test": "vitest run",
     "copy:map-worker": "node scripts/copy-map-worker.mjs",
     "predev": "node scripts/copy-map-worker.mjs",
-    "prebuild": "node scripts/copy-map-worker.mjs"
+    "prebuild": "node scripts/copy-map-worker.mjs",
+    "lint": "eslint src"
   },
   "dependencies": {
     "@turf/area": "^7.4.0",
