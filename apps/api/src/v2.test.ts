@@ -387,7 +387,13 @@ run("Scout v2 — stage 3: collection", () => {
         expect(e.sourceIds.length).toBeGreaterThan(0);
         expect(e.members.every((m: { addedBy: string }) => m.addedBy === "SYSTEM")).toBe(true);
       }
-      expect(body.sources.map((s: { sourceId: string }) => s.sourceId).sort()).toEqual(["adsb-live", "sec-edgar"]);
+      // Every registered collector is listed, with zero when it had nothing
+      // to say, plus every source that actually wrote observations here.
+      const sources = body.sources as Array<{ sourceId: string; observations: number }>;
+      expect(sources.map((s) => s.sourceId)).toEqual(expect.arrayContaining(["adsb-live", "sec-edgar"]));
+      const written = await prisma.observation.groupBy({ by: ["sourceId"], where: { authorizationId }, _count: { _all: true } });
+      for (const w of written) expect(sources.find((s) => s.sourceId === w.sourceId)?.observations).toBe(w._count._all);
+      expect(sources.some((s) => s.observations > 0)).toBe(true);
       const log = await prisma.accessLog.findFirst({ where: { authorizationId, targetType: "Entity" }, orderBy: { createdAt: "desc" } });
       expect(log?.resultCount).toBe(body.count);
     });
@@ -455,6 +461,7 @@ run("Scout v2 — stage 3: collection", () => {
 
       // Both of E1's sightings are within reach of P3, so one window covers
       // them: from the first sighting to the last plus the window.
+      expect(device.basis).toBe("shared:DEVICE_ID");
       const near = body.edges.find((e: { relation: string }) => e.relation === "CO_LOCATED");
       expect([near.fromEntityId, near.toEntityId].sort()).toEqual([ent["P1b"], ent["P3"]].sort());
       expect(new Date(near.validFrom).getTime()).toBe(at(0).getTime());
@@ -534,6 +541,8 @@ run("Scout v2 — stage 3: collection", () => {
       expect((await get(`/v2/graph/edges?caseId=${graphCase}`)).json().count).toBe(1);
       const r = (await get(`/v2/graph/edges?caseId=${graphCase}&asOf=${at(20).toISOString()}`)).json();
       expect(r.count).toBe(2);
+      // A confidence is never returned without the rule that produced it.
+      expect(r.edges.every((e: { basis: string | null }) => typeof e.basis === "string" && e.basis.length > 0)).toBe(true);
       const log = await prisma.accessLog.findFirst({ where: { authorizationId: graphAuth, targetType: "EntityEdge" }, orderBy: { createdAt: "desc" } });
       expect(log?.targetIds.sort()).toEqual(r.edges.map((e: { id: string }) => e.id).sort());
     });

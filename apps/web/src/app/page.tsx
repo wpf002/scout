@@ -22,6 +22,8 @@ import type { Shape } from "@/lib/measure";
 import { Filters } from "@/components/Filters";
 import { Aoi, type Box } from "@/components/Aoi";
 import { CaseFile } from "@/components/CaseFile";
+import { Investigation } from "@/components/Investigation";
+import { EMPTY_LAYER, type MapLayer } from "@/lib/investigation";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
 /**
@@ -42,6 +44,7 @@ const TOOLS = [
   { id: "directions", glyph: "⇄", name: "Directions" },
   { id: "intel", glyph: "◫", name: "Intel Feed" },
   { id: "case", glyph: "⛁", name: "Case File" },
+  { id: "investigation", glyph: "◈", name: "Investigation" },
   { id: "layers", glyph: "≡", name: "All Layers" },
 ];
 
@@ -81,6 +84,7 @@ export default function Page() {
     lat: number;
     lon: number;
     zoom?: number;
+    offset?: [number, number];
   } | null>(null);
   const [place, setPlace] = useState<string | null>(null);
   const [seeded, setSeeded] = useState("");
@@ -97,6 +101,8 @@ export default function Page() {
   const [aoi, setAoi] = useState<Box | null>(null);
   const [drawingAoi, setDrawingAoi] = useState(false);
   const [aoiFeatures, setAoiFeatures] = useState<GeoJSON.Feature[]>([]);
+  const [investigation, setInvestigation] = useState<MapLayer>(EMPTY_LAYER);
+  const [pick, setPick] = useState<{ entityId: string; nonce: number } | null>(null);
   const [track, setTrack] = useState<{
     path: [number, number][];
     altitudes: Array<number | null>;
@@ -194,6 +200,13 @@ export default function Page() {
       setPlace(null);
     }
   }, []);
+
+  // A click on one of the console's points selects that entity in the console.
+  useEffect(() => {
+    if (selection?.layer !== "investigation") return;
+    const entityId = selection.properties["entityId"];
+    if (typeof entityId === "string") setPick({ entityId, nonce: Date.now() });
+  }, [selection]);
 
   // An indicator typed into the map's search box belongs to the OSINT panel.
   const onIndicator = useCallback((value: string) => {
@@ -584,6 +597,7 @@ export default function Page() {
         drawingAoi={drawingAoi}
         onAoi={onAoi}
         aoiFeatures={aoiFeatures}
+        investigation={investigation}
         route={route}
         stops={stops}
         picking={picking}
@@ -678,6 +692,9 @@ export default function Page() {
                   // features, exactly as a stray crosshair does.
                   if (next !== "directions") setPicking(null);
                   if (next !== "aoi") setDrawingAoi(false);
+                  // The console's picture belongs to the console; closing it
+                  // takes the picture off the live map.
+                  if (next !== "investigation") setInvestigation(EMPTY_LAYER);
                   return next;
                 })
               }
@@ -915,6 +932,18 @@ export default function Page() {
           </div>
           <div className="tool-panel-body">
             <CaseFile />
+          </div>
+        </section>
+      ) : null}
+
+      {tool === "investigation" ? (
+        <section className="tool-panel widest">
+          <div className="tool-panel-head">
+            <h2>Investigation</h2>
+            <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          <div className="tool-panel-body">
+            <Investigation onLayer={setInvestigation} onFly={setFlyTo} pick={pick} />
           </div>
         </section>
       ) : null}

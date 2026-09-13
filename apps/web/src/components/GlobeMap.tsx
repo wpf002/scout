@@ -40,7 +40,8 @@ export interface Props {
   onSelect: (selection: Selection | null) => void;
   onStatus: (status: Record<string, number | string>) => void;
   onCursor: (position: { lat: number; lon: number; zoom: number }) => void;
-  flyTo: { lat: number; lon: number; zoom?: number } | null;
+  /** `offset` shifts where the target lands, in pixels from the centre, for a target that would otherwise sit under a panel. */
+  flyTo: { lat: number; lon: number; zoom?: number; offset?: [number, number] } | null;
   onCentre: (centre: { lat: number; lon: number }) => void;
   measure: Shape | null;
   onMeasure: (reading: string | null) => void;
@@ -61,6 +62,8 @@ export interface Props {
   onAoi: (box: { south: number; west: number; north: number; east: number }) => void;
   /** Fixed infrastructure found inside the area. */
   aoiFeatures: GeoJSON.Feature[];
+  /** The investigation console's picture at one moment: observations, per-entity traces, links. */
+  investigation: { points: GeoJSON.Feature[]; lines: GeoJSON.Feature[]; links: GeoJSON.Feature[] };
   /** The selected aircraft's recorded track and filed route. */
   track: {
     path: [number, number][];
@@ -125,6 +128,7 @@ function GlobeMapImpl({
   drawingAoi,
   onAoi,
   aoiFeatures,
+  investigation,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -623,6 +627,7 @@ function GlobeMapImpl({
     instance.flyTo({
       center: [flyTo.lon, flyTo.lat],
       zoom: flyTo.zoom ?? instance.getZoom(),
+      offset: flyTo.offset ?? [0, 0],
       speed: 1.4,
     });
   }, [flyTo]);
@@ -1057,6 +1062,66 @@ function GlobeMapImpl({
       infraSource.setData(infraData);
     }
   }, [aoi, aoiFeatures, ready, redraw]);
+
+  // ── Investigation console: what was observed by a moment ────────────────
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+
+    const sets: Array<[string, GeoJSON.Feature[]]> = [
+      ["investigation-traces", investigation.lines],
+      ["investigation-links", investigation.links],
+      ["investigation", investigation.points],
+    ];
+    for (const [id, features] of sets) {
+      const data: GeoJSON.FeatureCollection = { type: "FeatureCollection", features };
+      const source = instance.getSource(id) as maplibregl.GeoJSONSource | undefined;
+      if (source !== undefined) {
+        source.setData(data);
+        continue;
+      }
+      instance.addSource(id, { type: "geojson", data });
+      const selected: maplibregl.ExpressionSpecification = ["==", ["get", "selected"], true];
+      if (id === "investigation-traces") {
+        instance.addLayer({
+          id,
+          type: "line",
+          source: id,
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": ["coalesce", ["get", "colour"], "#979cb0"],
+            "line-width": ["case", selected, 2.6, 1.2],
+            "line-opacity": ["case", selected, 0.95, 0.55],
+          },
+        });
+      } else if (id === "investigation-links") {
+        instance.addLayer({
+          id,
+          type: "line",
+          source: id,
+          paint: {
+            "line-color": "#9b6bff",
+            "line-width": ["case", selected, 2, 1.2],
+            "line-dasharray": [1.5, 1.5],
+            "line-opacity": ["case", selected, 0.95, 0.7],
+          },
+        });
+      } else {
+        instance.addLayer({
+          id,
+          type: "circle",
+          source: id,
+          paint: {
+            "circle-radius": ["case", selected, 7, 4.5],
+            "circle-color": ["coalesce", ["get", "colour"], "#676c80"],
+            "circle-opacity": 0.9,
+            "circle-stroke-color": ["case", selected, "#ffffff", "#05050a"],
+            "circle-stroke-width": ["case", selected, 1.6, 1],
+          },
+        });
+      }
+    }
+  }, [investigation, ready, redraw]);
 
   // ── Layer painting ───────────────────────────────────────────────────────
 
@@ -1691,7 +1756,7 @@ function GlobeMapImpl({
         }
       }
 
-      const clickable = [...FEED_LAYERS.map((l) => l.id), "osint", "aoi-infra"].filter(
+      const clickable = [...FEED_LAYERS.map((l) => l.id), "osint", "aoi-infra", "investigation"].filter(
         (id) => instance.getLayer(id) !== undefined,
       );
       const hits = instance.queryRenderedFeatures(event.point, {
@@ -1719,21 +1784,25 @@ function GlobeMapImpl({
       instance.getCanvas().style.cursor = "";
     };
 
+    // The console's layer exists only once the panel has drawn something,
+    // which is why its presence is a dependency below.
+    const hoverable = [...FEED_LAYERS.map((l) => l.id), "investigation"].filter(
+      (id) => instance.getLayer(id) !== undefined,
+    );
     instance.on("click", onClick);
-    for (const def of FEED_LAYERS) {
-      if (instance.getLayer(def.id) === undefined) continue;
-      instance.on("mouseenter", def.id, onEnter);
-      instance.on("mouseleave", def.id, onLeave);
+    for (const id of hoverable) {
+      instance.on("mouseenter", id, onEnter);
+      instance.on("mouseleave", id, onLeave);
     }
 
     return () => {
       instance.off("click", onClick);
-      for (const def of FEED_LAYERS) {
-        instance.off("mouseenter", def.id, onEnter);
-        instance.off("mouseleave", def.id, onLeave);
+      for (const id of hoverable) {
+        instance.off("mouseenter", id, onEnter);
+        instance.off("mouseleave", id, onLeave);
       }
     };
-  }, [ready, onSelect, measure, picking, drawingAoi, active, redraw]);
+  }, [ready, onSelect, measure, picking, drawingAoi, active, redraw, investigation.points.length > 0]);
 
   return (
     <>

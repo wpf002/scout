@@ -135,6 +135,8 @@ export interface EdgeAsOf {
   validFrom: Date;
   validUntil: Date | null;
   confidenceBp: number;
+  /** The rule that produced the confidence: "shared:PHONE", "co-location:2000m/30min", "asserted". */
+  basis: string | null;
   evidenceObservationIds: string[];
 }
 
@@ -164,7 +166,7 @@ export async function edgesAsOf(
   // predicate's placeholders line up with Prisma's numbering.
   return prisma.$queryRaw<EdgeAsOf[]>`
     SELECT e."id", e."fromEntityId", e."toEntityId", e."relation"::text AS "relation",
-           e."validFrom", e."validUntil", e."confidenceBp", e."evidenceObservationIds"
+           e."validFrom", e."validUntil", e."confidenceBp", e."basis", e."evidenceObservationIds"
     FROM "EntityEdge" e
     WHERE ${held}::timestamptz IS NOT NULL AND ${knownAs}::timestamptz IS NOT NULL AND ${predicate}
       ${entityClause} ${authClause}

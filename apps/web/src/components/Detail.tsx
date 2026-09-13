@@ -75,6 +75,7 @@ const FIELDS: Record<string, string[]> = {
   space_weather: ["kp", "stormLevel", "flareClass", "at"],
   aurora: ["probability", "at"],
   cables: [],
+  investigation: ["kind", "sourceId", "observedAt"],
 };
 
 function format(key: string, value: string): string {

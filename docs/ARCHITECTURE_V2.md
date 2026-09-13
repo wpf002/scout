@@ -16,7 +16,7 @@ tiers, the scope gate, the audit log, or the live map.
 | Resolution | `services/resolution`, `apps/api/src/v2/resolution.ts` | Python + TS | Built: PERSON, VESSEL, AIRCRAFT, ORG |
 | Recognition | `services/recognition` | Python | Phase 10, flag off |
 | Reasoning seam | `packages/reason` | TS | Phase 8 |
-| Console | `apps/web/src/app/console/` | TS | Phase 9 |
+| Console | `apps/web/src/components/Investigation.tsx` | TS | Stage 6 |
 | Agent | `apps/api/src/agent/` | TS | Phase 11 |
 
 ## Data flow
@@ -96,6 +96,43 @@ co-location learned after it ended is visible at the moment it happened
 under the first reading and at no moment under the second, and both answers
 are right. `packages/fusion/src/temporal.ts` holds the predicate in one place,
 as a function and as SQL.
+
+## Console
+
+The investigation console is a tool on the map's rail, next to the case
+file, in the same panel chrome. It is read-only by construction: the
+component imports `v2.entities`, `v2.observations`, `v2.edges`,
+`v2.neighbors` and `v2.timeline` and nothing that writes. Every one of those
+reads is written to `AccessLog` by the route, and the panel's last line says
+so.
+
+What it shows, for one case at one moment:
+
+- **The scrubber** sets `asOf`, the valid-time clock. Observations are loaded
+  once (up to 2 000), so the map, the entity list and the entity view answer
+  a scrub on the client; the graph reads (links, timeline) follow 200 ms
+  later from the server, where the two-clock predicate lives. "Only what was
+  known then" pins `knownAs` to the same instant, the audit reading; an
+  entity that wasn't known yet comes back 404 and is shown as "Not known at
+  T", which is an answer.
+- **Coverage bands**, one per source consulted under the authorization,
+  bucketed across the range. A gap is a gap in the source. Buckets after
+  `asOf` are greyed.
+- **The map** draws every positioned observation seen by `asOf`, coloured by
+  the kind of the entity it resolved into (grey when unresolved), one trace
+  per entity through its positions in time order, and the edges that held at
+  `asOf` as dashed lines between the entities' last positions. An edge whose
+  end has no position is in the panel and not on the map.
+- **The entity view**: position by then, links with confidence and the
+  basis that produced it (never the number alone), identifiers among the
+  observations seen by then, members with the ones observed later dimmed,
+  the timeline, and **sources consulted**: every source under the
+  authorization, with "Nothing" printed for the ones that had nothing on
+  this entity.
+
+Flying the camera to an entity offsets the target into the strip of map the
+panel leaves visible (`besidePanel()`), since the panel is `min(62vw,
+980px)` wide and a target at the centre would land under it.
 
 ## No graph database
 

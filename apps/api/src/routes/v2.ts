@@ -110,7 +110,7 @@ const asOfQuery = z.object({
 
 const observationsQuery = z.object({
   caseId: z.string().min(1),
-  limit: z.coerce.number().int().min(1).max(500).default(100),
+  limit: z.coerce.number().int().min(1).max(2_000).default(100),
   raw: z.enum(["true", "false"]).default("false"),
 });
 
@@ -481,7 +481,8 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
       _max: { observedAt: true },
     });
     const registered = listRunnable().map((c) => c.id);
-    const sources = registered.map((id) => {
+    const sourceIds = [...new Set([...registered, ...consulted.map((c) => c.sourceId)])].sort();
+    const sources = sourceIds.map((id) => {
       const hit = consulted.find((c) => c.sourceId === id);
       return { sourceId: id, observations: hit?._count._all ?? 0, lastObservedAt: hit?._max.observedAt ?? null };
     });
