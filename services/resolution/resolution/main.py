@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from resolution import __version__
 from resolution.cluster import Decision, Thresholds, apply_pins, classify, cluster
-from resolution.model import SUPPORTED_KINDS, model_version, predict
+from resolution.model import PairScore, SUPPORTED_KINDS, model_version, predict
 from resolution.normalize import NORMALIZATION_VERSION, normalize_identifier
 from resolution.records import EntityKind, ObservationIn, to_row
 
@@ -144,6 +144,17 @@ def _label(kind: str, rows: dict[str, dict[str, Any]], members: list[str]) -> st
     return members[0]
 
 
+def _features_for(decision: str, s: PairScore) -> dict[str, Any]:
+    """The comparison detail travels with MATCH and REVIEW decisions, which
+    the review queue and the audit read. A NON_MATCH keeps its score and
+    blocking key; its per-column evidence is recomputable and, at scale,
+    most of the payload. RESOLUTION_FEATURES_FOR=all keeps everything."""
+    keep = os.environ.get("RESOLUTION_FEATURES_FOR", "match,review").lower().split(",")
+    if "all" in keep or decision.lower() in keep:
+        return {"match_weight": s.weight, "probability": s.probability, "levels": s.levels, "bayes_factors": s.bayes_factors}
+    return {"match_weight": s.weight, "probability": s.probability}
+
+
 @app.post("/resolve", response_model=ResolveResponse)
 def resolve(req: ResolveRequest) -> ResolveResponse:
     if req.entity_kind not in SUPPORTED_KINDS:
@@ -170,14 +181,10 @@ def resolve(req: ResolveRequest) -> ResolveResponse:
     ids = list(by_id)
 
     scores = predict(req.entity_kind, rows)
-    decisions = [
-        Decision(
-            left=s.left, right=s.right, score_bp=s.score_bp, decision=classify(s.score_bp, t),
-            blocking_key=s.blocking_key,
-            features={"match_weight": s.weight, "probability": s.probability, "levels": s.levels, "bayes_factors": s.bayes_factors},
-        )
-        for s in scores
-    ]
+    decisions = []
+    for s in scores:
+        outcome = classify(s.score_bp, t)
+        decisions.append(Decision(left=s.left, right=s.right, score_bp=s.score_bp, decision=outcome, blocking_key=s.blocking_key, features=_features_for(outcome, s)))
     decisions = apply_pins(decisions, [a.model_dump() for a in req.adjudications])
     clusters = cluster(ids, decisions)
 

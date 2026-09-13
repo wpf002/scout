@@ -160,7 +160,7 @@ def calibrate(kind: str, rows: list[dict[str, Any]], label_column: str, out: Pat
     the model file, level by level, where it can be read.
     """
     spec = _spec(kind)
-    frame = pd.DataFrame(rows)
+    frame = _frame(rows)
     scan = SettingsCreator(
         link_type="dedupe_only",
         comparisons=spec.comparisons,
@@ -219,7 +219,7 @@ def train(
         return calibrate(kind, rows, label_column, out)
 
     spec = _spec(kind)
-    linker = Linker(pd.DataFrame(rows), _settings(spec), db_api=DuckDBAPI())
+    linker = Linker(_frame(rows), _settings(spec), db_api=DuckDBAPI())
     linker.training.estimate_probability_two_random_records_match(
         [block_on(*r.columns) for r in spec.deterministic], recall=0.7
     )
@@ -247,6 +247,19 @@ class PairScore:
         return max(0, min(10_000, round(self.probability * 10_000)))
 
 
+def _frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    """Rows as a DataFrame whose text columns are typed as text even when
+    every value is null. DuckDB types an all-null object column as INTEGER,
+    and a string comparison on it fails at predict time; a batch with no
+    addresses (or no phones, or no cities) is ordinary, not an error."""
+    frame = pd.DataFrame(rows)
+    for column in frame.columns:
+        values = frame[column].dropna()
+        if len(values) == 0 or all(isinstance(v, str) for v in values):
+            frame[column] = frame[column].astype("string")
+    return frame
+
+
 def predict(kind: str, rows: list[dict[str, Any]]) -> list[PairScore]:
     if len(rows) < 2:
         return []
@@ -256,7 +269,7 @@ def predict(kind: str, rows: list[dict[str, Any]]) -> list[PairScore]:
         raise FileNotFoundError(
             f"No trained model for {kind} at {path}. Run: uv run python -m eval.evaluate --train"
         )
-    linker = Linker(pd.DataFrame(rows), str(path), db_api=DuckDBAPI())
+    linker = Linker(_frame(rows), str(path), db_api=DuckDBAPI())
     records = linker.inference.predict(threshold_match_probability=0.0).as_record_dict()
     names = [c.create_output_column_name() for c in spec.comparisons]
     out: list[PairScore] = []

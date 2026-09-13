@@ -19,3 +19,20 @@ def test_fixture_resolution_meets_the_baseline():
     # Precision floor: a resolver that merges strangers is worse than none.
     for kind, m in report["kinds"].items():
         assert m["cluster"]["precision"] >= 0.95, (kind, m["cluster"])
+
+
+def test_predict_survives_a_batch_with_an_all_null_text_column() -> None:
+    """A batch with no addresses, cities or phones is ordinary. DuckDB would
+    type those all-null columns as INTEGER and the string comparison would
+    fail; the frame builder types them as text."""
+    from resolution.model import predict
+    from resolution.records import ObservationIn, to_row
+
+    rows = [
+        to_row(ObservationIn(id=f"o{i}", identifiers=[{"kind": "NAME", "value": f"Ana Abara {i // 2}"}, {"kind": "EMAIL", "value": f"ana.abara{i // 2}@example.net"}]))
+        for i in range(8)
+    ]
+    assert all(r["address"] is None and r["phone"] is None and r["city"] is None for r in rows)
+    scores = predict("PERSON", rows)
+    assert len(scores) > 0
+    assert any(s.probability > 0.9 for s in scores)

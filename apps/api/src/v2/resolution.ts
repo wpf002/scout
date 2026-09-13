@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ScopeContext, ScopeError } from "@scout/scope";
 import type { FusionEntityKind } from "@scout/fusion";
@@ -13,6 +14,12 @@ import { HttpError, badRequest } from "../errors.js";
  * MatchDecision for every pair scored, an Entity per cluster, and memberships
  * that supersede the previous run's without deleting them.
  */
+
+/** How long one resolution run may take, service call and persistence each. Default ten minutes. */
+export function resolutionTimeoutMs(): number {
+  const parsed = Number(process.env["RESOLUTION_TIMEOUT_MS"]);
+  return Number.isInteger(parsed) && parsed >= 10_000 ? parsed : 600_000;
+}
 
 export function resolutionServiceUrl(): string {
   return (process.env["RESOLUTION_SERVICE_URL"] ?? "http://127.0.0.1:8100").replace(/\/$/, "");
@@ -70,7 +77,9 @@ export async function resolveWithService(request: ServiceRequest): Promise<Resol
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify(request),
-      signal: AbortSignal.timeout(120_000),
+      // A run over tens of thousands of observations takes minutes; the
+      // bound is configurable and generous, not a guess at the small case.
+      signal: AbortSignal.timeout(resolutionTimeoutMs()),
     });
   } catch (error) {
     throw new HttpError(
@@ -132,10 +141,16 @@ export async function runResolution(input: RunResolutionInput): Promise<RunSumma
   // Pinned decisions: the newest adjudication per pair, only for pairs whose
   // observations are both in this run. The resolver reads them before it
   // clusters, so a human's call survives every re-run.
-  const adjudications = await prisma.adjudication.findMany({
-    where: { OR: [{ leftObservationId: { in: ids } }, { rightObservationId: { in: ids } }] },
-    orderBy: { createdAt: "desc" },
-  });
+  // Joined on the observations of this run rather than passed as an id
+  // list: Postgres allows 32 767 bind variables, and a run is bigger.
+  const adjudications = await prisma.$queryRaw<Array<{ pairKey: string; leftObservationId: string; rightObservationId: string; decision: "MATCH" | "NON_MATCH" | "INDETERMINATE" | "REVIEW" }>>`
+    SELECT a."pairKey", a."leftObservationId", a."rightObservationId", a."decision"::text AS "decision"
+    FROM "Adjudication" a
+    JOIN "Observation" l ON l."id" = a."leftObservationId"
+    JOIN "Observation" r ON r."id" = a."rightObservationId"
+    WHERE l."authorizationId" = ${ctx.authorizationId} AND r."authorizationId" = ${ctx.authorizationId}
+      AND l."caseId" = ${caseId} AND r."caseId" = ${caseId}
+    ORDER BY a."createdAt" DESC`;
   const pins = new Map<string, { left: string; right: string; decision: "MATCH" | "NON_MATCH" | "INDETERMINATE" }>();
   for (const a of adjudications) {
     if (pins.has(a.pairKey) || !idSet.has(a.leftObservationId) || !idSet.has(a.rightObservationId)) continue;
@@ -175,38 +190,37 @@ export async function runResolution(input: RunResolutionInput): Promise<RunSumma
         },
       });
 
-      if (result.decisions.length > 0) {
-        await tx.matchDecision.createMany({
-          data: result.decisions.map((d) => ({
-            runId: run.id,
-            leftObservationId: d.left,
-            rightObservationId: d.right,
-            scoreBp: d.score_bp,
-            decision: d.decision,
-            featureVector: { ...d.features, pinned: d.pinned },
-            modelVersion: result.model_version,
-            blockingKey: d.blocking_key,
-          })),
-          skipDuplicates: true,
-        });
+      // Every bulk write below is chunked: a run at scale has hundreds of
+      // thousands of pairs, and one statement holds at most 32 767 binds.
+      const BATCH = 2_000;
+      const decisionRows = result.decisions.map((d) => ({
+        runId: run.id,
+        leftObservationId: d.left,
+        rightObservationId: d.right,
+        scoreBp: d.score_bp,
+        decision: d.decision,
+        featureVector: { ...d.features, pinned: d.pinned },
+        modelVersion: result.model_version,
+        blockingKey: d.blocking_key,
+      }));
+      for (let i = 0; i < decisionRows.length; i += BATCH) {
+        await tx.matchDecision.createMany({ data: decisionRows.slice(i, i + BATCH), skipDuplicates: true });
       }
 
       // The previous run's system memberships for these observations are
       // superseded, never deleted; an analyst's memberships are not touched.
-      const previous = await tx.entityMember.findMany({
-        where: { observationId: { in: ids }, supersededAt: null, addedBy: "SYSTEM" },
-        select: { entityId: true },
-      });
-      await tx.entityMember.updateMany({
-        where: { observationId: { in: ids }, supersededAt: null, addedBy: "SYSTEM" },
-        data: { supersededAt: now, supersededBy: run.id },
-      });
-      const previousEntityIds = [...new Set(previous.map((m) => m.entityId))];
+      const previous = await tx.$queryRaw<Array<{ entityId: string }>>`
+        SELECT DISTINCT "entityId" FROM "EntityMember"
+        WHERE "observationId" = ANY(${ids}::text[]) AND "supersededAt" IS NULL AND "addedBy" = 'SYSTEM'`;
+      await tx.$executeRaw`
+        UPDATE "EntityMember" SET "supersededAt" = ${now}, "supersededBy" = ${run.id}
+        WHERE "observationId" = ANY(${ids}::text[]) AND "supersededAt" IS NULL AND "addedBy" = 'SYSTEM'`;
+      const previousEntityIds = previous.map((m) => m.entityId);
       if (previousEntityIds.length > 0) {
-        await tx.entity.updateMany({
-          where: { id: { in: previousEntityIds }, members: { none: { supersededAt: null } } },
-          data: { status: "UNRESOLVED" },
-        });
+        await tx.$executeRaw`
+          UPDATE "Entity" SET "status" = 'UNRESOLVED'
+          WHERE "id" = ANY(${previousEntityIds}::text[])
+            AND NOT EXISTS (SELECT 1 FROM "EntityMember" m WHERE m."entityId" = "Entity"."id" AND m."supersededAt" IS NULL)`;
       }
 
       // The strongest MATCH touching each member, as its membership score. A
@@ -220,28 +234,29 @@ export async function runResolution(input: RunResolutionInput): Promise<RunSumma
       }
 
       const entities: RunSummary["entities"] = [];
-      for (const cluster of result.clusters) {
-        const entity = await tx.entity.create({
-          data: {
-            kind: entityKind,
-            canonicalLabel: cluster.label,
-            status: cluster.status,
-            lastResolvedAt: now,
-            resolutionRunId: run.id,
-          },
-        });
-        await tx.entityMember.createMany({
-          data: cluster.members.map((observationId) => ({
-            entityId: entity.id,
-            observationId,
-            scoreBp: cluster.members.length === 1 ? 10_000 : (bestMatch.get(observationId) ?? 0),
-            method: "fellegi-sunter",
-            addedBy: "SYSTEM",
-            addedByActor: operator,
-          })),
-        });
-        entities.push({ id: entity.id, status: cluster.status, label: cluster.label, members: cluster.members });
-      }
+      const entityRows = result.clusters.map((cluster) => ({
+        id: `ent_${randomUUID().replace(/-/g, "")}`,
+        kind: entityKind,
+        canonicalLabel: cluster.label,
+        status: cluster.status,
+        lastResolvedAt: now,
+        resolutionRunId: run.id,
+      }));
+      const memberRows = result.clusters.flatMap((cluster, index) =>
+        cluster.members.map((observationId) => ({
+          entityId: (entityRows[index] as { id: string }).id,
+          observationId,
+          scoreBp: cluster.members.length === 1 ? 10_000 : (bestMatch.get(observationId) ?? 0),
+          method: "fellegi-sunter",
+          addedBy: "SYSTEM" as const,
+          addedByActor: operator,
+        })),
+      );
+      for (let i = 0; i < entityRows.length; i += BATCH) await tx.entity.createMany({ data: entityRows.slice(i, i + BATCH) });
+      for (let i = 0; i < memberRows.length; i += BATCH) await tx.entityMember.createMany({ data: memberRows.slice(i, i + BATCH) });
+      result.clusters.forEach((cluster, index) => {
+        entities.push({ id: (entityRows[index] as { id: string }).id, status: cluster.status, label: cluster.label, members: cluster.members });
+      });
 
       await tx.resolutionRun.update({
         where: { id: run.id },
@@ -250,7 +265,7 @@ export async function runResolution(input: RunResolutionInput): Promise<RunSumma
 
       return { runId: run.id, entities };
     },
-    { timeout: 120_000 },
+    { maxWait: 30_000, timeout: resolutionTimeoutMs() },
   );
 
   await recordAuditEvent({
