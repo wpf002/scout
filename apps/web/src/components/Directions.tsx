@@ -239,10 +239,10 @@ export function Directions({
           }}
           disabled={stops.length >= 12}
         >
-          Add a stop
+          Add a Stop
         </button>
         <button className="primary" onClick={() => void plan()} disabled={busy}>
-          {busy ? "Planning…" : "Get directions"}
+          {busy ? "Planning…" : "Get Directions"}
         </button>
         <button onClick={clear}>Clear</button>
       </div>

@@ -126,7 +126,7 @@ export function Aoi({
           className={drawing ? "on" : undefined}
           onClick={() => setDrawing(!drawing)}
         >
-          {drawing ? "Drawing…" : "Draw a box"}
+          {drawing ? "Drawing…" : "Draw a Box"}
         </button>
         <button
           onClick={() => {
@@ -154,7 +154,7 @@ export function Aoi({
             {box.north.toFixed(3)}, {box.east.toFixed(3)}
           </p>
 
-          <h3 className="aoi-head">In view now</h3>
+          <h3 className="aoi-head">In View Now</h3>
           {inside.length === 0 ? (
             <p className="measure-hint">
               Nothing from the active layers is inside this box.
@@ -179,7 +179,7 @@ export function Aoi({
             </ul>
           )}
 
-          <h3 className="aoi-head">Fixed infrastructure</h3>
+          <h3 className="aoi-head">Fixed Infrastructure</h3>
           <div className="aoi-categories">
             {CATEGORIES.map((category) => (
               <button

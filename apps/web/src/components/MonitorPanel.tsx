@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { titleCase } from "@/lib/label";
 import { api, ApiError } from "@/lib/api";
 import { SUBJECT_KINDS } from "@/lib/types";
 import type {
@@ -141,13 +142,10 @@ export function MonitorPanel({
         <span className="badge">{monitors.length}</span>
       </div>
 
-      <p className="faint" style={{ fontSize: 12.5, marginTop: 0 }}>
-        A standing watch re-runs ungated sources and raises an alert when
-        something appears or disappears. Scope-gated sources cannot be
-        monitored — breach exposure and identity enumeration run one confirmed
-        action at a time, and a recurring automated lookup is the opposite of
-        that. The API refuses to create one, so this list is a consequence, not
-        a courtesy.
+      <p>
+        Re-runs ungated sources on a schedule and alerts on anything that
+        appears or disappears. Scope-gated sources cannot be watched: they run
+        one confirmed action at a time, which a recurring lookup is not.
       </p>
 
       {error !== null && <div className="notice">{error}</div>}
@@ -191,7 +189,7 @@ export function MonitorPanel({
                     disabled={busy !== null}
                     onClick={() => void runNow(monitor.id)}
                   >
-                    {busy === monitor.id ? "Running…" : "Run now"}
+                    {busy === monitor.id ? "Running…" : "Run Now"}
                   </button>{" "}
                   <button
                     className="tiny"
@@ -253,7 +251,7 @@ export function MonitorPanel({
             >
               {SUBJECT_KINDS.map((k) => (
                 <option key={k} value={k}>
-                  {k}
+                  {titleCase(k)}
                 </option>
               ))}
             </select>
@@ -331,7 +329,7 @@ export function MonitorPanel({
             name.trim().length === 0
           }
         >
-          {busy === "create" ? "Creating…" : "Start watching"}
+          {busy === "create" ? "Creating…" : "Start Watching"}
         </button>
       </form>
     </div>

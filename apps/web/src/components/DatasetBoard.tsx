@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { titleCase } from "@/lib/label";
 import { api, ApiError } from "@/lib/api";
 import { SUBJECT_KINDS } from "@/lib/types";
 import type {
@@ -145,19 +146,18 @@ export function DatasetBoard({
   return (
     <div className="card">
       <div className="spread" style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Datasets board</h2>
-        <span className="badge">one source at a time</span>
+        <h2 style={{ margin: 0 }}>Datasets</h2>
+        <span className="badge">One at a Time</span>
       </div>
 
-      <p className="faint" style={{ fontSize: 12.5, marginTop: 0 }}>
-        Leaks, corporate records and sanctions screening. Some sources are gated
-        for some inputs — Intelligence X is free for a domain and scope-gated
-        for an email selector.
+      <p>
+        Leaks, corporate records and sanctions screening. Gating is per input:
+        Intelligence X is open for a domain, scope-gated for an email.
       </p>
 
       <div className="row" style={{ alignItems: "flex-end" }}>
         <div style={{ width: 140 }}>
-          <label htmlFor="ds-kind">Subject kind</label>
+          <label htmlFor="ds-kind">Subject Kind</label>
           <select
             id="ds-kind"
             value={kind}
@@ -165,7 +165,7 @@ export function DatasetBoard({
           >
             {SUBJECT_KINDS.map((k) => (
               <option key={k} value={k}>
-                {k}
+                {titleCase(k)}
               </option>
             ))}
           </select>
@@ -266,11 +266,8 @@ export function DatasetBoard({
 
       {suggestions.length > 0 && (
         <>
-          <h3 style={{ marginTop: 22 }}>Suggested subjects</h3>
-          <p className="faint" style={{ fontSize: 12, marginTop: 0 }}>
-            Pulled out of the results above. Nothing is linked into the case
-            until you say so.
-          </p>
+          <h3 style={{ marginTop: 22 }}>Suggested Subjects</h3>
+          <p className="faint">Nothing is linked into the case until you say so.</p>
           <div className="chip-list">
             {suggestions.map((entity) => {
               const key = `${entity.kind}:${entity.value}`;
@@ -302,7 +299,7 @@ export function DatasetBoard({
       {confirming !== null && (
         <div className="backdrop" role="dialog" aria-modal="true">
           <div className="modal">
-            <h2>Run a scope-gated lookup</h2>
+            <h2>Run a Scope-Gated Lookup</h2>
             <p className="dim" style={{ fontSize: 13 }}>
               {confirming.name} is gated for a{" "}
               <span className="mono">{kind}</span> subject — this input makes it
@@ -326,7 +323,7 @@ export function DatasetBoard({
             </div>
             <div className="row">
               <button className="primary" onClick={() => void run(confirming)}>
-                Run once
+                Run Once
               </button>
               <button onClick={() => setConfirming(null)}>Cancel</button>
             </div>

@@ -1524,7 +1524,13 @@ a:hover {
   position: absolute;
   top: 56px;
   right: 58px;
-  bottom: 62px;
+  /*
+   * Clear of the minimap, which sits in the same corner: `.corner-tools` starts
+   * 62px up and the canvas is 84px tall plus its border, so anything ending at
+   * 62 runs underneath it. The last few rows of a layer list were being read
+   * through a world map. 8px of air on top of that.
+   */
+  bottom: 156px;
   z-index: 8;
   display: flex;
   flex-direction: column;
@@ -1537,6 +1543,581 @@ a:hover {
 .tool-panel.wide {
   width: min(44vw, 680px);
 }
+
+/* The case file carries tables and a graph; 680px makes both unreadable. */
+.tool-panel.widest {
+  width: min(62vw, 980px);
+}
+
+/* ── Case file ────────────────────────────────────────────────────────── */
+
+.casefile {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 10px 12px;
+}
+
+.casefile-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 10px;
+}
+
+.casefile-head label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.casefile-head select {
+  min-width: 200px;
+}
+
+.case-status {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.case-status.active {
+  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
+  color: var(--ok);
+}
+
+/*
+ * Ten tabs will not fit on one line at every width, and a tab strip that
+ * silently hides the last three is worse than one that wraps.
+ */
+.casefile-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.casefile-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.casefile-tabs button:hover {
+  color: var(--text);
+  background: var(--bg-inset);
+}
+
+.casefile-tabs button.on {
+  color: var(--text);
+  background: var(--bg-inset);
+  border-color: var(--border-strong);
+}
+
+.tab-badge {
+  padding: 0 5px;
+  border-radius: 7px;
+  background: var(--border-strong);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text);
+}
+
+.casefile-body {
+  flex: 1;
+  min-height: 0;
+  padding-top: 10px;
+}
+
+/*
+ * These boards were built as standalone pages, each in its own card on a page
+ * background. Inside a panel the card is the panel, so the chrome comes off —
+ * a border inside a border reads as a mistake.
+ */
+.casefile-body .card {
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+.casefile-body .card + .card {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.casefile-body h2 {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+/* ── Case file boards ─────────────────────────────────────────────────────
+ *
+ * These ten boards predate the map and were written against a stylesheet that
+ * went with it, so inside the panel they arrived as browser defaults: white
+ * inputs, labels running into their fields, tables with no rules. Everything
+ * below is scoped to `.casefile-body` on purpose — the map's own controls are
+ * already styled, and a bare `input` rule here would reach them.
+ */
+
+.casefile-body {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.casefile-body p {
+  margin: 0 0 10px;
+  max-width: 78ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.casefile-body h3 {
+  margin: 18px 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* ── Header line: a title, and the one fact that qualifies it ── */
+
+.casefile-body .spread {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.casefile-body .spread h2 {
+  margin: 0;
+}
+
+.casefile-body .badge {
+  padding: 1px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--bg-inset);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.casefile-body .badge.ok {
+  border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+  color: var(--ok);
+}
+
+.casefile-body .badge.warn {
+  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+  color: var(--warn);
+}
+
+.casefile-body .badge.deny,
+.casefile-body .badge.danger {
+  border-color: color-mix(in srgb, var(--deny) 50%, transparent);
+  color: var(--deny);
+}
+
+.casefile-body .badge.scoped {
+  border-color: color-mix(in srgb, var(--scoped) 55%, transparent);
+  color: var(--scoped);
+}
+
+/* ── Text weights ── */
+
+.casefile-body .faint {
+  color: var(--text-faint);
+}
+
+.casefile-body .dim {
+  color: var(--text-dim);
+}
+
+.casefile-body .mono {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.casefile-body .tiny {
+  font-size: 10.5px;
+}
+
+.casefile-body .ok {
+  color: var(--ok);
+}
+
+.casefile-body .warn {
+  color: var(--warn);
+}
+
+.casefile-body .deny {
+  color: var(--deny);
+}
+
+.casefile-body .accent {
+  color: var(--scoped);
+}
+
+.casefile-body .value {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+/* ── Forms ── */
+
+.casefile-body .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+/* A label belongs above its field, not beside it: side by side, the two read
+ * as one string — "Kindacme.example" — and the eye has to do the parsing. */
+.casefile-body label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.casefile-body input,
+.casefile-body select,
+.casefile-body textarea {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.casefile-body textarea {
+  height: auto;
+  padding: 6px 8px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.casefile-body input::placeholder,
+.casefile-body textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.casefile-body input:focus,
+.casefile-body select:focus,
+.casefile-body textarea:focus {
+  outline: none;
+  border-color: var(--text-faint);
+}
+
+.casefile-body input[type="checkbox"] {
+  width: auto;
+  height: auto;
+  accent-color: var(--ok);
+}
+
+/* ── Buttons ── */
+
+.casefile-body button {
+  height: 28px;
+  padding: 0 11px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.casefile-body button:hover:not(:disabled) {
+  border-color: var(--text-faint);
+}
+
+.casefile-body button:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.casefile-body button.primary:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
+  color: var(--ok);
+}
+
+.casefile-body button.danger:not(:disabled) {
+  border-color: transparent;
+  color: var(--text-faint);
+}
+
+.casefile-body button.danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--deny) 55%, transparent);
+  color: var(--deny);
+}
+
+.casefile-body button.tiny {
+  height: 20px;
+  padding: 0 6px;
+  font-size: 10.5px;
+}
+
+/* ── Notices: a fact about the state, not a paragraph ── */
+
+.casefile-body .notice,
+.casefile-body .error {
+  margin: 10px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-left-width: 2px;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.casefile-body .error {
+  border-left-color: var(--deny);
+  color: var(--deny);
+}
+
+.casefile-body .blurb {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.casefile-body .empty {
+  padding: 18px 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* ── Entries: one observation, its evidence underneath ── */
+
+.casefile-body .entry {
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+
+.casefile-body .entry-title {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.casefile-body .entry-desc {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.casefile-body .entry-note {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-faint);
+}
+
+.casefile-body .tier-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 16px 0 2px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Chips ── */
+
+.casefile-body .chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 8px 0;
+}
+
+.casefile-body .scope-chip,
+.casefile-body .dataset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--bg-inset);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.casefile-body .dataset-chip {
+  padding: 2px 8px;
+}
+
+/* ── Tables ── */
+
+.casefile-body table {
+  width: 100%;
+  margin: 8px 0;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.casefile-body th {
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid var(--border-strong);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.casefile-body td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  color: var(--text-dim);
+}
+
+.casefile-body td:first-child {
+  color: var(--text);
+}
+
+/* ── Timeline ── */
+
+.casefile-body .timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.casefile-body .timeline li {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.casefile-body .timeline-when {
+  flex: none;
+  width: 140px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.casefile-body .timeline-body {
+  min-width: 0;
+  font-size: 11.5px;
+}
+
+/* ── Graph ── */
+
+.casefile-body .graph-canvas {
+  margin: 10px 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-inset);
+  overflow-x: auto;
+}
+
+.casefile-body .graph-col-label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  fill: var(--text-faint);
+}
+
+.casefile-body .count-bg {
+  fill: var(--bg-raised);
+}
+
+.casefile-body .count-text {
+  font-family: var(--mono);
+  font-size: 10px;
+  fill: var(--text);
+}
+
+.casefile-body .headline {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+/* ── Confirmation dialog ── */
+
+.casefile-body .backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 4, 9, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+.casefile-body .modal {
+  width: min(92vw, 460px);
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-raised);
+}
+
+.casefile-body .confirm-table {
+  width: 100%;
+  margin: 10px 0;
+}
+
+.casefile-body .confirm-table th {
+  width: 120px;
+  padding-right: 10px;
+  border: none;
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: top;
+}
+
+.casefile-body .confirm-table td {
+  border: none;
+}
+
 
 .tool-panel-body {
   flex: 1;
@@ -2645,4 +3226,81 @@ a:hover {
   background: rgba(53, 196, 106, 0.16);
   border-color: var(--ok);
   color: var(--text);
+}
+
+/* ── Fault pages ──────────────────────────────────────────────────────────
+ *
+ * The error boundary and the missing-page screen. Same tokens as the console,
+ * so a fault reads as Scout reporting one rather than the browser doing it.
+ */
+
+.fault {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 18vh 24px 0;
+  color: var(--text);
+}
+
+.fault h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.fault p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.fault-message {
+  align-self: stretch;
+  padding: 9px 11px;
+  border: 1px solid var(--border-strong);
+  border-left: 2px solid var(--deny);
+  border-radius: 3px;
+  background: var(--bg-inset);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--deny) !important;
+  overflow-wrap: anywhere;
+}
+
+.fault-digest {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint) !important;
+}
+
+.fault-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.fault-actions button,
+.fault-actions a {
+  height: 28px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.fault-actions button:hover,
+.fault-actions a:hover {
+  border-color: var(--text-faint);
 }

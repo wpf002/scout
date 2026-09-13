@@ -19,26 +19,25 @@ export function ExportPanel({ record }: { record: CaseRecord }) {
     <div className="card">
       <div className="spread" style={{ marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>Export</h2>
-        <span className="badge">audited</span>
+        <span className="badge">Audited</span>
       </div>
 
-      <p className="faint" style={{ fontSize: 12.5, marginTop: 0 }}>
-        Findings grouped by tier, each with the source and query that produced
-        it, plus the full query log. Out-of-scope identifiers found in notes and
-        summaries are stripped before anything leaves.
+      <p>
+        Findings by tier, each with the source and query behind it, plus the
+        query log. Out-of-scope identifiers are stripped before anything leaves.
       </p>
 
       <div className="row">
         <a href={url("/report?format=html")} target="_blank" rel="noreferrer noopener">
           <button type="button" className="primary">
-            Open report ↗
+            Open Report ↗
           </button>
         </a>
         <a href={url("/report?format=docx")}>
           <button type="button">Download .docx</button>
         </a>
         <a href={url("/audit/export")}>
-          <button type="button">Audit trail (CSV)</button>
+          <button type="button">Audit Trail (CSV)</button>
         </a>
         <a href={url("/report?format=json")} target="_blank" rel="noreferrer noopener">
           <button type="button" className="tiny">
@@ -47,10 +46,9 @@ export function ExportPanel({ record }: { record: CaseRecord }) {
         </a>
       </div>
 
-      <p className="faint" style={{ fontSize: 11.5, marginBottom: 0 }}>
-        The HTML report is self-contained and prints to PDF. The audit trail
-        exports separately, because retention rules for a query log and for an
-        investigative deliverable are rarely the same.
+      <p className="faint">
+        The report is self-contained and prints to PDF. The audit trail exports
+        separately — a query log and a deliverable rarely share a retention rule.
       </p>
     </div>
   );

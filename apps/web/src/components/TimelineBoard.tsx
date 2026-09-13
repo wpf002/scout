@@ -11,7 +11,7 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "Everything" },
   { id: "query", label: "Queries" },
   { id: "finding", label: "Findings" },
-  { id: "event", label: "Case events" },
+  { id: "event", label: "Case Events" },
   { id: "denied", label: "Refusals" },
 ];
 
@@ -61,14 +61,14 @@ export function TimelineBoard({ record }: { record: CaseRecord }) {
         <h2 style={{ margin: 0 }}>Timeline</h2>
         <div className="row">
           {denied > 0 && <span className="badge deny">{denied} refused</span>}
-          <span className="badge">{entries?.length ?? 0} events</span>
+          <span className="badge">
+            {entries?.length ?? 0}{" "}
+            {(entries?.length ?? 0) === 1 ? "event" : "events"}
+          </span>
         </div>
       </div>
 
-      <p className="faint" style={{ fontSize: 12.5, marginTop: 0 }}>
-        Every query, finding and case event in the order it happened — refusals
-        included. What Scout declined to do is part of the record.
-      </p>
+      <p>Queries, findings and case events in order. Refusals included.</p>
 
       {error !== null && <div className="error">{error}</div>}
 

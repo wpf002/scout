@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
 import { LAYERS, LAYER_BY_ID } from "@/lib/layers";
@@ -15,6 +15,7 @@ import { build, type Point as MeasurePoint, type Shape } from "@/lib/measure";
 import { ensureSymbols } from "@/lib/symbols";
 import { IMAGERY_BY_ID, imageryTiles } from "@/lib/imagery";
 import { compileAll, type Predicate } from "@/lib/filters";
+import { styleIdsFor, toRemove } from "@/lib/teardown";
 
 /*
  * Point MapLibre at the worker copied into `public/` — see
@@ -89,7 +90,19 @@ const CLUSTER_MAX_ZOOM = 7;
  */
 const PREVIEW_CEILING = 12;
 
-export function GlobeMap({
+/**
+ * The map.
+ *
+ * Memoised, and the reason is not micro-optimisation. Every prop below is
+ * either state or a stable callback, while the page around it holds state that
+ * changes constantly — the cursor readout, per-layer counts, the selection.
+ * Without this, moving the pointer re-rendered a component with forty hooks and
+ * a MapLibre instance behind it, many times a second, to produce byte-identical
+ * output. None of that re-ran the effects, so nothing looked broken; it just
+ * spent the main thread on work with no result, and the thing that noticed was
+ * the delay between clicking a switch and the switch moving.
+ */
+function GlobeMapImpl({
   active,
   basemap,
   projection,
@@ -135,6 +148,39 @@ export function GlobeMap({
   );
   const [ready, setReady] = useState(false);
   const [redraw, setRedraw] = useState(0);
+
+  /**
+   * Which layers this component has actually put on the map.
+   *
+   * Kept separately from `active` because the two can disagree: a style swap
+   * clears the map without `active` changing, and a layer can be active but not
+   * yet drawn while its fetch is in flight. Removal reads this, so it never
+   * calls `removeSource` on a source that is not there and never skips one that
+   * is.
+   */
+  const drawn = useRef<Set<string>>(new Set());
+
+  /** Cancels a queued cursor report, so none lands after teardown. */
+  const cursorFrame = useRef<(() => void) | null>(null);
+
+  /**
+   * Layers built and then switched off — still on the map, just invisible.
+   *
+   * Kept apart from `drawn` because the two answer different questions: `drawn`
+   * is what the switches say should be showing, `hidden` is what is sitting
+   * there ready to show again without a fetch.
+   */
+  const hidden = useRef<Set<string>>(new Set());
+
+  /**
+   * The last features seen for each layer, kept across a switch-off.
+   *
+   * `raw` deliberately empties when a layer goes off — the export, the graph
+   * and the tables must not carry a layer the operator has switched away. This
+   * is the redraw copy, and it exists so switching back on restores the counts
+   * in the same frame as the marks.
+   */
+  const kept = useRef<Map<string, GeoJSON.Feature[]>>(new Map());
   const [viewport, setViewport] = useState(0);
 
   /** Every feature a layer returned, before viewport thinning. */
@@ -253,13 +299,33 @@ export function GlobeMap({
     }, 250);
     becomeReady();
 
+    // The cursor readout, coalesced to one report per frame.
+    //
+    // `mousemove` fires per pointer sample — well over a hundred a second on a
+    // trackpad — and each report sets state on the page, which re-renders the
+    // whole dashboard. Four decimal places of latitude cannot be read that
+    // fast by anyone, so the extra renders bought nothing and spent the main
+    // thread precisely while the pointer was travelling towards a control.
+    let pending: { lat: number; lon: number; zoom: number } | null = null;
+    let frame = 0;
+
     instance.on("mousemove", (event) => {
-      onCursor({
+      pending = {
         lat: event.lngLat.lat,
         lon: event.lngLat.lng,
         zoom: instance.getZoom(),
+      };
+      if (frame !== 0) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (pending !== null) onCursor(pending);
       });
     });
+
+    cursorFrame.current = () => {
+      if (frame !== 0) cancelAnimationFrame(frame);
+      frame = 0;
+    };
 
     // `moveend`, not `move`: the readout behind this is a geocoder call, and
     // one per frame of a drag would be both useless and abusive.
@@ -282,6 +348,8 @@ export function GlobeMap({
     return () => {
       clearInterval(poll);
       observer.disconnect();
+      cursorFrame.current?.();
+      cursorFrame.current = null;
       // Null first: any async work already in flight sees a dead map through
       // `alive()` and stops before `remove()` pulls the painter out from
       // under it.
@@ -1152,6 +1220,24 @@ export function GlobeMap({
   /** The extra line layer an arc layer needs for its endpoint dots. */
   const endpointLayerId = (layerId: string) => `${layerId}-endpoints`;
 
+  /**
+   * Show or hide every style layer a feed occupies.
+   *
+   * Guarded per id because a feed occupies a different set depending on how it
+   * draws — clustered feeds have a bubble and a count, arcs and areas have
+   * endpoints — and asking MapLibre to set a property on a layer that is not
+   * there throws.
+   */
+  const setVisible = useCallback(
+    (instance: maplibregl.Map, layerId: string, show: boolean) => {
+      for (const id of styleIdsFor(layerId)) {
+        if (instance.getLayer(id) === undefined) continue;
+        instance.setLayoutProperty(id, "visibility", show ? "visible" : "none");
+      }
+    },
+    [],
+  );
+
   const ensure = useCallback(
     (
       instance: maplibregl.Map,
@@ -1345,6 +1431,7 @@ export function GlobeMap({
         if (cancelled || !alive(instance)) return;
 
         raw.current.set(layerId, data.features);
+        kept.current.set(layerId, data.features);
         setDataVersion((n) => n + 1);
         onHeld?.(new Map(raw.current));
         const drawn =
@@ -1361,14 +1448,47 @@ export function GlobeMap({
       }
     };
 
-    // Remove anything switched off, so toggling actually clears the map.
-    for (const def of LAYERS) {
-      if (active.includes(def.id)) continue;
-      for (const id of [def.id, endpointLayerId(def.id), `${def.id}-cluster`, `${def.id}-count`]) {
-        if (instance.getLayer(id) !== undefined) instance.removeLayer(id);
+    // Remove what was just switched off, so toggling actually clears the map.
+    //
+    // Only what *changed*. This used to sweep all thirty-one layers on every
+    // run, and the cost was not the loop — it was `removeSource` on a source
+    // holding sixteen thousand satellites, which MapLibre tears down
+    // synchronously. React flushes this effect before the browser paints when
+    // the update came from a click, so that teardown sat directly between
+    // pressing a switch and the switch moving. Turning a layer *on* paid it
+    // too, for every layer that happened to be off.
+    //
+    // `drawn` is the set this effect last put on the map, which is the honest
+    // record of what needs removing — `active` from the previous render is not,
+    // because a redraw can rebuild the style underneath us.
+    // Switching a layer off hides it; it does not tear it down.
+    //
+    // Removing the source meant switching the layer back on had to fetch the
+    // feed again, parse megabytes of GeoJSON and let MapLibre re-tile it. That
+    // is the delay between flipping a switch and anything appearing on the
+    // globe, and it was being paid for data the browser already held. Hiding is
+    // a layout property: it lands on the next frame, and the source stays warm.
+    for (const layerId of toRemove(drawn.current, active)) {
+      setVisible(instance, layerId, false);
+      raw.current.delete(layerId);
+      drawn.current.delete(layerId);
+      hidden.current.add(layerId);
+    }
+
+    // Switching one back on is the same move in reverse, and it is immediate.
+    // The feed still refreshes underneath — `drawFeed` runs below — but what is
+    // already on the map appears now rather than after the round trip.
+    for (const layerId of active) {
+      if (hidden.current.has(layerId)) {
+        setVisible(instance, layerId, true);
+        hidden.current.delete(layerId);
+        const held = kept.current.get(layerId);
+        if (held !== undefined) {
+          raw.current.set(layerId, held);
+          onStatus({ [layerId]: held.length });
+        }
       }
-      if (instance.getSource(def.id) !== undefined) instance.removeSource(def.id);
-      raw.current.delete(def.id);
+      drawn.current.add(layerId);
     }
 
     // Day/night first, so the feeds that follow are drawn on top of it. Night
@@ -1407,7 +1527,7 @@ export function GlobeMap({
     return () => {
       cancelled = true;
     };
-  }, [active, ready, onStatus, redraw, ensure, inView, alive, onHeld]);
+  }, [active, ready, onStatus, redraw, ensure, inView, alive, onHeld, setVisible]);
 
   /**
    * Re-thin heavy layers when the view moves.
@@ -1655,3 +1775,5 @@ export function GlobeMap({
     </>
   );
 }
+
+export const GlobeMap = memo(GlobeMapImpl);

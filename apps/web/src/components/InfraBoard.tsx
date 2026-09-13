@@ -106,15 +106,11 @@ export function InfraBoard({
   return (
     <div className="card">
       <div className="spread" style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Infrastructure board</h2>
-        <span className="badge">non-scoped tier</span>
+        <h2 style={{ margin: 0 }}>Infrastructure</h2>
+        <span className="badge">Non-Scoped</span>
       </div>
 
-      <p className="faint" style={{ fontSize: 12.5, marginTop: 0 }}>
-        Sweeps every infrastructure source that accepts a domain and merges the
-        results. No scope gate — these look at hosts and certificates, not
-        people.
-      </p>
+      <p>Every source that takes a domain, merged. Hosts and certificates only.</p>
 
       <form onSubmit={sweep}>
         <div className="row" style={{ alignItems: "flex-end" }}>
@@ -133,7 +129,7 @@ export function InfraBoard({
             type="submit"
             disabled={running || value.trim().length === 0}
           >
-            {running ? "Sweeping…" : "Sweep infrastructure"}
+            {running ? "Sweeping…" : "Sweep Infrastructure"}
           </button>
         </div>
       </form>

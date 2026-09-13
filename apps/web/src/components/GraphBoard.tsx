@@ -201,7 +201,7 @@ export function GraphBoard({
   if (graph === null) {
     return (
       <div className="card">
-        <h2>Entity graph</h2>
+        <h2>Entity Graph</h2>
         {error === null ? (
           <Loading what="the entity graph" />
         ) : (
@@ -290,9 +290,12 @@ export function GraphBoard({
   return (
     <div className="card">
       <div className="spread" style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Entity graph</h2>
+        <h2 style={{ margin: 0 }}>Entity Graph</h2>
         <div className="row">
-          <span className="badge">{graph.totals.entities} entities</span>
+          <span className="badge">
+            {graph.totals.entities}{" "}
+            {graph.totals.entities === 1 ? "entity" : "entities"}
+          </span>
           <span
             className={`badge ${graph.totals.corroborated > 0 ? "ok" : "warn"}`}
           >
@@ -310,9 +313,11 @@ export function GraphBoard({
             {paragraph}
           </div>
         ))}
-        <div className="faint" style={{ marginTop: 7, fontSize: 11.5 }}>
-          Draft summary, produced by {graph.summary.producedBy}. It is never
-          stored as a finding.
+        <div className="faint" style={{ marginTop: 7 }}>
+          {/* `producedBy` is a bare word from the API — "deterministic",
+              "model". Read straight into a sentence it lands as a missing
+              noun: "produced by deterministic". */}
+          Draft summary, {graph.summary.producedBy}. Never stored as a finding.
         </div>
       </div>
 
@@ -434,10 +439,10 @@ export function GraphBoard({
 
       {graph.suggestions.length > 0 && (
         <>
-          <h3 style={{ marginTop: 20 }}>Possible same entity</h3>
-          <p className="faint" style={{ fontSize: 12, marginTop: 0 }}>
-            Near matches only. Nothing merges until you say so — an automatic
-            merge of two similarly-named people would look like a finding.
+          <h3 style={{ marginTop: 20 }}>Possible Same Entity</h3>
+          <p className="faint">
+            Near matches only. Nothing merges until you say so — merging two
+            similarly-named people automatically would read as a finding.
           </p>
           {graph.suggestions.map((suggestion) => (
             <div className="entry" key={suggestion.id}>

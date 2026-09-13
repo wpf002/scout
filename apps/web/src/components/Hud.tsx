@@ -2,26 +2,38 @@
 
 import { useEffect, useState } from "react";
 
+import { clock, type Reading } from "@/lib/clock";
+
 /**
- * The Zulu clock.
+ * The wall clock, in the viewer's own time zone.
  *
  * Rendered client-side only and started from an effect rather than from the
- * first render. A UTC clock rendered on the server and hydrated on the client
- * disagrees with itself by however long the request took, and React reports it
- * as a hydration mismatch.
+ * first render. The server has no idea what zone the browser is in, so a clock
+ * rendered there and hydrated here disagrees with itself — by the whole UTC
+ * offset, not just the request time — and React reports it as a hydration
+ * mismatch. The dashes are what the server renders, and what the first client
+ * frame renders too; the effect replaces them a moment later.
  */
-export function ZuluClock() {
-  const [now, setNow] = useState<string>("--:--:--");
+export function LocalClock() {
+  const [reading, setReading] = useState<Reading>({
+    time: "--:--:--",
+    zone: "",
+  });
 
   useEffect(() => {
-    const tick = () =>
-      setNow(new Date().toISOString().slice(11, 19));
+    const read = clock();
+    const tick = () => setReading(read(new Date()));
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, []);
 
-  return <span className="hud-clock">ZULU {now}Z</span>;
+  return (
+    <span className="hud-clock">
+      {reading.time}
+      {reading.zone ? ` ${reading.zone}` : ""}
+    </span>
+  );
 }
 
 export interface TickerItem {

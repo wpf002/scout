@@ -65,9 +65,9 @@ export function ScopePanel({
   return (
     <div className="card">
       <div className="spread" style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Authorization scope</h2>
+        <h2 style={{ margin: 0 }}>Authorization Scope</h2>
         {record.scopeEntries.length === 0 ? (
-          <span className="badge deny">scoped tiers off</span>
+          <span className="badge deny">Scoped Tiers Off</span>
         ) : (
           <span className="badge ok">
             {record.scopeEntries.length} entr
@@ -112,8 +112,8 @@ export function ScopePanel({
             value={kind}
             onChange={(e) => setKind(e.target.value as typeof kind)}
           >
-            <option value="domain">domain</option>
-            <option value="identifier">identifier</option>
+            <option value="domain">Domain</option>
+            <option value="identifier">Identifier</option>
           </select>
         </div>
         <div style={{ flex: 1, minWidth: 170 }}>
@@ -142,14 +142,14 @@ export function ScopePanel({
           onClick={() => setConfirming(true)}
           disabled={value.trim().length === 0}
         >
-          Add to scope
+          Add to Scope
         </button>
       </div>
 
       {confirming && (
         <div className="backdrop" role="dialog" aria-modal="true">
           <div className="modal">
-            <h2>Confirm you are authorized</h2>
+            <h2>Confirm You Are Authorized</h2>
             <p className="dim" style={{ fontSize: 13 }}>
               Adding scope widens what Scout is permitted to do against real
               people and real infrastructure. This claim is written to the
@@ -195,7 +195,7 @@ export function ScopePanel({
                 disabled={!acknowledged || pending}
                 onClick={() => void add()}
               >
-                {pending ? "Adding…" : "Add to scope"}
+                {pending ? "Adding…" : "Add to Scope"}
               </button>
               <button
                 onClick={() => {

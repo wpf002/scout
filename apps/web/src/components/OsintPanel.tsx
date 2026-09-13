@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { titleCase } from "@/lib/label";
 import {
   api,
   ApiError,
@@ -371,11 +372,30 @@ export function OsintPanel({
     await refreshWatches();
   };
 
-  const clearAlerts = async () => {
-    if (alerts.length === 0) return;
-    await api.acknowledgeAlerts(alerts.map((a) => a.id)).catch(() => undefined);
-    await refreshWatches();
-  };
+  /**
+   * Alerts acknowledge themselves, and are not announced.
+   *
+   * A monitor already folds each run into its own baseline, so a change is
+   * incorporated whether or not anyone clicks anything; the alert was only ever
+   * the notice. Nobody asked to be told, so this loads them, marks them read,
+   * and shows nothing. The record stays — the runs, the changes and the audit
+   * rows are all still written, and the alert feed still holds them for anyone
+   * who goes looking.
+   *
+   * `seen` is what stops the same batch being acknowledged again on every
+   * render while the acknowledgement is in flight.
+   */
+  const seen = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const fresh = alerts.filter((alert) => !seen.current.has(alert.id));
+    if (fresh.length === 0) return;
+    for (const alert of fresh) seen.current.add(alert.id);
+    void api.acknowledgeAlerts(fresh.map((alert) => alert.id)).catch(
+      // An acknowledgement that does not reach the server is not worth
+      // interrupting anyone over; the next run will offer it again.
+      () => undefined,
+    );
+  }, [alerts]);
 
   /** The case as a client-ready report. The builder already existed. */
   const openReport = (format: "html" | "docx") => {
@@ -429,7 +449,7 @@ export function OsintPanel({
             {cases.length === 0 ? <option value="">None</option> : null}
             {cases.map((record) => (
               <option key={record.id} value={record.id}>
-                {record.name}
+                {titleCase(record.name)}
               </option>
             ))}
           </select>
@@ -553,27 +573,6 @@ export function OsintPanel({
             {[...diff.added.values.slice(0, 6)].join(", ")}
             {diff.added.count > 6 ? " …" : ""}
           </span>
-        </div>
-      ) : null}
-
-      {alerts.length > 0 ? (
-        <div className="alerts">
-          <span className="alerts-head">
-            {alerts.length} Change{alerts.length === 1 ? "" : "s"} Detected
-          </span>
-          <span className="alerts-list">
-            {alerts
-              .slice(0, 5)
-              .map(
-                (a) =>
-                  `${a.changeType === "ADDED" ? "+" : "−"} ${a.observationKey}`,
-              )
-              .join(" · ")}
-            {alerts.length > 5 ? " …" : ""}
-          </span>
-          <button className="link" onClick={() => void clearAlerts()}>
-            Acknowledge
-          </button>
         </div>
       ) : null}
 

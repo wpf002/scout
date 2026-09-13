@@ -12,15 +12,16 @@ import {
 import type { BasemapId } from "@/lib/basemap";
 import type { Selection } from "@/components/GlobeMap";
 import { OsintPanel } from "@/components/OsintPanel";
-import { Ticker, ZuluClock, type TickerItem } from "@/components/Hud";
+import { LocalClock, Ticker, type TickerItem } from "@/components/Hud";
 import { Search } from "@/components/Search";
 import { Detail } from "@/components/Detail";
 import { Directions, type Route, type Stop } from "@/components/Directions";
 import { Minimap } from "@/components/Minimap";
-import { useAlerts, ago } from "@/lib/alerts";
+import { useAlerts, ago, qualify } from "@/lib/alerts";
 import type { Shape } from "@/lib/measure";
 import { Filters } from "@/components/Filters";
 import { Aoi, type Box } from "@/components/Aoi";
+import { CaseFile } from "@/components/CaseFile";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
 /**
@@ -40,6 +41,7 @@ const TOOLS = [
   { id: "aoi", glyph: "▢", name: "Area of Interest" },
   { id: "directions", glyph: "⇄", name: "Directions" },
   { id: "intel", glyph: "◫", name: "Intel Feed" },
+  { id: "case", glyph: "⛁", name: "Case File" },
   { id: "layers", glyph: "≡", name: "All Layers" },
 ];
 
@@ -357,7 +359,7 @@ export default function Page() {
     () => [
       ...alerts.slice(0, 20).map((alert) => ({
         id: alert.id,
-        label: `${alert.detail}  ${alert.label}`,
+        label: qualify(alert.detail, alert.label),
         tone:
           alert.severity === "high"
             ? ("deny" as const)
@@ -598,7 +600,7 @@ export default function Page() {
         <Search onFly={setFlyTo} onIndicator={onIndicator} />
 
         <div className="hud-readout">
-          <ZuluClock />
+          <LocalClock />
           <span>
             STATUS <b className="live">LIVE</b>
           </span>
@@ -905,6 +907,18 @@ export default function Page() {
         </section>
       ) : null}
 
+      {tool === "case" ? (
+        <section className="tool-panel widest">
+          <div className="tool-panel-head">
+            <h2>Case File</h2>
+            <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          <div className="tool-panel-body">
+            <CaseFile />
+          </div>
+        </section>
+      ) : null}
+
       {tool === "osint" ? (
         <section className="tool-panel wide">
           <div className="tool-panel-head">
@@ -937,7 +951,11 @@ export default function Page() {
                     title={alert.label}
                   >
                     <span className={`sev ${alert.severity}`} />
-                    <span className="alert-detail">{alert.detail}</span>
+                    {/* The category is dropped when the label already leads
+                        with it — see qualify(). */}
+                    {qualify(alert.detail, alert.label) === alert.label ? null : (
+                      <span className="alert-detail">{alert.detail}</span>
+                    )}
                     <span className="alert-label">{alert.label}</span>
                     <span className="alert-age">{ago(alert.at)}</span>
                   </button>

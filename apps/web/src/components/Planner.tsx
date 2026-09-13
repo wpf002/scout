@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { titleCase } from "@/lib/label";
 import { api, ApiError } from "@/lib/api";
 import { SUBJECT_KINDS, TIER_BLURB, TIER_ORDER } from "@/lib/types";
 import type {
@@ -111,12 +112,12 @@ export function Planner({
 
   return (
     <div className="card">
-      <h2>Query planner</h2>
+      <h2>Query Planner</h2>
 
       <form onSubmit={runPlan}>
         <div className="row" style={{ alignItems: "flex-end" }}>
           <div style={{ width: 140 }}>
-            <label htmlFor="subject-kind">Subject kind</label>
+            <label htmlFor="subject-kind">Subject Kind</label>
             <select
               id="subject-kind"
               value={kind}
@@ -124,7 +125,7 @@ export function Planner({
             >
               {SUBJECT_KINDS.map((k) => (
                 <option key={k} value={k}>
-                  {k}
+                  {titleCase(k)}
                 </option>
               ))}
             </select>
@@ -312,7 +313,7 @@ export function Planner({
                             className="tiny"
                             onClick={() => setSaveFor(entry.sourceId)}
                           >
-                            + Save finding
+                            + Save Finding
                           </button>
                         )}
                       </div>
@@ -328,7 +329,7 @@ export function Planner({
       {confirm !== null && plan !== null && (
         <div className="backdrop" role="dialog" aria-modal="true">
           <div className="modal">
-            <h2>Run a scoped source</h2>
+            <h2>Run a Scoped Source</h2>
             <p className="dim" style={{ fontSize: 13 }}>
               This is a person-facing lookup. It runs once, for this subject
               only, and the attempt is written to the case&rsquo;s audit log
@@ -360,7 +361,7 @@ export function Planner({
 
             <div className="row">
               <button className="primary" onClick={() => void execute(confirm)}>
-                Run once
+                Run Once
               </button>
               <button onClick={() => setConfirm(null)}>Cancel</button>
             </div>

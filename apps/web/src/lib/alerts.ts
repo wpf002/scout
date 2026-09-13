@@ -184,3 +184,27 @@ export function ago(at: number | null): string {
   if (hours < 48) return `${hours}h`;
   return `${Math.round(hours / 24)}d`;
 }
+
+/**
+ * The category, dropped when the label already says it.
+ *
+ * Every alert is shown as a category followed by a label — "M5.2" then
+ * "35 km SE of Sarangani". That works because a magnitude is not a place. It
+ * does not work for EONET, which names some events by their type and some by
+ * their own name: category "Earthquake" with label "Earthquake — Indonesia"
+ * reads back as "Earthquake Earthquake — Indonesia", while category "Drought"
+ * with label "Madagascar-2026" is exactly right. The difference is upstream and
+ * neither form is wrong, so the fix belongs here rather than in the feed.
+ *
+ * Matched on a word boundary: "Flood" must not swallow the category of a label
+ * beginning "Floodplain".
+ */
+export function qualify(detail: string, label: string): string {
+  if (detail === "") return label;
+
+  const lead = label.slice(0, detail.length).toLowerCase();
+  const next = label.charAt(detail.length);
+  const repeats = lead === detail.toLowerCase() && !/[a-z0-9]/i.test(next);
+
+  return repeats ? label : `${detail}  ${label}`;
+}

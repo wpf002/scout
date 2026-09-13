@@ -201,7 +201,7 @@ export function Filters({
           }}
           disabled={fields.length === 0}
         >
-          Add a condition
+          Add Condition
         </button>
         <button onClick={() => update([])} disabled={predicates.length === 0}>
           Clear
