@@ -1,11 +1,11 @@
 {
     "link_type": "dedupe_only",
-    "probability_two_random_records_match": 0.029805633684564042,
+    "probability_two_random_records_match": 0.03027048139830095,
     "retain_matching_columns": true,
     "retain_intermediate_calculation_columns": true,
     "additional_columns_to_retain": [],
     "sql_dialect": "duckdb",
-    "linker_uid": "6qlygjrx",
+    "linker_uid": "gh3eaku2",
     "em_convergence": 0.0001,
     "max_iterations": 25,
     "bayes_factor_column_prefix": "bf_",
@@ -45,16 +45,15 @@
                 {
                     "sql_condition": "\"mmsi_l\" = \"mmsi_r\"",
                     "label_for_charts": "Exact match on mmsi",
-                    "m_probability": 0.9670775057816966,
-                    "u_probability": 0.03822055137844611,
+                    "m_probability": 1.0,
+                    "u_probability": 0.03996983408748114,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "All other comparisons",
-                    "m_probability": 0.032922494218303414,
-                    "u_probability": 0.9617794486215538,
+                    "u_probability": 0.9600301659125189,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 }
@@ -75,14 +74,14 @@
                     "sql_condition": "\"imo_l\" = \"imo_r\"",
                     "label_for_charts": "Exact match on imo",
                     "m_probability": 1.0,
-                    "u_probability": 0.03076923076923077,
+                    "u_probability": 0.03,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "All other comparisons",
-                    "u_probability": 0.9692307692307692,
+                    "u_probability": 0.97,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 }
@@ -103,28 +102,28 @@
                     "sql_condition": "\"name_l\" = \"name_r\"",
                     "label_for_charts": "Exact match on name",
                     "m_probability": 1.0,
-                    "u_probability": 0.04584190420217455,
+                    "u_probability": 0.04408749145591251,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "jaro_winkler_similarity(\"name_l\", \"name_r\") >= 0.92",
                     "label_for_charts": "Jaro-Winkler distance of name >= 0.92",
-                    "u_probability": 0.013811342932706435,
+                    "u_probability": 0.017429938482570063,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "jaro_winkler_similarity(\"name_l\", \"name_r\") >= 0.8",
                     "label_for_charts": "Jaro-Winkler distance of name >= 0.8",
-                    "u_probability": 0.1254775198354393,
+                    "u_probability": 0.1291866028708134,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "All other comparisons",
-                    "u_probability": 0.8148692330296797,
+                    "u_probability": 0.8092959671907041,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 }
@@ -145,14 +144,14 @@
                     "sql_condition": "\"callsign_l\" = \"callsign_r\"",
                     "label_for_charts": "Exact match on callsign",
                     "m_probability": 1.0,
-                    "u_probability": 0.033846153846153845,
+                    "u_probability": 0.03666666666666667,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 },
                 {
                     "sql_condition": "ELSE",
                     "label_for_charts": "All other comparisons",
-                    "u_probability": 0.9661538461538461,
+                    "u_probability": 0.9633333333333334,
                     "fix_m_probability": false,
                     "fix_u_probability": false
                 }

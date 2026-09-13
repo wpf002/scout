@@ -159,10 +159,11 @@ def train(
     by the service.
     """
     spec = _spec(kind)
-    settings = _settings(spec)
-    if label_column is not None:
-        settings.additional_columns_to_retain = [label_column]
-    linker = Linker(pd.DataFrame(rows), settings, db_api=DuckDBAPI())
+    # The label column stays out of the settings on purpose: anything listed
+    # there is written into the saved model and then selected at predict time,
+    # where no label exists. Splink reads the label straight off the input
+    # table for m estimation.
+    linker = Linker(pd.DataFrame(rows), _settings(spec), db_api=DuckDBAPI())
     linker.training.estimate_probability_two_random_records_match(
         [block_on(*r.columns) for r in spec.deterministic], recall=0.7
     )

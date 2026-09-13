@@ -3,11 +3,9 @@
     "probability_two_random_records_match": 0.006629189148469355,
     "retain_matching_columns": true,
     "retain_intermediate_calculation_columns": true,
-    "additional_columns_to_retain": [
-        "truth_key"
-    ],
+    "additional_columns_to_retain": [],
     "sql_dialect": "duckdb",
-    "linker_uid": "jk0y2tfi",
+    "linker_uid": "cubkgsju",
     "em_convergence": 0.0001,
     "max_iterations": 25,
     "bayes_factor_column_prefix": "bf_",

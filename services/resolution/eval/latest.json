@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-13T19:11:53.053336Z",
+  "generated_at": "2026-09-13T19:18:12.263483Z",
   "normalization_version": "norm-1",
   "thresholds": {
     "match_bp": 9500,
@@ -7,74 +7,74 @@
   },
   "kinds": {
     "PERSON": {
-      "observations": 388,
+      "observations": 390,
       "truth_entities": 90,
-      "truth_pairs": 690,
-      "compared_pairs": 1149,
-      "blocking_recall": 0.7391,
+      "truth_pairs": 701,
+      "compared_pairs": 1088,
+      "blocking_recall": 0.7432,
       "pair": {
-        "precision": 0.967,
-        "recall": 0.2971,
-        "f1": 0.4545,
-        "tp": 205,
-        "fp": 7,
-        "fn": 485
+        "precision": 0.9864,
+        "recall": 0.311,
+        "f1": 0.4729,
+        "tp": 218,
+        "fp": 3,
+        "fn": 483
       },
       "cluster": {
-        "precision": 0.9453,
-        "recall": 0.2754,
-        "f1": 0.4265,
-        "tp": 190,
-        "fp": 11,
-        "fn": 500
+        "precision": 1.0,
+        "recall": 0.2953,
+        "f1": 0.4559,
+        "tp": 207,
+        "fp": 0,
+        "fn": 494
       },
-      "review_pairs": 13,
-      "review_pairs_that_are_true": 7,
-      "entities": 233,
-      "disputed": 5,
-      "model_version": "splink-person-7b8274e2aab5"
+      "review_pairs": 9,
+      "review_pairs_that_are_true": 8,
+      "entities": 229,
+      "disputed": 3,
+      "model_version": "splink-person-4f47d9350ed1"
     },
     "VESSEL": {
-      "observations": 83,
+      "observations": 77,
       "truth_entities": 20,
-      "truth_pairs": 136,
-      "compared_pairs": 198,
+      "truth_pairs": 117,
+      "compared_pairs": 173,
       "blocking_recall": 1.0,
       "pair": {
         "precision": 1.0,
-        "recall": 0.0735,
-        "f1": 0.137,
-        "tp": 10,
+        "recall": 0.0769,
+        "f1": 0.1429,
+        "tp": 9,
         "fp": 0,
-        "fn": 126
+        "fn": 108
       },
       "cluster": {
         "precision": 1.0,
-        "recall": 0.0735,
-        "f1": 0.137,
-        "tp": 10,
+        "recall": 0.0769,
+        "f1": 0.1429,
+        "tp": 9,
         "fp": 0,
-        "fn": 126
+        "fn": 108
       },
-      "review_pairs": 61,
-      "review_pairs_that_are_true": 61,
-      "entities": 74,
+      "review_pairs": 53,
+      "review_pairs_that_are_true": 53,
+      "entities": 69,
       "disputed": 0,
-      "model_version": "splink-vessel-557bebd85704"
+      "model_version": "splink-vessel-cdeb5d6dda43"
     },
     "AIRCRAFT": {
       "observations": 33,
       "truth_entities": 10,
-      "truth_pairs": 40,
-      "compared_pairs": 35,
-      "blocking_recall": 0.875,
+      "truth_pairs": 39,
+      "compared_pairs": 28,
+      "blocking_recall": 0.7179,
       "pair": {
         "precision": 0.0,
         "recall": 0.0,
         "f1": 0.0,
         "tp": 0,
         "fp": 0,
-        "fn": 40
+        "fn": 39
       },
       "cluster": {
         "precision": 0.0,
@@ -82,17 +82,45 @@
         "f1": 0.0,
         "tp": 0,
         "fp": 0,
-        "fn": 40
+        "fn": 39
       },
-      "review_pairs": 5,
-      "review_pairs_that_are_true": 5,
+      "review_pairs": 2,
+      "review_pairs_that_are_true": 2,
       "entities": 33,
       "disputed": 0,
-      "model_version": "splink-aircraft-b8b3c95471e9"
+      "model_version": "splink-aircraft-e562199141ef"
+    },
+    "ORG": {
+      "observations": 51,
+      "truth_entities": 15,
+      "truth_pairs": 65,
+      "compared_pairs": 63,
+      "blocking_recall": 0.8462,
+      "pair": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 65
+      },
+      "cluster": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 65
+      },
+      "review_pairs": 11,
+      "review_pairs_that_are_true": 11,
+      "entities": 51,
+      "disputed": 0,
+      "model_version": "splink-org-e2f638955640"
     }
   },
   "overall": {
-    "pair_recall": 0.2483,
-    "pair_precision": 0.9275
+    "pair_recall": 0.2462,
+    "pair_precision": 0.8769
   }
 }
