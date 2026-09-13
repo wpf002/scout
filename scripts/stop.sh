@@ -23,6 +23,7 @@ LOCK="$RUN_DIR/start.pid"
 API_PORT="${PORT:-3001}"
 WEB_PORT="${WEB_PORT:-3000}"
 RES_PORT="${RESOLUTION_PORT:-8100}"
+REC_PORT="${RECOGNITION_PORT:-8200}"
 
 step() { printf '\033[36m==>\033[0m %s\n' "$1"; }
 
@@ -34,6 +35,7 @@ patterns=(
   "filter @scout/web run dev"
   "next dev -p ${WEB_PORT}"
   "uvicorn resolution.main:app"
+  "uvicorn recognition.main:app"
 )
 
 stopped=0

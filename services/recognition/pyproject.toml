@@ -16,7 +16,10 @@ dependencies = [
 models = [
   "insightface>=0.7",
   "onnxruntime>=1.20",
+  "pillow>=10.0",
   "speechbrain>=1.0",
+  "torch>=2.2",
+  "torchaudio>=2.2",
   "numpy>=2.0",
 ]
 

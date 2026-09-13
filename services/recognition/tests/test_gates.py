@@ -37,8 +37,9 @@ def test_compare_requires_a_gallery_even_when_enabled(monkeypatch: pytest.Monkey
 def test_no_route_accepts_a_probe_without_a_gallery() -> None:
     # Structural: the only comparison route's model requires gallery_id.
     routes = {r.path for r in app.routes}
-    assert routes == {"/healthz", "/compare", "/openapi.json"} or "/compare" in routes
-    from recognition.main import CompareRequest
+    assert "/compare" in routes and "/embed" in routes
+    from recognition.main import CompareRequest, EmbedRequest
 
-    assert "gallery_id" in CompareRequest.model_fields
-    assert CompareRequest.model_fields["gallery_id"].is_required()
+    for model in (CompareRequest, EmbedRequest):
+        assert "gallery_id" in model.model_fields
+        assert model.model_fields["gallery_id"].is_required()

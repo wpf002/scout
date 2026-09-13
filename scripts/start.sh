@@ -53,6 +53,9 @@ WEB_PORT="${WEB_PORT:-3000}"
 RES_PORT="${RESOLUTION_PORT:-8100}"
 RES_DIR="$ROOT/services/resolution"
 RES_LOG="$RUN_DIR/resolution.log"
+REC_PORT="${RECOGNITION_PORT:-8200}"
+REC_DIR="$ROOT/services/recognition"
+REC_LOG="$RUN_DIR/recognition.log"
 WATCH_EVERY="${SCOUT_WATCH_SECONDS:-10}"
 
 # The resolution service is part of the app when it is installed. It is
@@ -157,6 +160,10 @@ free_port() {
 PORTS_TO_FREE=("$API_PORT" "$WEB_PORT")
 resolution_available() { [ -f "$RES_DIR/pyproject.toml" ] && command -v uv >/dev/null 2>&1; }
 resolution_available && PORTS_TO_FREE+=("$RES_PORT")
+# Recognition runs only when the flag says so. Off is the default and the
+# script never turns it on; it starts what .env asks for and nothing more.
+recognition_wanted() { [ "${RECOGNITION_ENABLED:-false}" = "true" ] && [ -f "$REC_DIR/pyproject.toml" ] && command -v uv >/dev/null 2>&1; }
+recognition_wanted && PORTS_TO_FREE+=("$REC_PORT")
 for port in "${PORTS_TO_FREE[@]}"; do
   if [ -n "$(port_pids "$port")" ]; then
     warn "Port $port is already in use. Stopping what is on it."
@@ -251,9 +258,11 @@ stop_servers() {
   [ -n "${API_PID:-}" ] && kill "$API_PID" 2>/dev/null || true
   [ -n "${WEB_PID:-}" ] && kill "$WEB_PID" 2>/dev/null || true
   [ -n "${RES_PID:-}" ] && kill "$RES_PID" 2>/dev/null || true
+  [ -n "${REC_PID:-}" ] && kill "$REC_PID" 2>/dev/null || true
   free_port "$API_PORT" || true
   free_port "$WEB_PORT" || true
   resolution_available && { free_port "$RES_PORT" || true; }
+  recognition_wanted && { free_port "$REC_PORT" || true; }
 }
 
 SHUTTING_DOWN=0
@@ -277,6 +286,12 @@ start_web() {
   WEB_PID=$!
 }
 
+start_recognition() {
+  recognition_wanted || return 0
+  (cd "$REC_DIR" && exec uv run --quiet uvicorn recognition.main:app --host 127.0.0.1 --port "$REC_PORT") >"$REC_LOG" 2>&1 &
+  REC_PID=$!
+}
+
 start_resolution() {
   resolution_available || return 0
   (cd "$RES_DIR" && exec uv run --quiet uvicorn resolution.main:app --host 127.0.0.1 --port "$RES_PORT") >"$RES_LOG" 2>&1 &
@@ -297,6 +312,11 @@ step "Starting the API on :$API_PORT"
 start_api
 step "Starting the dashboard on :$WEB_PORT"
 start_web
+if recognition_wanted; then
+  step "Starting the recognition service on :$REC_PORT (RECOGNITION_ENABLED=true)"
+  start_recognition
+fi
+
 if resolution_available; then
   step "Starting the resolution service on :$RES_PORT"
   start_resolution

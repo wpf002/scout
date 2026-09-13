@@ -29,6 +29,7 @@ import { upstreamMessage } from "../adapters/base.js";
 import { scopeContextForCase } from "../v2/scope.js";
 import { ask } from "../v2/reason.js";
 import { objectStore, TILES_BUCKET } from "../v2/storage.js";
+import { compare, compareSchema, createGallery, enroll, enrollSchema, gallerySchema, recognitionEnabled, revokeEnrollment } from "../v2/recognition.js";
 import { runResolution } from "../v2/resolution.js";
 import { deriveLinks } from "../v2/links.js";
 import { coLocationWindow, neighbors, pathBetween, timelineForEntity, visibleEntities } from "../v2/graph.js";
@@ -678,6 +679,51 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     return { caseId, authorizationId: ctx.authorizationId, ...asked };
   });
 
+  // ── recognition (gallery-restricted) ───────────────────────────────────
+
+  app.get("/v2/galleries", async (request) => {
+    const operator = operatorOf(request);
+    const rows = await prisma.gallery.findMany({ orderBy: { createdAt: "desc" }, include: { _count: { select: { enrollments: true, comparisons: true } } } });
+    const now = new Date();
+    await recordAuditEvent({ action: "v2.gallery.listed", actor: operator, detail: { count: rows.length } });
+    return {
+      enabled: recognitionEnabled(),
+      count: rows.length,
+      galleries: rows.map((g) => ({
+        id: g.id, name: g.name, purpose: g.purpose, custodianOrg: g.custodianOrg, lawfulBasis: g.lawfulBasis, lawfulBasisDocumentRef: g.lawfulBasisDocumentRef,
+        reviewDueAt: g.reviewDueAt, reviewOverdue: g.reviewDueAt <= now, enrollments: g._count.enrollments, comparisons: g._count.comparisons, createdAt: g.createdAt, createdBy: g.createdBy,
+      })),
+    };
+  });
+
+  app.post("/v2/galleries", async (request, reply) => {
+    const body = gallerySchema.parse(request.body);
+    const gallery = await createGallery(body, operatorOf(request));
+    return reply.status(201).send(gallery);
+  });
+
+  app.post<{ Params: { galleryId: string } }>("/v2/galleries/:galleryId/enroll", async (request, reply) => {
+    const body = enrollSchema.parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx } = await scopeContextForCase(body.caseId, operator);
+    const result = await enroll({ ctx, operator, galleryId: request.params.galleryId, body });
+    return reply.status(201).send(result);
+  });
+
+  app.post<{ Params: { galleryId: string; enrollmentId: string } }>("/v2/galleries/:galleryId/enrollments/:enrollmentId/revoke", async (request) => {
+    const body = z.object({ reason: z.string().trim().min(1).max(1000) }).parse(request.body);
+    return revokeEnrollment({ galleryId: request.params.galleryId, enrollmentId: request.params.enrollmentId, operator: operatorOf(request), reason: body.reason });
+  });
+
+  // One comparison route, 1:N against a named gallery. The schema requires
+  // the gallery; there is no probe-only route and none will be added.
+  app.post("/v2/compare", async (request) => {
+    const body = compareSchema.parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx } = await scopeContextForCase(body.caseId, operator);
+    return compare({ ctx, operator, body });
+  });
+
   // ── the temporal graph ─────────────────────────────────────────────────
 
   app.post("/v2/links/derive", async (request) => {
@@ -748,7 +794,7 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     const knownAs = query.knownAs ?? new Date();
     const nodes = await visibleEntities(ctx, knownAs, query.entityId === undefined ? undefined : [query.entityId]);
     const edges = (await edgesAsOf(asOf, { authorizationId: ctx.authorizationId, knownAs, ...(query.entityId === undefined ? {} : { entityIds: [query.entityId] }) }))
-      .filter((e) => (query.entityId === undefined ? true : nodes.has(query.entityId)));
+      .filter(() => (query.entityId === undefined ? true : nodes.has(query.entityId)));
     const endpoints = await visibleEntities(ctx, knownAs, [...new Set(edges.flatMap((e) => [e.fromEntityId, e.toEntityId]))]);
     const shown = edges.filter((e) => endpoints.has(e.fromEntityId) && endpoints.has(e.toEntityId));
     await logRead(operator, ctx.authorizationId, "EntityEdge", shown.map((e) => e.id), `edges asOf=${asOf.toISOString()} knownAs=${knownAs.toISOString()}`);

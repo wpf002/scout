@@ -14,7 +14,7 @@ tiers, the scope gate, the audit log, or the live map.
 | Schema | `packages/db/prisma/schema.prisma` (v2 section) | Prisma | Phase 2 |
 | Collection routes and collectors | `apps/api/src/routes/v2.ts`, `apps/api/src/v2/collectors/` | TS | Built: ADS-B, AIS, SEC EDGAR, open web, first-party telemetry, Sentinel-2, Planet and Maxar catalogues, broker interface |
 | Resolution | `services/resolution`, `apps/api/src/v2/resolution.ts` | Python + TS | Built: PERSON, VESSEL, AIRCRAFT, ORG |
-| Recognition | `services/recognition` | Python | Phase 10, flag off |
+| Recognition | `services/recognition`, `apps/api/src/v2/recognition.ts` | Python + TS | Stage 10, flag off by default |
 | Reasoning | `packages/reason`, `apps/api/src/v2/reason.ts` | TS | Stage 8 |
 | Console | `apps/web/src/components/Investigation.tsx` | TS | Stage 6 |
 | Agent | `apps/api/src/agent/` | TS | Phase 11 |
@@ -219,6 +219,36 @@ scrubber's `asOf` like everything else on the map.
 Object storage is reached through `storage.ts`, a hand-signed SigV4 client
 for PUT, GET and HEAD: MinIO locally, any S3-compatible store in production,
 selected by `S3_ENDPOINT`.
+
+## Recognition
+
+Off unless `RECOGNITION_ENABLED=true`, and gallery-restricted by
+construction: both service routes (`/embed`, `/compare`) require a gallery
+id in their schema, and the API's one comparison route requires one too.
+There is no probe-only path.
+
+The service (`services/recognition`) is stateless: media in, a unit vector
+out (ArcFace via InsightFace for faces, ECAPA-TDNN via SpeechBrain for
+voices, installed only with `uv sync --extra models`; without them a
+request is answered 503, never with an invented vector), and cosine
+ranking of a probe against the candidates it is handed, in integer basis
+points. MATCH needs the best candidate inside the threshold *and* clear of
+the runner-up by the margin; a close call is INDETERMINATE; no candidates
+is INDETERMINATE.
+
+The API is the custodian (`apps/api/src/v2/recognition.ts`). A gallery
+carries a lawful basis, its document reference and a review date, and is
+created only with `confirmLawfulBasis: true`. An enrollment names its
+media's origin and document reference; scraped or open-web origins are
+refused by the scope package's guard, audited. The media is embedded and
+discarded; the template is sealed with AES-256-GCM under
+`RECOGNITION_TEMPLATE_KEY` into `BiometricTemplate`, and the audit event
+keeps the media's hash. A comparison passes the three-part gate (a gallery,
+a lawful basis on record, an authorization permitting
+`BIOMETRIC_COMPARE`), is refused while the gallery's review is overdue,
+decrypts only the active (unrevoked, unexpired) templates of the modality
+for that one call, and is written to `BiometricComparison` (immutable)
+before the answer returns, matched or not.
 
 ## No graph database
 

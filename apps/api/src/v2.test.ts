@@ -547,6 +547,133 @@ run("Scout v2 — stage 3: collection", () => {
     });
   });
 
+  describe("stage 10: recognition, gallery-restricted", () => {
+    let recCase: string;
+    let recAuth: string;
+    let openCase: string;
+    let gallery: string;
+    let entityA: string;
+    let entityB: string;
+    const b64 = (s: string) => Buffer.from(s).toString("base64");
+    const IN_A_MONTH = new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString();
+
+    beforeAll(async () => {
+      recCase = await newCase("stage10");
+      recAuth = (await authorize(recCase, { sourceClasses: ["SENSOR", "FIRST_PARTY"], actionClasses: ["COLLECT", "READ_GRAPH", "RESOLVE", "BIOMETRIC_COMPARE"], entityKinds: ["PERSON", "DEVICE"] })).id;
+      openCase = await newCase("stage10-noncompare");
+      await authorize(openCase, { actionClasses: ["COLLECT", "READ_GRAPH"] });
+      // Two people to enrol, from first-party observations resolved into entities.
+      await post("/v2/collect", { caseId: recCase, collectorId: "first-party-telemetry", params: { consentRef: "CONSENT-1", deviceId: "badge-a", label: "Ann Example", points: [{ at: "2026-09-13T10:00:00Z", lon: 5, lat: 60 }] } });
+      await post("/v2/collect", { caseId: recCase, collectorId: "first-party-telemetry", params: { consentRef: "CONSENT-1", deviceId: "badge-b", label: "Ben Example", points: [{ at: "2026-09-13T10:00:00Z", lon: 6, lat: 61 }] } });
+      const resolved = (await post("/v2/resolve", { caseId: recCase, entityKind: "DEVICE" })).json();
+      const ents = resolved.entities as Array<{ id: string; label?: string; canonicalLabel?: string }>;
+      expect(ents.length).toBe(2);
+      entityA = ents[0]!.id;
+      entityB = ents[1]!.id;
+      delete process.env["RECOGNITION_ENABLED"];
+      process.env["RECOGNITION_TEMPLATE_KEY"] = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    });
+
+    it("has no comparison route without a gallery, and refuses everything while disabled, with an audit event", async () => {
+      expect((await post("/v2/compare", { caseId: recCase, modality: "FACE", mediaB64: b64("face A") })).statusCode).toBe(400);
+      const created = await post("/v2/galleries", { name: "Staff", purpose: "Access control for the enrolled staff of the customer", custodianOrg: "Customer Security", lawfulBasis: "EMPLOYMENT", lawfulBasisDocumentRef: "HR-POLICY-7", reviewDueAt: IN_A_MONTH, confirmLawfulBasis: true });
+      expect(created.statusCode).toBe(201);
+      gallery = created.json().id;
+      const r = await post("/v2/compare", { caseId: recCase, galleryId: gallery, modality: "FACE", mediaB64: b64("face A") });
+      expect(r.statusCode).toBe(503);
+      expect(r.json().code ?? r.json().error).toBe("feature-disabled");
+      const event = await prisma.auditEvent.findFirst({ where: { caseId: recCase, action: "v2.biometric.comparison" }, orderBy: { createdAt: "desc" } });
+      expect((event?.detail as { outcome: string }).outcome).toBe("refused");
+    });
+
+    it("refuses a gallery without a lawful basis document or a future review date", async () => {
+      expect((await post("/v2/galleries", { name: "x", purpose: "some purpose here", custodianOrg: "o", lawfulBasis: "CONSENT", reviewDueAt: IN_A_MONTH, confirmLawfulBasis: true })).statusCode).toBe(400);
+      expect((await post("/v2/galleries", { name: "x", purpose: "some purpose here", custodianOrg: "o", lawfulBasis: "CONSENT", lawfulBasisDocumentRef: "D-1", reviewDueAt: IN_A_MONTH })).statusCode).toBe(400);
+      expect((await post("/v2/galleries", { name: "x", purpose: "some purpose here", custodianOrg: "o", lawfulBasis: "CONSENT", lawfulBasisDocumentRef: "D-1", reviewDueAt: "2020-01-01T00:00:00Z", confirmLawfulBasis: true })).statusCode).toBe(400);
+    });
+
+    it("refuses to enrol scraped or undocumented media, and audits the refusal", async () => {
+      process.env["RECOGNITION_ENABLED"] = "true";
+      const scraped = await post(`/v2/galleries/${gallery}/enroll`, { caseId: recCase, entityId: entityA, modality: "FACE", mediaB64: b64("face A"), origin: "open-web", lawfulBasisDocumentRef: "HR-7", expiresAt: IN_A_MONTH });
+      expect(scraped.statusCode).toBe(403);
+      expect(scraped.json().prohibition).toBe("OPEN_WORLD_BIOMETRICS");
+      const event = await prisma.auditEvent.findFirst({ where: { caseId: recCase, action: "v2.gallery.enrollment" }, orderBy: { createdAt: "desc" } });
+      expect((event?.detail as { outcome: string; origin: string }).outcome).toBe("refused");
+      expect((event?.detail as { origin: string }).origin).toBe("open-web");
+      expect(await prisma.galleryEnrollment.count({ where: { galleryId: gallery } })).toBe(0);
+      expect(await prisma.biometricTemplate.count({ where: { galleryId: gallery } })).toBe(0);
+    });
+
+    it("enrols consented media as an encrypted template and keeps no media", async () => {
+      const r = await post(`/v2/galleries/${gallery}/enroll`, { caseId: recCase, entityId: entityA, modality: "FACE", mediaB64: b64("face A"), contentType: "image/png", origin: "consented-upload", lawfulBasisDocumentRef: "CONSENT-FORM-A", expiresAt: IN_A_MONTH });
+      expect(r.statusCode).toBe(201);
+      const enrollment = await prisma.galleryEnrollment.findUnique({ where: { id: r.json().enrollment.id } });
+      expect(enrollment?.lawfulBasisDocumentRef).toBe("CONSENT-FORM-A");
+      const template = await prisma.biometricTemplate.findUnique({ where: { id: enrollment?.templateRef ?? "" } });
+      expect(template?.dims).toBe(16);
+      // The stored bytes are not the vector: no float32 of the embedding appears in the ciphertext.
+      const plain = Buffer.from(new Float32Array(JSON.parse(JSON.stringify([0.1]))).buffer);
+      expect(Buffer.from(template!.ciphertext).includes(plain)).toBe(false);
+      expect(Buffer.from(template!.ciphertext).length).toBe(16 * 4);
+      expect(template?.keyId).toHaveLength(12);
+      const event = await prisma.auditEvent.findFirst({ where: { caseId: recCase, action: "v2.gallery.enrollment", detail: { path: ["outcome"], equals: "ok" } }, orderBy: { createdAt: "desc" } });
+      expect((event?.detail as { mediaHash: string }).mediaHash).toHaveLength(64);
+      // The media itself is nowhere: not an observation, not an object.
+      expect(await prisma.observation.count({ where: { authorizationId: recAuth, sourceId: { contains: "gallery" } } })).toBe(0);
+      expect(storedObjectKeys().some((k) => k.includes("face"))).toBe(false);
+    });
+
+    it("refuses a comparison from an authorization without BIOMETRIC_COMPARE, with an audit event", async () => {
+      const r = await post("/v2/compare", { caseId: openCase, galleryId: gallery, modality: "FACE", mediaB64: b64("face A") });
+      expect(r.statusCode).toBe(403);
+      expect(r.json().prohibition).toBe("OPEN_WORLD_BIOMETRICS");
+      const event = await prisma.auditEvent.findFirst({ where: { caseId: openCase, action: "v2.biometric.comparison" }, orderBy: { createdAt: "desc" } });
+      expect((event?.detail as { outcome: string }).outcome).toBe("refused");
+      expect(await prisma.biometricComparison.count({ where: { galleryId: gallery } })).toBe(0);
+    });
+
+    it("matches the enrolled person, says NO_MATCH for a stranger, logs both, and never picks a close call", async () => {
+      const same = await post("/v2/compare", { caseId: recCase, galleryId: gallery, modality: "FACE", mediaB64: b64("face A") });
+      expect(same.statusCode).toBe(200);
+      expect(same.json().decision).toBe("MATCH");
+      expect(same.json().matches[0]).toMatchObject({ entityId: entityA, distanceBp: 0, withinThreshold: true });
+      expect(same.json().matches[0].label).toBeTruthy();
+
+      const stranger = await post("/v2/compare", { caseId: recCase, galleryId: gallery, modality: "FACE", mediaB64: b64("face Z") });
+      expect(stranger.json().decision).toBe("NO_MATCH");
+      expect(stranger.json().matches[0].withinThreshold).toBe(false);
+
+      // A second identity enrolled from the same media: the probe now sits
+      // between two candidates inside the margin, so the answer is neither.
+      await post(`/v2/galleries/${gallery}/enroll`, { caseId: recCase, entityId: entityB, modality: "FACE", mediaB64: b64("face A"), origin: "consented-upload", lawfulBasisDocumentRef: "CONSENT-FORM-B", expiresAt: IN_A_MONTH });
+      const twins = await post("/v2/compare", { caseId: recCase, galleryId: gallery, modality: "FACE", mediaB64: b64("face A") });
+      expect(twins.json().decision).toBe("INDETERMINATE");
+      expect(twins.json().reason).toMatch(/margin/);
+
+      const logged = await prisma.biometricComparison.findMany({ where: { galleryId: gallery }, orderBy: { requestedAt: "asc" } });
+      expect(logged.map((c) => c.decision)).toEqual(["MATCH", "NO_MATCH", "INDETERMINATE"]);
+      expect(logged.every((c) => c.probeHash.length === 64 && c.authorizationId === recAuth && c.requestedBy.length > 0)).toBe(true);
+      // Immutable: the log cannot be edited after the fact.
+      await expect(prisma.biometricComparison.update({ where: { id: logged[0]!.id }, data: { decision: "NO_MATCH" } })).rejects.toThrow();
+    });
+
+    it("ignores revoked and expired enrollments, and refuses a gallery whose review is overdue", async () => {
+      const enrollments = await prisma.galleryEnrollment.findMany({ where: { galleryId: gallery }, orderBy: { enrolledAt: "asc" } });
+      const revoke = await post(`/v2/galleries/${gallery}/enrollments/${enrollments[1]!.id}/revoke`, { reason: "consent withdrawn" });
+      expect(revoke.statusCode).toBe(200);
+      const after = await post("/v2/compare", { caseId: recCase, galleryId: gallery, modality: "FACE", mediaB64: b64("face A") });
+      expect(after.json().decision).toBe("MATCH");
+      expect(after.json().compared).toBe(1);
+
+      await prisma.gallery.update({ where: { id: gallery }, data: { reviewDueAt: new Date(Date.now() - 1000) } });
+      const overdue = await post("/v2/compare", { caseId: recCase, galleryId: gallery, modality: "FACE", mediaB64: b64("face A") });
+      expect(overdue.statusCode).toBe(409);
+      const listed = (await get("/v2/galleries")).json();
+      expect(listed.galleries.find((g: { id: string }) => g.id === gallery).reviewOverdue).toBe(true);
+      delete process.env["RECOGNITION_ENABLED"];
+    });
+  });
+
   describe("links and the temporal graph", () => {
     let graphCase: string;
     let graphAuth: string;

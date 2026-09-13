@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * The suite does not talk to the internet.
  *
@@ -261,6 +262,44 @@ function fakeResolve(body: string): Response {
   }), "application/json");
 }
 
+/**
+ * The recognition service, as far as the suite is concerned: a
+ * deterministic embedding from the media bytes and the same cosine
+ * arithmetic the service uses, so identical media match, different media
+ * do not, and two identical templates make a close call.
+ */
+function fakeEmbedding(modality: string, media: Uint8Array): number[] {
+  const digest = createHash("sha256").update(modality).update(media).digest();
+  const v: number[] = [];
+  for (let i = 0; i < 16; i += 1) v.push((digest[i * 2] as number) - 128 + ((digest[i * 2 + 1] as number) - 128) / 256);
+  const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+  return v.map((x) => x / norm);
+}
+function fakeRecognition(path: string, body: string): Response {
+  const req = JSON.parse(body) as Record<string, unknown>;
+  const modality = String(req["modality"]);
+  if (path === "/embed") {
+    const media = Buffer.from(String(req["media_b64"]), "base64");
+    return text(JSON.stringify({ model: "stub-embedder (not a recogniser)", dims: 16, embedding: fakeEmbedding(modality, media), media_hash: createHash("sha256").update(media).digest("hex") }), "application/json");
+  }
+  const media = Buffer.from(String(req["probe_media_b64"]), "base64");
+  const probe = fakeEmbedding(modality, media);
+  const candidates = (req["candidates"] as Array<{ enrollment_id: string; embedding: number[] }>) ?? [];
+  const distance = (e: number[]) => Math.round(Math.max(0, Math.min(1, 1 - probe.reduce((s, x, i) => s + x * (e[i] as number), 0))) * 10_000);
+  const matches = candidates.map((c) => ({ enrollment_id: c.enrollment_id, distance_bp: distance(c.embedding) })).sort((a, b) => a.distance_bp - b.distance_bp || a.enrollment_id.localeCompare(b.enrollment_id)).slice(0, Number(req["top_n"] ?? 5));
+  const threshold = Number(req["threshold_bp"]);
+  const margin = Number(req["margin_bp"] ?? 500);
+  let decision = "INDETERMINATE";
+  let reason = "the gallery has no active template for this modality; nothing was compared";
+  const best = matches[0];
+  if (best !== undefined) {
+    if (best.distance_bp > threshold) { decision = "NO_MATCH"; reason = "outside the threshold"; }
+    else if (matches[1] !== undefined && (matches[1].distance_bp - best.distance_bp) < margin) { decision = "INDETERMINATE"; reason = "top two inside the ambiguity margin"; }
+    else { decision = "MATCH"; reason = "inside the threshold"; }
+  }
+  return text(JSON.stringify({ model: "stub-embedder (not a recogniser)", probe_hash: createHash("sha256").update(media).digest("hex"), compared: candidates.length, matches, decision, reason }), "application/json");
+}
+
 const offline: typeof fetch = async (input, init) => {
   const url =
     typeof input === "string"
@@ -273,6 +312,8 @@ const offline: typeof fetch = async (input, init) => {
     return fakeResolve(init.body);
   }
   if (/^http:\/\/127\.0\.0\.1:9000\//.test(url)) return s3(url, init);
+  const recognition = /^http:\/\/127\.0\.0\.1:8200(\/embed|\/compare)$/.exec(url);
+  if (recognition !== null && typeof init?.body === "string") return fakeRecognition(recognition[1] as string, init.body);
   // The process API answers in the format the caller accepted.
   if (/^https:\/\/services\.sentinel-hub\.com\/api\/v1\/process$/.test(url)) {
     const accept = String((init?.headers as Record<string, string> | undefined)?.["accept"] ?? "image/tiff");

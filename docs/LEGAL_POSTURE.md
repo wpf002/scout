@@ -53,9 +53,27 @@ without a gallery id, and enrollment from scraped or open-web media is refused.
 Every comparison is logged whether or not it matched. The service is off by
 default.
 
-**Where.** `refuseOpenWorldBiometric()`, `refuseBiometricIndexing()`,
-`services/recognition` (`RECOGNITION_ENABLED=false`, `CompareRequest.gallery_id`
-required).
+**How, as built.** A gallery is created only with `confirmLawfulBasis: true`,
+a document reference and a future review date; a comparison against a
+gallery whose review date has passed is refused (HTTP 409) until the
+custodian records a new one. An enrollment states its media's origin;
+`public-scrape` and `open-web` are refused by `refuseBiometricIndexing()`
+before the gallery is looked up, and the refusal is an audit event. The
+media is turned into a vector by the service and discarded; only its hash
+is kept, in the enrollment's audit event. The vector is sealed with
+AES-256-GCM under `RECOGNITION_TEMPLATE_KEY` (`BiometricTemplate`); without
+the key, enrollment is refused rather than stored in the clear. A
+comparison decrypts only the unrevoked, unexpired templates of one modality
+in one gallery for that call, and its outcome is written to the immutable
+`BiometricComparison` table (probe hash, gallery, authorization, requester,
+top candidates, threshold, decision) before the answer returns. A close call
+between two candidates is `INDETERMINATE`, never a confident identity.
+
+**Where.** `refuseOpenWorldBiometric()`, `refuseBiometricIndexing()`
+(`packages/scope`), `apps/api/src/v2/recognition.ts` (custodian, gates,
+audit, encryption), `services/recognition` (`RECOGNITION_ENABLED=false`;
+both `EmbedRequest.gallery_id` and `CompareRequest.gallery_id` required;
+models installed only by `uv sync --extra models`).
 
 ## 4. Autonomous consequential action
 

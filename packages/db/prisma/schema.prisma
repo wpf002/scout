@@ -813,6 +813,25 @@ enum Modality {
   VOICE
 }
 
+/// An encrypted embedding. `templateRef` on an enrollment points here. The
+/// media it was made from is not stored anywhere; only its hash is, in the
+/// audit event of the enrollment. AES-256-GCM under RECOGNITION_TEMPLATE_KEY.
+model BiometricTemplate {
+  id         String   @id @default(cuid())
+  galleryId  String
+  modality   Modality
+  dims       Int
+  model      String
+  ciphertext Bytes
+  iv         Bytes
+  tag        Bytes
+  /// Identifies which key encrypted it, for rotation. Never the key.
+  keyId      String
+  createdAt  DateTime @default(now())
+
+  @@index([galleryId, modality])
+}
+
 /// One identity's template in one gallery. `templateRef` points at the
 /// encrypted embedding store; the media it came from is never stored beside
 /// it. Expires; re-review is required.
@@ -893,7 +912,9 @@ model ImageryTile {
   cloudOptimized  Boolean  @default(false)
   createdAt       DateTime @default(now())
 
-  @@unique([sourceId, sceneId, bboxHash])
+  /// Per authorization: the row is the access record. The bytes in the bucket
+  /// are shared across authorizations (same public scene), the index is not.
+  @@unique([sourceId, sceneId, bboxHash, authorizationId])
   @@index([authorizationId, sensedAt])
 }
 

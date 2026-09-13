@@ -66,8 +66,10 @@ export interface SceneToStore {
 }
 
 /**
- * Store a scene over a box once. The index is checked first, then the
- * bucket; only a scene missing from both is rendered and written. The
+ * Store a scene over a box once. The index is checked first (for this
+ * authorization), then the bucket (shared: the same public scene over the
+ * same box is one object however many authorizations look at it); only a
+ * scene missing from both is rendered and written. The
  * GeoTIFF is stored as the provider returns it, and `cloudOptimized` is set
  * only if the bytes carry the COG layout marker, never assumed.
  */
@@ -83,7 +85,9 @@ export async function storeScene(input: {
   const store = input.store === undefined ? objectStore() : input.store;
   if (store === null) throw new Error("Object storage is not configured (S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY); imagery cannot be stored.");
   const hash = bboxHash(input.bbox);
-  const existing = await prisma.imageryTile.findUnique({ where: { sourceId_sceneId_bboxHash: { sourceId: input.sourceId, sceneId: input.scene.sceneId, bboxHash: hash } } });
+  const existing = await prisma.imageryTile.findUnique({
+    where: { sourceId_sceneId_bboxHash_authorizationId: { sourceId: input.sourceId, sceneId: input.scene.sceneId, bboxHash: hash, authorizationId: input.authorizationId } },
+  });
   if (existing !== null) {
     return {
       tileId: existing.id, sceneId: existing.sceneId, sensedAt: existing.sensedAt, cloudCoverPct: existing.cloudCoverPct, bbox: input.bbox,
@@ -118,7 +122,7 @@ export async function storeScene(input: {
   }
 
   const [w, s, e, n] = input.bbox;
-  const id = `tile_${createHash("sha256").update(`${input.sourceId}|${input.scene.sceneId}|${hash}`).digest("hex").slice(0, 24)}`;
+  const id = `tile_${createHash("sha256").update(`${input.sourceId}|${input.scene.sceneId}|${hash}|${input.authorizationId}`).digest("hex").slice(0, 24)}`;
   await prisma.$executeRaw`
     INSERT INTO "ImageryTile" ("id", "sourceId", "authorizationId", "caseId", "sceneId", "sensedAt", "cloudCoverPct", "bbox", "bboxHash", "geom",
       "objectKey", "previewKey", "bytes", "widthPx", "heightPx", "resolutionM", "format", "cloudOptimized")
@@ -126,7 +130,7 @@ export async function storeScene(input: {
       ARRAY[${w}::float8, ${s}::float8, ${e}::float8, ${n}::float8], ${hash},
       ST_MakeEnvelope(${w}, ${s}, ${e}, ${n}, 4326)::geography,
       ${objectKey}, ${hasPreview ? previewKey : null}, ${bytes}, ${size.width}, ${size.height}, ${size.resolutionM}, ${format}, ${cloudOptimized})
-    ON CONFLICT ("sourceId", "sceneId", "bboxHash") DO NOTHING`;
+    ON CONFLICT ("sourceId", "sceneId", "bboxHash", "authorizationId") DO NOTHING`;
 
   return {
     tileId: id, sceneId: input.scene.sceneId, sensedAt: input.scene.sensedAt, cloudCoverPct: input.scene.cloudCoverPct, bbox: input.bbox,
