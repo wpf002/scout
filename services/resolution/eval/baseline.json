@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-09-13T19:11:51.336314Z",
+  "normalization_version": "norm-1",
+  "thresholds": {
+    "match_bp": 9500,
+    "review_bp": 7000
+  },
+  "kinds": {
+    "PERSON": {
+      "observations": 388,
+      "truth_entities": 90,
+      "truth_pairs": 690,
+      "compared_pairs": 1149,
+      "blocking_recall": 0.7391,
+      "pair": {
+        "precision": 0.967,
+        "recall": 0.2971,
+        "f1": 0.4545,
+        "tp": 205,
+        "fp": 7,
+        "fn": 485
+      },
+      "cluster": {
+        "precision": 0.9453,
+        "recall": 0.2754,
+        "f1": 0.4265,
+        "tp": 190,
+        "fp": 11,
+        "fn": 500
+      },
+      "review_pairs": 13,
+      "review_pairs_that_are_true": 7,
+      "entities": 233,
+      "disputed": 5,
+      "model_version": "splink-person-7b8274e2aab5"
+    },
+    "VESSEL": {
+      "observations": 83,
+      "truth_entities": 20,
+      "truth_pairs": 136,
+      "compared_pairs": 198,
+      "blocking_recall": 1.0,
+      "pair": {
+        "precision": 1.0,
+        "recall": 0.0735,
+        "f1": 0.137,
+        "tp": 10,
+        "fp": 0,
+        "fn": 126
+      },
+      "cluster": {
+        "precision": 1.0,
+        "recall": 0.0735,
+        "f1": 0.137,
+        "tp": 10,
+        "fp": 0,
+        "fn": 126
+      },
+      "review_pairs": 61,
+      "review_pairs_that_are_true": 61,
+      "entities": 74,
+      "disputed": 0,
+      "model_version": "splink-vessel-557bebd85704"
+    },
+    "AIRCRAFT": {
+      "observations": 33,
+      "truth_entities": 10,
+      "truth_pairs": 40,
+      "compared_pairs": 35,
+      "blocking_recall": 0.875,
+      "pair": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 40
+      },
+      "cluster": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 40
+      },
+      "review_pairs": 5,
+      "review_pairs_that_are_true": 5,
+      "entities": 33,
+      "disputed": 0,
+      "model_version": "splink-aircraft-b8b3c95471e9"
+    }
+  },
+  "overall": {
+    "pair_recall": 0.2483,
+    "pair_precision": 0.9275
+  }
+}

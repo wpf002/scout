@@ -90,6 +90,8 @@ export const observationInputSchema = z
     indeterminate: z.boolean().default(false),
     /** Optional link to a v1 case, for the bridge. */
     caseId: z.string().min(1).optional(),
+    /** What the observation is about. Resolution runs per kind. */
+    entityKind: fusionEntityKindSchema.optional(),
     identifiers: z
       .array(
         z.object({

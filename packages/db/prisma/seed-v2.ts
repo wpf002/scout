@@ -73,7 +73,8 @@ const SOURCES = [
 interface Person { key: string; kind: "PERSON"; first: string; last: string; email: string; phone: string; address: string; handle: string; city: (typeof CITY)[number] }
 interface Vessel { key: string; kind: "VESSEL"; name: string; mmsi: string; imo: string; callsign: string; lon: number; lat: number }
 interface Aircraft { key: string; kind: "AIRCRAFT"; tail: string; icaoHex: string; type: string; lon: number; lat: number }
-type Truth = Person | Vessel | Aircraft;
+interface Org { key: string; kind: "ORG"; name: string; suffix: string; cik: string; ticker: string | null; city: (typeof CITY)[number] }
+type Truth = Person | Vessel | Aircraft | Org;
 
 function person(n: number, overrides: Partial<Person> = {}): Person {
   const first = pick(FIRST);
@@ -111,6 +112,20 @@ for (let i = 1; i <= 20; i += 1) {
     callsign: `${pick(["LA", "VC", "WD", "CB"])}${digits(2)}${pick(["K", "Q", "Z"])}`,
     lon: c.lon + (rand() - 0.5) * 2,
     lat: c.lat + (rand() - 0.5) * 2,
+  });
+}
+const ORG_WORDS = ["Acme", "Beacon", "Granite", "Harbor", "Quarry", "Summit", "Willow", "Meridian", "Cedar", "Northwind", "Fulcrum", "Lantern", "Rafter", "Sluice", "Anvil"] as const;
+const ORG_KINDS = ["Holdings", "Logistics", "Maritime", "Systems", "Partners", "Energy"] as const;
+const SUFFIXES = ["Inc", "LLC", "Ltd", "Corp"] as const;
+for (let i = 1; i <= 15; i += 1) {
+  truths.push({
+    key: `org-${String(i).padStart(3, "0")}`,
+    kind: "ORG",
+    name: `${ORG_WORDS[(i - 1) % ORG_WORDS.length] as string} ${pick(ORG_KINDS)}`,
+    suffix: pick(SUFFIXES),
+    cik: String(int(1000, 1999999)).padStart(10, "0"),
+    ticker: chance(0.5) ? `${(ORG_WORDS[(i - 1) % ORG_WORDS.length] as string).slice(0, 3).toUpperCase()}${pick(["X", "Q", "Z", ""])}` : null,
+    city: pick(CITY),
   });
 }
 for (let i = 1; i <= 10; i += 1) {
@@ -196,6 +211,7 @@ function build(sourceId: string, truth: Truth, normalized: Record<string, unknow
     position,
     confidenceBp: chance(0.8) ? int(6000, 10_000) : null,
     indeterminate: false,
+    entityKind: truth.kind,
   };
   return { row, identifiers, truthKey: truth.key, kind: truth.kind, ...(note === undefined ? {} : { note }) };
 }
@@ -247,6 +263,26 @@ for (const t of truths) {
       if ("mmsi" in normalized) ids.push({ kind: "MMSI", value: mmsi, normalizedValue: mmsi });
       if ("imo" in normalized) ids.push({ kind: "IMO", value: t.imo, normalizedValue: t.imo });
       built.push(build(src, t, normalized, ids, src === "synth-sensor" ? { lon: jitter(t.lon, 0.5), lat: jitter(t.lat, 0.5) } : null, note));
+    }
+  } else if (t.kind === "ORG") {
+    const n = int(3, 5);
+    const LONG: Record<string, string> = { Inc: "Incorporated", LLC: "L.L.C.", Ltd: "Limited", Corp: "Corporation" };
+    for (let i = 0; i < n; i += 1) {
+      const src = pick(["synth-records", "synth-records", "synth-broker"] as const);
+      const r = rand();
+      const name =
+        r < 0.3 ? `${t.name} ${t.suffix}`
+        : r < 0.5 ? `${t.name.toUpperCase()}, ${t.suffix.toUpperCase()}.`
+        : r < 0.7 ? `${t.name} ${LONG[t.suffix] as string}`
+        : r < 0.85 ? t.name
+        : `${t.name} ${t.suffix}.`;
+      const normalized = src === "synth-records"
+        ? { title: name, cik: chance(0.8) ? t.cik : undefined, ticker: t.ticker ?? undefined, jurisdiction: "US", city: t.city.name }
+        : { name, ticker: t.ticker ?? undefined, city: t.city.name, domain: `${t.name.split(" ")[0]?.toLowerCase() as string}.example` };
+      const ids: Extracted[] = [{ kind: "NAME", value: name, normalizedValue: naive(name) }];
+      if ("cik" in normalized && normalized.cik !== undefined) ids.push({ kind: "DOCUMENT_NO", value: `CIK${t.cik}`, normalizedValue: `CIK${t.cik}` });
+      if ("domain" in normalized) ids.push({ kind: "DOMAIN", value: normalized.domain, normalizedValue: normalized.domain });
+      built.push(build(src, t, normalized, ids, null));
     }
   } else {
     const n = int(3, 4);
@@ -320,7 +356,20 @@ async function main(): Promise<void> {
         seed: SEED,
         normalizationVersion: NORMALIZATION_VERSION,
         entities: truths.map((t) => ({ truthKey: t.key, kind: t.kind, observations: byKey.get(t.key) ?? 0 })),
-        observations: built.map((b) => ({ id: b.row.id, contentHash: b.row.contentHash, sourceId: b.row.sourceId, truthKey: b.truthKey, kind: b.kind, ...(b.note === undefined ? {} : { note: b.note }) })),
+        // Payload and identifiers ride along so the harness needs no database:
+        // it resolves from this file alone and scores against truthKey.
+        observations: built.map((b) => ({
+          id: b.row.id,
+          contentHash: b.row.contentHash,
+          sourceId: b.row.sourceId,
+          truthKey: b.truthKey,
+          kind: b.kind,
+          observedAt: b.row.observedAt.toISOString(),
+          position: b.row.position,
+          payload: b.row.normalizedPayload,
+          identifiers: b.identifiers.map((i) => ({ kind: i.kind, value: i.value })),
+          ...(b.note === undefined ? {} : { note: b.note }),
+        })),
         hardCases: {
           sharedFullName: truths.filter((t) => t.kind === "PERSON" && Number(t.key.slice(-3)) >= 85).map((t) => t.key),
           mmsiOffByOne: ["vessel-007"],

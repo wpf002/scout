@@ -27,6 +27,7 @@ import { operatorOf } from "../auth.js";
 import { logEvent } from "../observability.js";
 import { upstreamMessage } from "../adapters/base.js";
 import { scopeContextForCase } from "../v2/scope.js";
+import { runResolution } from "../v2/resolution.js";
 import {
   NORMALIZATION_VERSION,
   ensureCollectionSource,
@@ -70,6 +71,25 @@ const collectSchema = z.object({
   subject: subjectSchema.optional(),
 });
 
+const resolveSchema = z.object({
+  caseId: z.string().min(1),
+  entityKind: fusionEntityKindSchema,
+});
+
+const entitiesQuery = z.object({
+  caseId: z.string().min(1),
+  kind: fusionEntityKindSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+});
+
+const adjudicateSchema = z.object({
+  caseId: z.string().min(1),
+  leftObservationId: z.string().min(1),
+  rightObservationId: z.string().min(1),
+  decision: z.enum(["MATCH", "NON_MATCH", "INDETERMINATE"]),
+  note: z.string().trim().min(1).max(2000),
+});
+
 const observationsQuery = z.object({
   caseId: z.string().min(1),
   limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -100,6 +120,7 @@ function toRow(input: ObservationInput): ObservationRow {
     position: input.position,
     confidenceBp: input.confidenceBp,
     indeterminate: input.indeterminate,
+    entityKind: input.entityKind ?? null,
   };
 }
 
@@ -399,5 +420,198 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
         })),
       })),
     };
+  });
+
+  // ── resolution ─────────────────────────────────────────────────────────
+
+  app.post("/v2/resolve", async (request) => {
+    const body = resolveSchema.parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(body.caseId, operator);
+    return runResolution({ ctx, caseId, entityKind: body.entityKind, operator });
+  });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/entities", async (request) => {
+    const query = entitiesQuery.parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+
+    const entities = await prisma.entity.findMany({
+      where: {
+        resolutionRun: { authorizationId: ctx.authorizationId },
+        ...(query.kind === undefined ? {} : { kind: query.kind }),
+        members: { some: { supersededAt: null } },
+      },
+      include: {
+        members: {
+          where: { supersededAt: null },
+          include: { observation: { select: { id: true, sourceId: true, observedAt: true, collectedAt: true, caseId: true } } },
+        },
+        resolutionRun: { select: { id: true, modelVersion: true, startedAt: true } },
+      },
+      orderBy: [{ lastResolvedAt: "desc" }, { id: "asc" }],
+      take: query.limit,
+    });
+
+    // Sources consulted for this authorization, whether or not they said
+    // anything: a source that returned nothing is listed, not dropped.
+    const consulted = await prisma.observation.groupBy({
+      by: ["sourceId"],
+      where: { authorizationId: ctx.authorizationId },
+      _count: { _all: true },
+      _max: { observedAt: true },
+    });
+    const registered = listRunnable().map((c) => c.id);
+    const sources = registered.map((id) => {
+      const hit = consulted.find((c) => c.sourceId === id);
+      return { sourceId: id, observations: hit?._count._all ?? 0, lastObservedAt: hit?._max.observedAt ?? null };
+    });
+
+    await prisma.accessLog.create({
+      data: {
+        actor: operator,
+        authorizationId: ctx.authorizationId,
+        action: "read",
+        targetType: "Entity",
+        targetIds: entities.map((e) => e.id),
+        resultCount: entities.length,
+      },
+    });
+
+    return {
+      caseId,
+      authorizationId: ctx.authorizationId,
+      count: entities.length,
+      sources,
+      entities: entities.map((e) => ({
+        id: e.id,
+        kind: e.kind,
+        canonicalLabel: e.canonicalLabel,
+        status: e.status,
+        lastResolvedAt: e.lastResolvedAt,
+        run: e.resolutionRun,
+        sourceIds: [...new Set(e.members.map((m) => m.observation.sourceId))].sort(),
+        members: e.members.map((m) => ({
+          observationId: m.observationId,
+          sourceId: m.observation.sourceId,
+          observedAt: m.observation.observedAt,
+          collectedAt: m.observation.collectedAt,
+          scoreBp: m.scoreBp,
+          method: m.method,
+          addedBy: m.addedBy,
+          addedAt: m.addedAt,
+        })),
+      })),
+    };
+  });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>("/v2/review", async (request) => {
+    const query = entitiesQuery.parse(request.query);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(query.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+
+    // The latest completed run per kind is the queue; older runs' review
+    // pairs were either re-scored or pinned since.
+    const runs = await prisma.resolutionRun.findMany({
+      where: { authorizationId: ctx.authorizationId, status: "COMPLETE" },
+      orderBy: { startedAt: "desc" },
+    });
+    const latestByKind = new Map<string, string>();
+    for (const run of runs) {
+      const kindRow = await prisma.entity.findFirst({ where: { resolutionRunId: run.id }, select: { kind: true } });
+      const kind = kindRow?.kind ?? "UNKNOWN";
+      if (!latestByKind.has(kind)) latestByKind.set(kind, run.id);
+    }
+    const runIds = [...latestByKind.entries()]
+      .filter(([kind]) => query.kind === undefined || kind === query.kind)
+      .map(([, id]) => id);
+
+    const pending = runIds.length === 0 ? [] : await prisma.matchDecision.findMany({
+      where: { runId: { in: runIds }, decision: "REVIEW" },
+      orderBy: [{ scoreBp: "desc" }, { id: "asc" }],
+      take: query.limit,
+    });
+    const adjudicated = new Set(
+      (await prisma.adjudication.findMany({
+        where: { pairKey: { in: pending.map((d) => [d.leftObservationId, d.rightObservationId].sort().join("|")) } },
+        select: { pairKey: true },
+      })).map((a) => a.pairKey),
+    );
+    const open = pending.filter((d) => !adjudicated.has([d.leftObservationId, d.rightObservationId].sort().join("|")));
+
+    const observationIds = [...new Set(open.flatMap((d) => [d.leftObservationId, d.rightObservationId]))];
+    const observations = await prisma.observation.findMany({
+      where: { id: { in: observationIds } },
+      include: { identifiers: true },
+    });
+    const byId = new Map(observations.map((o) => [o.id, o]));
+    const brief = (id: string) => {
+      const o = byId.get(id);
+      return o === undefined ? null : {
+        id: o.id, sourceId: o.sourceId, observedAt: o.observedAt,
+        identifiers: o.identifiers.map((i) => ({ kind: i.kind, value: i.value })),
+        payload: o.normalizedPayload,
+      };
+    };
+
+    await prisma.accessLog.create({
+      data: {
+        actor: operator, authorizationId: ctx.authorizationId, action: "read",
+        targetType: "MatchDecision", targetIds: open.map((d) => d.id), resultCount: open.length,
+      },
+    });
+
+    return {
+      caseId,
+      count: open.length,
+      pairs: open.map((d) => ({
+        decisionId: d.id,
+        runId: d.runId,
+        scoreBp: d.scoreBp,
+        blockingKey: d.blockingKey,
+        features: d.featureVector,
+        left: brief(d.leftObservationId),
+        right: brief(d.rightObservationId),
+      })),
+    };
+  });
+
+  app.post("/v2/adjudicate", async (request, reply) => {
+    const body = adjudicateSchema.parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(body.caseId, operator);
+    ctx.assertAction("RESOLVE");
+    if (body.leftObservationId === body.rightObservationId) {
+      throw badRequest("An adjudication is about two different observations.");
+    }
+
+    const both = await prisma.observation.findMany({
+      where: { id: { in: [body.leftObservationId, body.rightObservationId] }, authorizationId: ctx.authorizationId },
+      select: { id: true },
+    });
+    if (both.length !== 2) {
+      throw notFound("Both observations must exist under this case's authorization.");
+    }
+
+    const [left, right] = [body.leftObservationId, body.rightObservationId].sort() as [string, string];
+    const row = await prisma.adjudication.create({
+      data: {
+        pairKey: `${left}|${right}`,
+        leftObservationId: left,
+        rightObservationId: right,
+        decision: body.decision,
+        adjudicatedBy: operator,
+        note: body.note,
+      },
+    });
+    await recordAuditEvent({
+      caseId,
+      action: "v2.adjudicated",
+      actor: operator,
+      detail: { adjudicationId: row.id, left, right, decision: body.decision, note: body.note },
+    });
+    return reply.status(201).send(row);
   });
 }

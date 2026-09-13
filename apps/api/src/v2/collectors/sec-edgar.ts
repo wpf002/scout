@@ -86,6 +86,7 @@ export function normalizeCompanies(raw: unknown, meta: CollectMeta): Observation
     position: null,
     confidenceBp: null,
     indeterminate: false,
+    entityKind: "ORG",
     ...(meta.caseId === undefined ? {} : { caseId: meta.caseId }),
     identifiers: [
       { kind: "NAME", value: c.title },

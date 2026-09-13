@@ -13,7 +13,8 @@ def test_healthz_reports_thresholds(monkeypatch: pytest.MonkeyPatch) -> None:
     assert body["status"] == "ok"
     assert body["match_threshold_bp"] == 9500
     assert body["review_threshold_bp"] == 7000
-    assert body["model_version"] is None
+    assert set(body["models"]) == {"PERSON", "VESSEL", "AIRCRAFT", "ORG"}
+    assert body["normalization_version"] == "norm-1"
 
 
 def test_collapsed_review_band_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:

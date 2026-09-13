@@ -18,7 +18,7 @@ scoring = [
   "splink>=4.0,<5",
   "duckdb>=1.2",
   "jellyfish>=1.1",
-  "python-geohash>=0.8.5",
+  "pygeohash>=2.1",
   "phonenumbers>=8.13",
   "unidecode>=1.3",
 ]

@@ -26,9 +26,10 @@ export interface ObservationRow {
   position: { lon: number; lat: number } | null;
   confidenceBp: number | null;
   indeterminate: boolean;
+  entityKind?: string | null;
 }
 
-/** Postgres allows 65535 bound parameters per statement; 13 per row. */
+/** Postgres allows 65535 bound parameters per statement; 14 per row. */
 const CHUNK = 500;
 
 /**
@@ -51,13 +52,14 @@ export async function insertObservations(
         r.position === null
           ? Prisma.sql`NULL`
           : Prisma.sql`ST_SetSRID(ST_MakePoint(${r.position.lon}, ${r.position.lat}), 4326)::geography`;
-      return Prisma.sql`(${id}, ${r.sourceId}, ${r.authorizationId}, ${r.caseId ?? null}, ${r.collectedAt}, ${r.observedAt}, ${JSON.stringify(r.rawPayload ?? null)}::jsonb, ${JSON.stringify(r.normalizedPayload)}::jsonb, ${r.contentHash}, ${geom}, ${r.confidenceBp}, ${r.indeterminate})`;
+      const kind = r.entityKind === undefined || r.entityKind === null ? Prisma.sql`NULL` : Prisma.sql`${r.entityKind}::"FusionEntityKind"`;
+      return Prisma.sql`(${id}, ${r.sourceId}, ${r.authorizationId}, ${r.caseId ?? null}, ${r.collectedAt}, ${r.observedAt}, ${JSON.stringify(r.rawPayload ?? null)}::jsonb, ${JSON.stringify(r.normalizedPayload)}::jsonb, ${r.contentHash}, ${geom}, ${r.confidenceBp}, ${r.indeterminate}, ${kind})`;
     });
 
     const inserted = await prisma.$queryRaw<{ id: string }[]>`
       INSERT INTO "Observation"
         ("id", "sourceId", "authorizationId", "caseId", "collectedAt", "observedAt",
-         "rawPayload", "normalizedPayload", "contentHash", "geom", "confidenceBp", "indeterminate")
+         "rawPayload", "normalizedPayload", "contentHash", "geom", "confidenceBp", "indeterminate", "entityKind")
       VALUES ${Prisma.join(values)}
       ON CONFLICT ("sourceId", "authorizationId", "contentHash") DO NOTHING
       RETURNING "id"`;

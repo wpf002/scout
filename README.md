@@ -255,6 +255,10 @@ rather than erase.
 | `GET` | `/v2/collectors` | v2. Registered collectors with licensing terms and whether each is configured. |
 | `POST` | `/v2/collect` | v2. Runs one collector under the case's authorization. Refuses before fetching; writes provenanced observations; audited. |
 | `GET` | `/v2/observations` | v2. What was collected. Every read writes an `AccessLog` row with ids, not payloads. |
+| `POST` | `/v2/resolve` | v2. Runs entity resolution for one kind under the case's authorization. Every pair scored is a `MatchDecision`; clusters become `Entity` rows; pins outrank the model. |
+| `GET` | `/v2/entities` | v2. Resolved entities with members, sources consulted and status. Read is logged. |
+| `GET` | `/v2/review` | v2. Pairs in the review band awaiting a human. Read is logged. |
+| `POST` | `/v2/adjudicate` | v2. Pin a pair: match, non-match or indeterminate. Outranks every later run. Audited. |
 
 Subject terms travel in POST bodies, never URL params, and request bodies are
 stripped from logs.

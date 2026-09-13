@@ -541,12 +541,16 @@ model Observation {
   geom              Unsupported("geography(Point,4326)")?
   confidenceBp      Int?
   indeterminate     Boolean @default(false)
+  /// What kind of entity this observation is about, as the collector says.
+  /// Resolution runs per kind; an observation with no kind is not resolved.
+  entityKind        FusionEntityKind?
   createdAt         DateTime @default(now())
 
   identifiers Identifier[]
   memberships EntityMember[]
 
   @@unique([sourceId, authorizationId, contentHash])
+  @@index([authorizationId, entityKind])
   @@index([authorizationId, observedAt])
   @@index([observedAt])
   @@index([caseId])

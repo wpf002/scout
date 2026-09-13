@@ -13,7 +13,7 @@ tiers, the scope gate, the audit log, or the live map.
 | Observations, collectors, temporal predicate | `packages/fusion` | TS | Phase 2 |
 | Schema | `packages/db/prisma/schema.prisma` (v2 section) | Prisma | Phase 2 |
 | Collection routes and collectors | `apps/api/src/routes/v2.ts`, `apps/api/src/v2/` | TS | Built: ADS-B, SEC EDGAR |
-| Resolution | `services/resolution` | Python | Phase 6 |
+| Resolution | `services/resolution`, `apps/api/src/v2/resolution.ts` | Python + TS | Built: PERSON, VESSEL, AIRCRAFT, ORG |
 | Recognition | `services/recognition` | Python | Phase 10, flag off |
 | Reasoning seam | `packages/reason` | TS | Phase 8 |
 | Console | `apps/web/src/app/console/` | TS | Phase 9 |

@@ -71,6 +71,7 @@ export function normalizeAircraft(raw: unknown, meta: CollectMeta): ObservationI
       // inference. There is no basis to attach a number to.
       confidenceBp: null,
       indeterminate: false,
+      entityKind: "AIRCRAFT",
       ...(meta.caseId === undefined ? {} : { caseId: meta.caseId }),
       identifiers: [
         { kind: "ICAO_HEX", value: hex },

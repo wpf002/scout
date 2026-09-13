@@ -59,8 +59,29 @@ evidence against"), and three buttons: match, non-match, indeterminate. The
 choice, who made it and a note are recorded. Indeterminate is a real answer
 and stays in the queue as such.
 
+## Where it lives
+
+| Step | File |
+|---|---|
+| Normalizers, version `norm-1` | `services/resolution/resolution/normalize.py` |
+| Blocking keys (exact ids, metaphone+city, geohash5+day, trigram MinHash band) | `blocking.py`, `records.py` |
+| Splink settings per kind, EM training, prediction with per-field levels and Bayes factors | `model.py`, models in `services/resolution/models/*.json` |
+| Thresholds, pins, connected components, transitivity guard | `cluster.py` |
+| `POST /resolve` | `main.py` |
+| Persistence: `ResolutionRun`, `MatchDecision`, `Entity`, `EntityMember` | `apps/api/src/v2/resolution.ts`, `POST /v2/resolve` |
+| Review queue and pins | `GET /v2/review`, `POST /v2/adjudicate` |
+
+Metaphone rather than Double Metaphone: `jellyfish` ships the former. Address
+parsing is the simple expander unless libpostal is present; the version says
+which ran.
+
 ## Evaluation
 
-`services/resolution/eval/` reports precision, recall and F1 at pair and
-cluster level against the labelled fixture set. CI fails a change that lowers
-recall unless the change carries an explicit override note.
+`services/resolution/eval/evaluate.py` resolves the synthetic fixture from the
+file alone and reports, per kind: blocking recall (were the true pairs even
+compared), pair precision/recall/F1 on MATCH decisions, cluster-level
+precision/recall on what was actually merged, review-band load, and disputed
+clusters. `--train` fits the models; `--write-baseline` records the numbers;
+`--check` fails when recall drops more than 0.005 below the baseline unless
+`--override "reason"` is given. `pnpm eval:resolution` runs the check. There
+is no CI in this repository yet; the gate is a command until there is.

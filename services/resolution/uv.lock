@@ -410,6 +410,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pygeohash"
+version = "3.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d1/fe/c7ade848a10c697d48f19859ec7a71a992b5597fd6ce8d5f16ba867853d5/pygeohash-3.5.1.tar.gz", hash = "sha256:d9a6ed89cfb023e0eba041a06ed676444413450be52e6a3b2c89b4a7908673ec", size = 87349, upload-time = "2026-09-06T18:29:32.597Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/cb/dd04d50354efe1754e1cf679a8d7f3fa7cac3fd20bb4c6c7362ed5c47d13/pygeohash-3.5.1-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:a1777521d760e2747144e58b781d4847b4d5106609e8c5969c80e9e280140545", size = 46624, upload-time = "2026-09-06T18:28:46.443Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/3c/f8e59ad32fa43cef30fd2c8e8a488a8e1805b7181eedff84833fda065fbb/pygeohash-3.5.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:321f39893aadcd60f60b9dde70b6eff5b07a83634e0fe27f075a7cb3433dd002", size = 46745, upload-time = "2026-09-06T18:28:47.739Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/f2/b869d65ce398617e35ecb06fb96b443a13b48f2a9174003977428d218dde/pygeohash-3.5.1-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:f1bce781b0cd6eb10039f2d0c3bb1a11153bbfe9a43678b6e635ca42abfe114d", size = 66691, upload-time = "2026-09-06T18:28:48.963Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/d9/cb6d355c1050cc54231a091d86b7fb403008e9ce7720088ca0b2e67f0e69/pygeohash-3.5.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:d0981d476978b6f8e814646a5606d2985e81048ff683458beb31490034fb744c", size = 68624, upload-time = "2026-09-06T18:28:50.404Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/56/b19c0bd3933c474f46d8f97f66954522fa4362cbbc8c1704f358b10ded0b/pygeohash-3.5.1-cp312-cp312-win32.whl", hash = "sha256:f3b3e1d48454733f9983d1878300decec533257d380f5b05dfa01c53208ff0d6", size = 47376, upload-time = "2026-09-06T18:28:51.571Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/da/3ab794635b0cdaa913e5ec0df88ccc32046c951002a452bb7f5773973a67/pygeohash-3.5.1-cp312-cp312-win_amd64.whl", hash = "sha256:ef40fc6d3763b62d5605f3af6220e69f0a2fb7c509995a47aaeae7b7debb5e42", size = 48462, upload-time = "2026-09-06T18:28:52.856Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.21.0"
 source = { registry = "https://pypi.org/simple" }
@@ -453,15 +467,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6a/53/ed9d74092561d4b01a2ef1349d52cdbc135e526c245f366b089cfca6de49/python_dotenv-1.2.3.tar.gz", hash = "sha256:a20a594dabeaa385725aa239d5244871c143ecb356add8a20fcf23773a6c3a35", size = 58945, upload-time = "2026-08-16T16:54:54.067Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0d/17/c5c6b53ddc18f297992099b3d9ec16c855c0ccc83263a21fe4d1c625ec6c/python_dotenv-1.2.3-py3-none-any.whl", hash = "sha256:904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9", size = 22780, upload-time = "2026-08-16T16:54:52.473Z" },
-]
-
-[[package]]
-name = "python-geohash"
-version = "0.9.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/da/3b/3819a06959801ab8d0f38be2b0bfe93c87bdd6a29c91543c68f08d88ec79/python_geohash-0.9.2.tar.gz", hash = "sha256:dd2da7eb381e0cd40cd2111590417b4f41e552c29167ac9b04d7523fdf3d21e4", size = 17922, upload-time = "2026-06-02T23:14:01.223Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5f/ec/92f29f9eb788aa250a2cb6db5eeea2815a4097461eb535790ed240af90d3/python_geohash-0.9.2-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7216af6842b8b19f7ebfd450e997969b1e61a4b6bab1d7f759e43cf4d324ef29", size = 256306, upload-time = "2026-06-02T23:13:59.82Z" },
 ]
 
 [[package]]
@@ -535,7 +540,7 @@ scoring = [
     { name = "duckdb" },
     { name = "jellyfish" },
     { name = "phonenumbers" },
-    { name = "python-geohash" },
+    { name = "pygeohash" },
     { name = "splink" },
     { name = "unidecode" },
 ]
@@ -553,7 +558,7 @@ requires-dist = [
     { name = "jellyfish", marker = "extra == 'scoring'", specifier = ">=1.1" },
     { name = "phonenumbers", marker = "extra == 'scoring'", specifier = ">=8.13" },
     { name = "pydantic", specifier = "==2.13.5" },
-    { name = "python-geohash", marker = "extra == 'scoring'", specifier = ">=0.8.5" },
+    { name = "pygeohash", marker = "extra == 'scoring'", specifier = ">=2.1" },
     { name = "splink", marker = "extra == 'scoring'", specifier = ">=4.0,<5" },
     { name = "unidecode", marker = "extra == 'scoring'", specifier = ">=1.3" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.52.4" },

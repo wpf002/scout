@@ -7,7 +7,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { prisma } from "@scout/db";
+import { insertObservations, prisma } from "@scout/db";
+import { naiveNormalize } from "./v2/collectors/index.js";
 
 const DB = process.env["DATABASE_URL"];
 const run = DB === undefined || DB.length === 0 ? describe.skip : describe;
@@ -31,7 +32,7 @@ async function authorize(id: string, overrides: Record<string, unknown> = {}) {
   const r = await post(`/cases/${id}/authorization`, {
     issuedBy: "engagement letter, vitest",
     sourceClasses: ["SENSOR", "PUBLIC_RECORD"],
-    actionClasses: ["COLLECT", "READ_GRAPH"],
+    actionClasses: ["COLLECT", "READ_GRAPH", "RESOLVE"],
     validUntil: IN_A_YEAR,
     confirmAuthorized: true,
     ...overrides,
@@ -268,6 +269,131 @@ run("Scout v2 — stage 3: collection", () => {
 
     it("refuses an unknown collector", async () => {
       const r = await post("/v2/collect", { caseId, collectorId: "does-not-exist" });
+      expect(r.statusCode).toBe(404);
+    });
+  });
+
+  describe("resolution", () => {
+    const stamp = Date.now();
+    const ids: Record<string, string> = {};
+
+    async function seed(name: string, identifiers: { kind: string; value: string }[]) {
+      const [id] = await insertObservations([{
+        sourceId: "adsb-live", authorizationId, caseId,
+        collectedAt: new Date(), observedAt: new Date(),
+        rawPayload: { seeded: name }, normalizedPayload: { seeded: name, stamp },
+        contentHash: `${name}-${stamp}`, position: null, confidenceBp: null, indeterminate: false, entityKind: "AIRCRAFT",
+      }]);
+      await prisma.identifier.createMany({
+        data: identifiers.map((i) => ({ observationId: id as string, kind: i.kind as never, value: i.value, normalizedValue: naiveNormalize(i.kind as never, i.value), normalizationVersion: "naive-1" })),
+      });
+      ids[name] = id as string;
+    }
+
+    beforeAll(async () => {
+      await seed("A1", [{ kind: "ICAO_HEX", value: "a1b2c3" }, { kind: "TAIL_NUMBER", value: "N111AA" }]);
+      await seed("A2", [{ kind: "ICAO_HEX", value: "A1B2C3" }]);
+      await seed("A3", [{ kind: "TAIL_NUMBER", value: "N222BB" }, { kind: "NAME", value: "Skyhawk" }]);
+      await seed("A4", [{ kind: "ICAO_HEX", value: "ffffff" }, { kind: "NAME", value: "Skyhawk" }]);
+    });
+
+    it("refuses without RESOLVE", async () => {
+      const id = await newCase("no-resolve");
+      await authorize(id, { actionClasses: ["COLLECT", "READ_GRAPH"] });
+      const r = await post("/v2/resolve", { caseId: id, entityKind: "AIRCRAFT" });
+      expect(r.statusCode).toBe(403);
+      expect(r.json().reason).toBe("action-not-permitted");
+    });
+
+    it("resolves aircraft into entities and records every pair", async () => {
+      const r = await post("/v2/resolve", { caseId, entityKind: "AIRCRAFT" });
+      expect(r.statusCode).toBe(200);
+      const body = r.json();
+      expect(body.modelVersion).toBe("stub-resolver-1");
+      expect(body.counts.match).toBe(1);
+      expect(body.counts.review).toBe(1);
+
+      const merged = body.entities.find((e: { members: string[] }) => e.members.includes(ids["A1"] as string));
+      expect(merged.status).toBe("RESOLVED");
+      expect(merged.members.sort()).toEqual([ids["A1"], ids["A2"]].sort());
+
+      const run = await prisma.resolutionRun.findUniqueOrThrow({ where: { id: body.runId } });
+      expect(run.status).toBe("COMPLETE");
+      expect(run.pairsEvaluated).toBe(2);
+      const decisions = await prisma.matchDecision.findMany({ where: { runId: body.runId } });
+      expect(decisions.map((d) => d.decision).sort()).toEqual(["MATCH", "REVIEW"]);
+
+      const event = await prisma.auditEvent.findFirst({ where: { caseId, action: "v2.resolution.ran" }, orderBy: { createdAt: "desc" } });
+      expect((event?.detail as { runId: string }).runId).toBe(body.runId);
+    });
+
+    it("lists the review band and logs the read", async () => {
+      const r = await get(`/v2/review?caseId=${caseId}&kind=AIRCRAFT`);
+      expect(r.statusCode).toBe(200);
+      expect(r.json().count).toBe(1);
+      const [pair] = r.json().pairs;
+      expect([pair.left.id, pair.right.id].sort()).toEqual([ids["A3"], ids["A4"]].sort());
+      expect(pair.scoreBp).toBe(8000);
+      const log = await prisma.accessLog.findFirst({ where: { authorizationId, targetType: "MatchDecision" }, orderBy: { createdAt: "desc" } });
+      expect(log?.targetIds).toEqual([pair.decisionId]);
+    });
+
+    it("lets a pin outrank the model, supersedes memberships, and keeps the history", async () => {
+      const pin = await post("/v2/adjudicate", {
+        caseId, leftObservationId: ids["A2"], rightObservationId: ids["A1"], decision: "NON_MATCH", note: "different airframes, hex reused",
+      });
+      expect(pin.statusCode).toBe(201);
+      expect(pin.json().pairKey).toBe([ids["A1"], ids["A2"]].sort().join("|"));
+
+      const r = await post("/v2/resolve", { caseId, entityKind: "AIRCRAFT" });
+      const body = r.json();
+      expect(body.counts.pinned).toBe(1);
+      const forA1 = body.entities.find((e: { members: string[] }) => e.members.includes(ids["A1"] as string));
+      const forA2 = body.entities.find((e: { members: string[] }) => e.members.includes(ids["A2"] as string));
+      expect(forA1.id).not.toBe(forA2.id);
+      expect(forA1.status).toBe("PROVISIONAL");
+
+      const pinned = await prisma.matchDecision.findFirst({ where: { runId: body.runId, leftObservationId: [ids["A1"], ids["A2"]].sort()[0] } });
+      expect(pinned?.decision).toBe("NON_MATCH");
+      expect((pinned?.featureVector as { pinned: boolean }).pinned).toBe(true);
+
+      // Nothing deleted: the old membership is superseded by this run.
+      const memberships = await prisma.entityMember.findMany({ where: { observationId: ids["A1"] }, orderBy: { addedAt: "asc" } });
+      expect(memberships.length).toBeGreaterThanOrEqual(2);
+      expect(memberships[0]?.supersededBy).toBe(body.runId);
+      expect(memberships[memberships.length - 1]?.supersededAt).toBeNull();
+      const old = await prisma.entity.findUniqueOrThrow({ where: { id: memberships[0]?.entityId as string } });
+      expect(old.status).toBe("UNRESOLVED");
+
+      const event = await prisma.auditEvent.findFirst({ where: { caseId, action: "v2.adjudicated" } });
+      expect((event?.detail as { decision: string }).decision).toBe("NON_MATCH");
+    });
+
+    it("merges a review pair the analyst confirms", async () => {
+      await post("/v2/adjudicate", { caseId, leftObservationId: ids["A3"], rightObservationId: ids["A4"], decision: "MATCH", note: "same aircraft, re-registered" });
+      const body = (await post("/v2/resolve", { caseId, entityKind: "AIRCRAFT" })).json();
+      const merged = body.entities.find((e: { members: string[] }) => e.members.includes(ids["A3"] as string));
+      expect(merged.status).toBe("RESOLVED");
+      expect(merged.members.sort()).toEqual([ids["A3"], ids["A4"]].sort());
+      expect((await get(`/v2/review?caseId=${caseId}&kind=AIRCRAFT`)).json().count).toBe(0);
+    });
+
+    it("reads entities with their sources and logs it", async () => {
+      const r = await get(`/v2/entities?caseId=${caseId}&kind=AIRCRAFT`);
+      expect(r.statusCode).toBe(200);
+      const body = r.json();
+      expect(body.count).toBeGreaterThanOrEqual(4);
+      for (const e of body.entities) {
+        expect(e.sourceIds.length).toBeGreaterThan(0);
+        expect(e.members.every((m: { addedBy: string }) => m.addedBy === "SYSTEM")).toBe(true);
+      }
+      expect(body.sources.map((s: { sourceId: string }) => s.sourceId).sort()).toEqual(["adsb-live", "sec-edgar"]);
+      const log = await prisma.accessLog.findFirst({ where: { authorizationId, targetType: "Entity" }, orderBy: { createdAt: "desc" } });
+      expect(log?.resultCount).toBe(body.count);
+    });
+
+    it("refuses an adjudication about an observation outside the authorization", async () => {
+      const r = await post("/v2/adjudicate", { caseId, leftObservationId: ids["A1"], rightObservationId: "obs_not_ours", decision: "MATCH", note: "x" });
       expect(r.statusCode).toBe(404);
     });
   });
