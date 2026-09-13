@@ -113,8 +113,17 @@ model Case {
   mergeDismissals MergeDismissal[]
   monitors        Monitor[]
 
+  /// v2. Optional: a case that never collects, resolves or reads the v2
+  /// graph works exactly as it did without one. A case that does needs one,
+  /// because `authorizationRef` is a string and the v2 gate needs a window,
+  /// an issuer and a permission list.
+  authorizationId String?
+  authorization   Authorization? @relation(fields: [authorizationId], references: [id], onDelete: SetNull)
+  observations    Observation[]
+
   @@index([status, createdAt])
   @@index([archivedAt])
+  @@index([authorizationId])
 }
 
 /// One authorized target. The gate matches subjects against these rows and
@@ -414,4 +423,445 @@ model MonitorChange {
 
   @@index([caseId, acknowledgedAt])
   @@index([monitorId, createdAt])
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v2 — fusion, resolution, the temporal graph, gallery-restricted biometrics
+//
+// Additive. Nothing above changed shape. Names avoid the two collisions the
+// spec would have created: the connector table is `CollectionSource` because
+// `Source` is the @scout/sources registry type, and read audit is `AccessLog`
+// because `AuditEvent` already exists with a different shape.
+//
+// Scores and confidence are integer basis points (0–10000). Never floats.
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum SourceClass {
+  OWNED
+  LICENSED
+  PUBLIC_RECORD
+  OPEN_WEB
+  BROKER
+  SENSOR
+  SATELLITE
+  FIRST_PARTY
+}
+
+enum ActionClass {
+  COLLECT
+  RESOLVE
+  READ_GRAPH
+  BIOMETRIC_COMPARE
+  PROPOSE
+  APPROVE_CONSEQUENTIAL
+}
+
+/// The v2 authorization object. `Case.authorizationRef` names it; this row
+/// says who issued it, what it permits, and when it stops. A revoked row is
+/// kept, never deleted: the record that something was authorized and then
+/// wasn't is part of the audit trail.
+model Authorization {
+  id        String @id @default(cuid())
+  reference String
+  issuedBy  String
+  /// `{ scope: ScopeEntry[], entityKinds: string[] }`, parsed by @scout/scope.
+  boundary      Json
+  sourceClasses SourceClass[]
+  actionClasses ActionClass[]
+  validFrom     DateTime
+  validUntil    DateTime
+  revokedAt     DateTime?
+  revokedBy     String?
+  revokedReason String?
+  createdAt     DateTime @default(now())
+  createdBy     String   @default("local")
+
+  cases          Case[]
+  observations   Observation[]
+  edges          EntityEdge[]
+  resolutionRuns ResolutionRun[]
+  comparisons    BiometricComparison[]
+
+  @@index([reference])
+  @@index([validUntil, revokedAt])
+}
+
+/// A v2 collector, as registered. The code declaration in packages/fusion is
+/// the source of truth for what it does; this row records what it is and
+/// under what terms, so an observation can always be traced to a licence.
+model CollectionSource {
+  id                      String      @id
+  name                    String
+  class                   SourceClass
+  /// Required. A collector that cannot state its terms does not register.
+  licensingTerms          String
+  tosUrl                  String?
+  refreshCadenceSeconds   Int
+  spatialResolutionMeters Int?
+  temporalLagSeconds      Int?
+  enabled                 Boolean     @default(true)
+  /// Env var name. Never the credential.
+  credentialsRef          String?
+  createdAt               DateTime    @default(now())
+
+  observations Observation[]
+}
+
+/// The atomic unit. Immutable once written (UPDATE is rejected by trigger;
+/// DELETE is left to retention, which minimizes what was collected about
+/// people while keeping the record of what was done).
+///
+/// Four NOT NULL provenance columns. An observation without them is a write
+/// failure in @scout/fusion before it reaches here, and here if it somehow
+/// does.
+model Observation {
+  id              String           @id @default(cuid())
+  sourceId        String
+  source          CollectionSource @relation(fields: [sourceId], references: [id])
+  authorizationId String
+  authorization   Authorization    @relation(fields: [authorizationId], references: [id])
+  caseId          String?
+  case            Case?            @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  /// When Scout received it.
+  collectedAt DateTime
+  /// When it happened, as the source states it.
+  observedAt  DateTime
+
+  rawPayload        Json
+  normalizedPayload Json
+  /// sha256 of the canonical normalized payload. Dedupe key per source.
+  contentHash       String
+  /// PostGIS. Null when the observation has no position. Written through raw
+  /// SQL; the Prisma client omits Unsupported fields.
+  geom              Unsupported("geography(Point,4326)")?
+  confidenceBp      Int?
+  indeterminate     Boolean @default(false)
+  createdAt         DateTime @default(now())
+
+  identifiers Identifier[]
+  memberships EntityMember[]
+
+  @@unique([sourceId, contentHash])
+  @@index([authorizationId, observedAt])
+  @@index([observedAt])
+  @@index([caseId])
+}
+
+enum IdentifierKind {
+  EMAIL
+  PHONE
+  HANDLE
+  DEVICE_ID
+  PLATE
+  TAIL_NUMBER
+  ICAO_HEX
+  MMSI
+  IMO
+  HASH
+  DOCUMENT_NO
+  NAME
+  ADDRESS
+  DOMAIN
+  IP
+  URL
+}
+
+/// An identifier extracted from one observation. Raw and normalized both
+/// kept, with the normalizer version, so a normalizer change re-resolves only
+/// what it touched.
+model Identifier {
+  id                   String         @id @default(cuid())
+  observationId        String
+  observation          Observation    @relation(fields: [observationId], references: [id], onDelete: Cascade)
+  kind                 IdentifierKind
+  value                String
+  normalizedValue      String
+  normalizationVersion String
+
+  @@index([observationId])
+  @@index([kind, normalizedValue])
+}
+
+enum FusionEntityKind {
+  PERSON
+  ORG
+  VESSEL
+  AIRCRAFT
+  VEHICLE
+  ACCOUNT
+  LOCATION
+  DEVICE
+  INFRASTRUCTURE
+}
+
+enum EntityStatus {
+  RESOLVED
+  PROVISIONAL
+  UNRESOLVED
+  DISPUTED
+}
+
+/// The resolved cluster. Separate from the v1 case graph on purpose: that
+/// graph is recomputed from findings on every read and stays that way. This
+/// is persisted because a resolution run is expensive and its decisions are
+/// evidence.
+model Entity {
+  id              String           @id @default(cuid())
+  kind            FusionEntityKind
+  canonicalLabel  String
+  status          EntityStatus     @default(PROVISIONAL)
+  createdAt       DateTime         @default(now())
+  lastResolvedAt  DateTime?
+  resolutionRunId String?
+  resolutionRun   ResolutionRun?   @relation(fields: [resolutionRunId], references: [id], onDelete: SetNull)
+
+  members     EntityMember[]
+  edgesFrom   EntityEdge[]       @relation("EdgeFrom")
+  edgesTo     EntityEdge[]       @relation("EdgeTo")
+  enrollments GalleryEnrollment[]
+
+  @@index([kind, status])
+  @@index([resolutionRunId])
+}
+
+enum MemberAddedBy {
+  SYSTEM
+  ANALYST
+}
+
+/// Observation-to-entity membership. Never deleted (trigger). Superseded
+/// instead, so an observation's whole membership history stays readable.
+model EntityMember {
+  id            String        @id @default(cuid())
+  entityId      String
+  entity        Entity        @relation(fields: [entityId], references: [id])
+  observationId String
+  observation   Observation   @relation(fields: [observationId], references: [id])
+  scoreBp       Int
+  method        String
+  addedAt       DateTime      @default(now())
+  addedBy       MemberAddedBy
+  addedByActor  String        @default("system")
+  supersededAt  DateTime?
+  supersededBy  String?
+
+  @@index([entityId, supersededAt])
+  @@index([observationId])
+}
+
+enum RunStatus {
+  RUNNING
+  COMPLETE
+  FAILED
+}
+
+model ResolutionRun {
+  id                   String        @id @default(cuid())
+  authorizationId      String
+  authorization        Authorization @relation(fields: [authorizationId], references: [id])
+  status               RunStatus     @default(RUNNING)
+  startedAt            DateTime      @default(now())
+  finishedAt           DateTime?
+  modelVersion         String
+  normalizationVersion String
+  matchThresholdBp     Int
+  reviewThresholdBp    Int
+  pairsEvaluated       Int           @default(0)
+  triggeredBy          String        @default("local")
+  errorMessage         String?
+
+  entities  Entity[]
+  decisions MatchDecision[]
+
+  @@index([authorizationId, startedAt])
+}
+
+enum MatchOutcome {
+  MATCH
+  NON_MATCH
+  REVIEW
+  INDETERMINATE
+}
+
+/// Every pair evaluated, matches and non-matches alike. Immutable (trigger).
+/// This table is the product's defensibility: what was compared, on which
+/// blocking key, with which model, and what it scored.
+model MatchDecision {
+  id                 String        @id @default(cuid())
+  runId              String
+  run                ResolutionRun @relation(fields: [runId], references: [id])
+  leftObservationId  String
+  rightObservationId String
+  scoreBp            Int?
+  decision           MatchOutcome
+  featureVector      Json
+  modelVersion       String
+  blockingKey        String
+  createdAt          DateTime      @default(now())
+
+  @@unique([runId, leftObservationId, rightObservationId])
+  @@index([decision, createdAt])
+  @@index([leftObservationId])
+  @@index([rightObservationId])
+}
+
+/// A human's call on a pair. Its own table, keyed by the unordered pair, so
+/// the resolver can read it before scoring: a pinned decision outranks the
+/// model on every re-run. Append-only; the newest row for a pair wins.
+model Adjudication {
+  id                 String       @id @default(cuid())
+  /// `min(id)|max(id)` of the two observations.
+  pairKey            String
+  leftObservationId  String
+  rightObservationId String
+  decision           MatchOutcome
+  adjudicatedBy      String
+  note               String
+  createdAt          DateTime     @default(now())
+
+  @@index([pairKey, createdAt])
+}
+
+enum EdgeRelation {
+  CO_LOCATED
+  COMMUNICATED_WITH
+  OWNS
+  OPERATES
+  MEMBER_OF
+  TRANSACTED_WITH
+  SAME_DEVICE
+  ASSOCIATED_WITH
+}
+
+/// The temporal graph. Two clocks: validFrom/validUntil is when the
+/// relationship held; createdAt/supersededAt is when Scout knew it. A query
+/// at asOf = T applies both (packages/fusion/src/temporal.ts). Never deleted
+/// (trigger); superseded instead.
+model EntityEdge {
+  id                     String        @id @default(cuid())
+  fromEntityId           String
+  from                   Entity        @relation("EdgeFrom", fields: [fromEntityId], references: [id])
+  toEntityId             String
+  to                     Entity        @relation("EdgeTo", fields: [toEntityId], references: [id])
+  relation               EdgeRelation
+  validFrom              DateTime
+  validUntil             DateTime?
+  confidenceBp           Int
+  /// Never empty. Enforced in the write path; a check constraint backs it.
+  evidenceObservationIds String[]
+  authorizationId        String
+  authorization          Authorization @relation(fields: [authorizationId], references: [id])
+  createdAt              DateTime      @default(now())
+  createdBy              String        @default("system")
+  supersededAt           DateTime?
+  supersededBy           String?
+
+  @@index([fromEntityId, validFrom])
+  @@index([toEntityId, validFrom])
+  @@index([authorizationId])
+  @@index([createdAt])
+}
+
+// ── biometrics: gallery-restricted ────────────────────────────────────────
+
+enum LawfulBasis {
+  CONSENT
+  COURT_ORDER
+  STATUTORY_AUTHORITY
+  EMPLOYMENT
+  CONTRACT
+}
+
+/// A named set of enrolled identities with one recorded lawful basis. The
+/// only thing a probe can be compared against.
+model Gallery {
+  id                     String      @id @default(cuid())
+  name                   String
+  purpose                String
+  custodianOrg           String
+  lawfulBasis            LawfulBasis
+  lawfulBasisDocumentRef String
+  reviewDueAt            DateTime
+  createdAt              DateTime    @default(now())
+  createdBy              String      @default("local")
+
+  enrollments GalleryEnrollment[]
+  comparisons BiometricComparison[]
+
+  @@index([reviewDueAt])
+}
+
+enum Modality {
+  FACE
+  VOICE
+}
+
+/// One identity's template in one gallery. `templateRef` points at the
+/// encrypted embedding store; the media it came from is never stored beside
+/// it. Expires; re-review is required.
+model GalleryEnrollment {
+  id                     String   @id @default(cuid())
+  galleryId              String
+  gallery                Gallery  @relation(fields: [galleryId], references: [id])
+  entityId               String
+  entity                 Entity   @relation(fields: [entityId], references: [id])
+  modality               Modality
+  templateRef            String
+  enrolledAt             DateTime @default(now())
+  enrolledBy             String
+  lawfulBasisDocumentRef String
+  expiresAt              DateTime
+  revokedAt              DateTime?
+
+  @@index([galleryId, modality, expiresAt])
+  @@index([entityId])
+}
+
+enum ComparisonDecision {
+  MATCH
+  NO_MATCH
+  INDETERMINATE
+}
+
+/// Every comparison, whether or not it matched. Immutable (trigger).
+model BiometricComparison {
+  id              String             @id @default(cuid())
+  probeHash       String
+  galleryId       String
+  gallery         Gallery            @relation(fields: [galleryId], references: [id])
+  authorizationId String
+  authorization   Authorization      @relation(fields: [authorizationId], references: [id])
+  modality        Modality
+  /// `[{ enrollmentId, distanceBp }]`, best first.
+  topMatches      Json
+  thresholdBp     Int
+  decision        ComparisonDecision
+  requestedBy     String
+  requestedAt     DateTime           @default(now())
+
+  @@index([galleryId, requestedAt])
+  @@index([authorizationId, requestedAt])
+}
+
+// ── read audit ────────────────────────────────────────────────────────────
+
+/// Every read of the v2 graph. Who, under what authorization, what action,
+/// which targets (ids, never payloads), how many came back, when. Same
+/// immutability trigger as QueryLog. `AuditEvent` keeps its v1 shape.
+model AccessLog {
+  id              String   @id @default(cuid())
+  actor           String
+  authorizationId String?
+  action          String
+  targetType      String
+  targetIds       String[]
+  queryText       String?
+  resultCount     Int
+  createdAt       DateTime @default(now())
+
+  @@index([authorizationId, createdAt])
+  @@index([actor, createdAt])
+  @@index([targetType, createdAt])
 }

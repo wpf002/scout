@@ -1,6 +1,7 @@
 export { prisma } from "./client.js";
 export * from "./mappers.js";
 export * from "./audit.js";
+export * from "./fusion.js";
 export type {
   AuditEvent,
   Case,

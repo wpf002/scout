@@ -40,7 +40,6 @@ process.env["DATABASE_URL"] = testDatabaseUrl();
 export default defineConfig({
   test: {
     globalSetup: ["./src/test/database.ts"],
-    setupFiles: ["./src/test/network.ts"],
     env: {
       DATABASE_URL: testDatabaseUrl(),
       // The suite asserts that out-of-scope subjects are refused. Development
