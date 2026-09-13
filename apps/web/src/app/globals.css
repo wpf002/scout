@@ -4009,3 +4009,20 @@ a:hover {
   font-size: 10px;
   line-height: 16px;
 }
+
+/* Tables in the case file's v2 tabs wrap inside the panel rather than
+ * widening it; a panel that scrolls sideways hides its own left edge. */
+.casefile-body .agent table,
+.casefile-body .recognition table {
+  table-layout: fixed;
+}
+
+.casefile-body .agent td,
+.casefile-body .recognition td {
+  overflow-wrap: anywhere;
+}
+
+.casefile-body .agent th,
+.casefile-body .recognition th {
+  white-space: normal;
+}
