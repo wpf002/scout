@@ -304,6 +304,20 @@ export interface InfraSweepResult {
   observations: AttributedObservation[];
 }
 
+export interface DatasetSweepResult {
+  subject: Subject;
+  caseId: string;
+  sources: SweepSourceReport[];
+  /** Sources gated for this subject kind, and why. Never silently omitted. */
+  excluded: SweepExclusion[];
+  totals: {
+    observations: number;
+    sanctioned: number;
+    suggestedSubjects: number;
+  };
+  observations: AttributedObservation[];
+}
+
 export interface QueryLogRow {
   id: string;
   sourceId: string;

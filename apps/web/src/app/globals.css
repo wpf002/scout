@@ -2918,6 +2918,137 @@ a:hover {
   background: rgba(155, 107, 255, 0.12);
 }
 
+.sweep-panel {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.sweep-form {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sweep-form select,
+.sweep-form input {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 5px 7px;
+}
+
+.sweep-form input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.sweep-form button {
+  padding: 5px 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sweep-form button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sweep-error {
+  margin: 0;
+  color: var(--deny);
+  font-size: 12px;
+}
+
+.sweep-totals {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.sweep-totals b {
+  color: var(--text);
+}
+
+.sweep-totals .sweep-excluded-count b {
+  color: var(--warn);
+}
+
+.sweep-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sweep-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.sw-name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sw-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sw-status.ok {
+  color: var(--ok);
+}
+
+.sw-status.error {
+  color: var(--deny);
+}
+
+.sw-status.blocked {
+  color: var(--scoped);
+}
+
+.sw-why {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.sweep-excluded {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.sweep-excluded h3 {
+  margin: 0 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
 .hud-layer {
   padding: 1px 6px;
   border: 1px solid var(--border);

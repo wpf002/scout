@@ -25,6 +25,7 @@ import { Investigation } from "@/components/Investigation";
 import { SpacePanel } from "@/components/SpacePanel";
 import { MarketsPanel } from "@/components/MarketsPanel";
 import { MarauderPanel } from "@/components/MarauderPanel";
+import { GlobalSweep } from "@/components/GlobalSweep";
 import { EMPTY_LAYER, type ImageryOverlay, type MapLayer, type Viewport } from "@/lib/investigation";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
@@ -48,6 +49,7 @@ const TOOLS = [
   { id: "space", glyph: "◉", name: "Live from Space" },
   { id: "markets", glyph: "▦", name: "Markets" },
   { id: "marauder", glyph: "✷", name: "Marauder" },
+  { id: "sweep", glyph: "⊛", name: "Global Sweep" },
   { id: "case", glyph: "⛁", name: "Case File" },
   { id: "investigation", glyph: "◈", name: "Investigation" },
   { id: "layers", glyph: "≡", name: "All Layers" },
@@ -1019,6 +1021,16 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <MarketsPanel kp={kp} />
+        </section>
+      ) : null}
+
+      {tool === "sweep" ? (
+        <section className="tool-panel wide">
+          <div className="tool-panel-head">
+            <h2>Global Sweep</h2>
+            <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          <GlobalSweep />
         </section>
       ) : null}
 

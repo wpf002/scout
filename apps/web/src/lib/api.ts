@@ -7,6 +7,7 @@ import type {
   DatasetRunResult,
   FindingRecord,
   InfraSweepResult,
+  DatasetSweepResult,
   MonitorRecord,
   MonitorRunResult,
   QueryPlan,
@@ -418,6 +419,19 @@ export const api = {
    */
   infraSweep: (body: { caseId: string; subject: Subject }) =>
     request<InfraSweepResult>("/infra/sweep", {
+      method: "POST",
+      body: { ...body, confirm: true },
+    }),
+
+  /**
+   * Batches the dataset sources that are ungated for this subject kind.
+   *
+   * The API filters on the effective per-subject-kind gate and reports what it
+   * excluded, so a sweep never reads as "covered everything" when a source
+   * actually refused.
+   */
+  datasetSweep: (body: { caseId: string; subject: Subject }) =>
+    request<DatasetSweepResult>("/datasets/sweep", {
       method: "POST",
       body: { ...body, confirm: true },
     }),
