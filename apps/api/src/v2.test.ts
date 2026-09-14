@@ -473,7 +473,7 @@ run("Scout v2 — stage 3: collection", () => {
     });
 
     it("is inert for the satellite catalogues without their keys", async () => {
-      for (const collectorId of ["sentinel-2", "planet-scenes", "maxar-catalog"]) {
+      for (const collectorId of ["sentinel-2"]) {
         const r = await post("/v2/collect", { caseId: nineCase, collectorId, params: { bbox: box, ...window } });
         expect(r.statusCode).toBe(200);
         expect(r.json().status).toBe("inert");
@@ -529,22 +529,6 @@ run("Scout v2 — stage 3: collection", () => {
       expect((await get(`/v2/imagery/tiles?caseId=${other}`)).json().count).toBe(0);
     });
 
-    it("records Planet and Maxar catalogue scenes as metadata when keyed", async () => {
-      process.env["PLANET_API_KEY"] = "pk";
-      process.env["MAXAR_API_KEY"] = "mk";
-      const planet = await post("/v2/collect", { caseId: nineCase, collectorId: "planet-scenes", params: { bbox: box, ...window } });
-      expect(planet.json().written).toBe(1);
-      const maxar = await post("/v2/collect", { caseId: nineCase, collectorId: "maxar-catalog", params: { bbox: box, ...window } });
-      expect(maxar.json().written).toBe(1);
-      const rows = await prisma.observation.findMany({ where: { id: { in: [...planet.json().observationIds, ...maxar.json().observationIds] } } });
-      expect(rows.map((r) => (r.normalizedPayload as { provider: string; stored: boolean }).provider).sort()).toEqual(["maxar", "planet"]);
-      expect(rows.every((r) => (r.normalizedPayload as { stored: boolean }).stored === false)).toBe(true);
-      expect(storedObjectKeys().some((k) => k.includes("planet") || k.includes("maxar"))).toBe(false);
-      delete process.env["PLANET_API_KEY"];
-      delete process.env["MAXAR_API_KEY"];
-      delete process.env["SENTINELHUB_CLIENT_ID"];
-      delete process.env["SENTINELHUB_CLIENT_SECRET"];
-    });
   });
 
   describe("stage 10: recognition, gallery-restricted", () => {

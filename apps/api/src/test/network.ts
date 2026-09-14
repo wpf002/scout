@@ -125,12 +125,6 @@ const SH_CATALOG = JSON.stringify({
 const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 const TIFF_STUB = Buffer.from("II*\u0000\u0008\u0000\u0000\u0000scout-test-tiff", "latin1");
 
-const PLANET_SEARCH = JSON.stringify({
-  features: [{ id: "20260902_101512_12_2455", properties: { acquired: "2026-09-02T10:15:12Z", cloud_cover: 0.08, item_type: "PSScene", satellite_id: "2455", gsd: 3.9 } }],
-});
-const MAXAR_SEARCH = JSON.stringify({
-  features: [{ id: "10300100E1F2A300", collection: "wv03-vis", properties: { datetime: "2026-09-03T11:02:00Z", "eo:cloud_cover": 5, platform: "worldview-03", gsd: 0.31 } }],
-});
 
 /**
  * Object storage, in memory: the S3 verbs the pipeline uses, keyed by URL.
@@ -165,8 +159,6 @@ const ROUTES: Array<{ match: RegExp; reply: () => Response }> = [
   { match: /^https:\/\/closed\.example\/robots\.txt$/, reply: () => text(CLOSED_ROBOTS, "text/plain") },
   { match: /^https:\/\/services\.sentinel-hub\.com\/auth\/|^https:\/\/identity\.dataspace\.copernicus\.eu\/auth\//, reply: () => text(SH_TOKEN, "application/json") },
   { match: /^https:\/\/(services\.sentinel-hub\.com|sh\.dataspace\.copernicus\.eu)\/api\/v1\/catalog\//, reply: () => text(SH_CATALOG, "application/json") },
-  { match: /^https:\/\/api\.planet\.com\/data\/v1\/quick-search/, reply: () => text(PLANET_SEARCH, "application/json") },
-  { match: /^https:\/\/api\.maxar\.com\/discovery\/v1\/search/, reply: () => text(MAXAR_SEARCH, "application/json") },
   { match: /^https:\/\/opensky-network\.org\//, reply: () => text(OPENSKY, "application/json") },
   { match: /^https:\/\/(api\.adsb\.lol|opendata\.adsb\.fi)\//, reply: () => text(ADSB_EMPTY, "application/json") },
   { match: /^https:\/\/www\.sec\.gov\/files\/company_tickers\.json/, reply: () => text(SEC_TICKERS, "application/json") },

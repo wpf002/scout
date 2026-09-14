@@ -14,8 +14,6 @@ import { secEdgarCollector } from "./sec-edgar.js";
 import { openWebCollector } from "./open-web.js";
 import { telemetryCollector } from "./telemetry.js";
 import { sentinel2Collector } from "./sentinel2.js";
-import { planetCollector } from "./planet.js";
-import { maxarCollector } from "./maxar.js";
 
 /**
  * A collector the API can actually run.
@@ -60,8 +58,6 @@ collectors.register(secEdgarCollector);
 collectors.register(openWebCollector);
 collectors.register(telemetryCollector);
 collectors.register(sentinel2Collector);
-collectors.register(planetCollector);
-collectors.register(maxarCollector);
 
 /**
  * A licensed broker is an adapter interface, not a vendor. One registers

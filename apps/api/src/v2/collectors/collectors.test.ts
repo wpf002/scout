@@ -6,8 +6,6 @@ import { collectAisStream, normalizeVessels, parseSightingTime, sightingsFromMar
 import { normalizeTelemetry } from "./telemetry.js";
 import { extractFacts, robotsAllows } from "./open-web.js";
 import { bboxHash, cogify, isCloudOptimized, pixelSize, resetCogCommand } from "./imagery.js";
-import { normalizePlanet } from "./planet.js";
-import { normalizeMaxar } from "./maxar.js";
 import { normalizeAircraft } from "./adsb.js";
 import { matchCompanies, normalizeCompanies } from "./sec-edgar.js";
 
@@ -23,7 +21,7 @@ const feature = (props: Record<string, unknown>, coords: [number, number] = [-12
 describe("the collector registry", () => {
   it("holds every collector, each with licensing terms", () => {
     const ids = listRunnable().map((c) => c.id).sort();
-    expect(ids).toEqual(["adsb-live", "ais-live", "first-party-telemetry", "maxar-catalog", "open-web", "planet-scenes", "sec-edgar", "sentinel-2"]);
+    expect(ids).toEqual(["adsb-live", "ais-live", "first-party-telemetry", "open-web", "sec-edgar", "sentinel-2"]);
     for (const c of listRunnable()) expect(c.licensingTerms.length).toBeGreaterThan(40);
   });
 
@@ -216,15 +214,4 @@ describe("the imagery pipeline", () => {
     expect(isCloudOptimized(new TextEncoder().encode("II*\u0000 ... LAYOUT=IFDS_BEFORE_DATA ..."))).toBe(true);
   });
 
-  it("records catalogue scenes from Planet and Maxar as unstored metadata", () => {
-    const params = { bbox: [5.3, 60.39, 5.32, 60.4] as [number, number, number, number], from: new Date("2026-09-01"), to: new Date("2026-09-10"), maxCloudPct: 30, maxScenes: 2 };
-    const [planet] = normalizePlanet({ params, scenes: [{ itemId: "p1", itemType: "PSScene", acquired: "2026-09-02T10:15:12Z", cloudCoverPct: 8, satelliteId: "2455", gsdM: 3.9 }] }, META);
-    expect(planet?.entityKind).toBe("LOCATION");
-    expect(planet?.position?.lon).toBeCloseTo(5.31, 6);
-    expect(planet?.position?.lat).toBeCloseTo(60.395, 6);
-    expect(planet?.normalizedPayload).toMatchObject({ provider: "planet", stored: false, cloudCoverPct: 8 });
-    const [maxar] = normalizeMaxar({ params, scenes: [{ itemId: "m1", collection: "wv03-vis", sensedAt: "2026-09-03T11:02:00Z", cloudCoverPct: 5, platform: "worldview-03", gsdM: 0.31 }] }, META);
-    expect(maxar?.normalizedPayload).toMatchObject({ provider: "maxar", platform: "worldview-03", stored: false });
-    expect(maxar?.observedAt.toISOString()).toBe("2026-09-03T11:02:00.000Z");
-  });
 });
