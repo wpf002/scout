@@ -134,16 +134,38 @@ export async function registerCaseRoutes(app: FastifyInstance): Promise<void> {
         name: z.string().trim().min(1).max(200).optional(),
         notes: z.string().trim().max(5000).optional(),
         status: z.enum(["ACTIVE", "CLOSED"]).optional(),
+        /**
+         * Take the case out of the pickers.
+         *
+         * Distinct from status: a closed case is finished work and still
+         * listed, an archived one is not offered as somewhere to start. The
+         * list route already hides archived rows; nothing wrote the field
+         * until now, so scratch cases stayed in every dropdown for ever.
+         */
+        archived: z.boolean().optional(),
       })
       .parse(request.body);
 
     await requireCase(request.params.id);
 
+    const { archived, ...fields } = body;
     const updated = await prisma.case.update({
       where: { id: request.params.id },
-      data: body,
+      data: {
+        ...fields,
+        ...(archived === undefined ? {} : { archivedAt: archived ? new Date() : null }),
+      },
       include: { scopeEntries: true },
     });
+
+    if (archived !== undefined) {
+      await recordAuditEvent({
+        caseId: updated.id,
+        action: archived ? "case.archived" : "case.unarchived",
+        actor: operatorOf(request),
+        detail: { archived },
+      });
+    }
 
     if (body.status !== undefined) {
       await recordAuditEvent({
