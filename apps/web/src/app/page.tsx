@@ -26,6 +26,7 @@ import { SpacePanel } from "@/components/SpacePanel";
 import { MarketsPanel } from "@/components/MarketsPanel";
 import { MarauderPanel } from "@/components/MarauderPanel";
 import { GlobalSweep } from "@/components/GlobalSweep";
+import { ArcGisPanel } from "@/components/ArcGisPanel";
 import { EMPTY_LAYER, type ImageryOverlay, type MapLayer, type Viewport } from "@/lib/investigation";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
@@ -50,6 +51,7 @@ const TOOLS = [
   { id: "markets", glyph: "▦", name: "Markets" },
   { id: "marauder", glyph: "✷", name: "Marauder" },
   { id: "sweep", glyph: "⊛", name: "Global Sweep" },
+  { id: "arcgis", glyph: "⬡", name: "ArcGIS Layers" },
   { id: "self", glyph: "⌖", name: "Self Track" },
   { id: "case", glyph: "⛁", name: "Case File" },
   { id: "investigation", glyph: "◈", name: "Investigation" },
@@ -95,6 +97,7 @@ export default function Page() {
   const [selfNote, setSelfNote] = useState<string | null>(null);
   const [overview, setOverview] = useState<string[] | null>(null);
   const [overviewing, setOverviewing] = useState(false);
+  const [arcgisFeatures, setArcgisFeatures] = useState<GeoJSON.Feature[]>([]);
   const [basemap, setBasemap] = useState<BasemapId>("sat");
   const [projection, setProjection] = useState<"globe" | "mercator">("globe");
   const [cursor, setCursor] = useState({ lat: 0, lon: 0, zoom: 2.2 });
@@ -608,6 +611,7 @@ export default function Page() {
         basemap={basemap}
         projection={projection}
         osintFeatures={osintFeatures}
+        arcgisFeatures={arcgisFeatures}
         onSelect={setSelection}
         onStatus={onStatus}
         onCursor={onCursor}
@@ -1068,6 +1072,16 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <GlobalSweep />
+        </section>
+      ) : null}
+
+      {tool === "arcgis" ? (
+        <section className="tool-panel wide">
+          <div className="tool-panel-head">
+            <h2>ArcGIS Layers</h2>
+            <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          <ArcGisPanel onImport={(features) => setArcgisFeatures(features)} />
         </section>
       ) : null}
 

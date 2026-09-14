@@ -8,6 +8,32 @@ import { markets } from "../live/feeds/markets.js";
 import { news } from "../live/feeds/news.js";
 import { modelClientFromEnv, parseJsonReply } from "@scout/reason";
 
+/**
+ * Whether a url is a public ArcGIS REST service this API will fetch.
+ *
+ * The client names the service to import, so without this the route is an open
+ * proxy: any url, including one on the machine's own network. HTTPS only, and
+ * either an arcgis.com host or a host publishing the standard
+ * /arcgis/rest/services/ path — which is what an agency's own portal looks
+ * like. Hostnames that resolve to the local machine are refused outright.
+ */
+function isArcGisUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal")) return false;
+  // Bare addresses are never a public portal, and are how an SSRF reaches a
+  // metadata endpoint or a neighbour on the same subnet.
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(":")) return false;
+  const isArcGisHost = host === "arcgis.com" || host.endsWith(".arcgis.com");
+  return isArcGisHost || url.pathname.includes("/arcgis/rest/services/");
+}
+
 /** What the client is showing. Bounded so a huge map cannot send a huge prompt. */
 const overviewSchema = z.object({
   items: z
@@ -207,6 +233,71 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         reason: error instanceof Error ? error.message : String(error),
       });
     }
+  });
+
+  /**
+   * GET /live/arcgis/search — public feature services matching a query.
+   *
+   * ArcGIS Online's catalogue is public and keyless. `access:public` is pinned
+   * on because most of what the catalogue lists is token-gated at the data
+   * layer even when its metadata is visible: without it, half the results
+   * import as "Token Required".
+   */
+  app.get<{ Querystring: Record<string, string | undefined> }>("/live/arcgis/search", async (request, reply) => {
+    const q = (request.query["q"] ?? "").trim().slice(0, 200);
+    if (q === "") throw badRequest("q is required.");
+    const url =
+      "https://www.arcgis.com/sharing/rest/search?f=json&num=20&sortField=numViews&sortOrder=desc&q=" +
+      encodeURIComponent(`${q} type:"Feature Service" access:public`);
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (!response.ok) throw badRequest(`ArcGIS answered ${response.status}.`);
+    const body = (await response.json()) as { results?: unknown[] };
+    const results = (body.results ?? []).flatMap((raw) => {
+      const r = raw as Record<string, unknown>;
+      const serviceUrl = typeof r["url"] === "string" ? r["url"] : null;
+      if (serviceUrl === null || !isArcGisUrl(serviceUrl)) return [];
+      return [{
+        id: String(r["id"] ?? ""),
+        title: String(r["title"] ?? "Untitled"),
+        owner: String(r["owner"] ?? ""),
+        snippet: typeof r["snippet"] === "string" ? r["snippet"] : null,
+        views: typeof r["numViews"] === "number" ? r["numViews"] : 0,
+        tags: Array.isArray(r["tags"]) ? (r["tags"] as unknown[]).filter((t): t is string => typeof t === "string").slice(0, 6) : [],
+        url: serviceUrl,
+      }];
+    });
+    return reply.header("cache-control", "no-store").send({ count: results.length, results });
+  });
+
+  /**
+   * GET /live/arcgis/features — one service's features as GeoJSON.
+   *
+   * The url comes from the client, so it is checked against the same host rule
+   * the search applies before anything is fetched: an unchecked url here would
+   * turn the API into an open proxy onto whatever the caller names.
+   */
+  app.get<{ Querystring: Record<string, string | undefined> }>("/live/arcgis/features", async (request, reply) => {
+    const target = (request.query["url"] ?? "").trim();
+    if (!isArcGisUrl(target)) throw badRequest("url must be a public ArcGIS REST service.");
+    const limit = Math.min(Number(request.query["limit"] ?? 2000) || 2000, 4000);
+
+    // A service url may already name a layer ("…/MapServer/1"); otherwise the
+    // first layer is the one to ask for.
+    const base = /\/\d+$/.test(target) ? target : `${target}/0`;
+    const url =
+      `${base}/query?f=geojson&where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&resultRecordCount=${limit}`;
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(25_000) });
+    if (!response.ok) throw badRequest(`ArcGIS answered ${response.status}.`);
+    const body = (await response.json()) as { type?: string; features?: unknown[]; error?: { message?: string } };
+    if (body.error !== undefined) {
+      throw badRequest(`ArcGIS refused: ${body.error.message ?? "unknown"}.`);
+    }
+    return reply.header("cache-control", "no-store").send({
+      type: "FeatureCollection",
+      features: Array.isArray(body.features) ? body.features : [],
+    });
   });
 
   /** The markets crawl. Not geographic, so not a layer. */

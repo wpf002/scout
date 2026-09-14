@@ -37,6 +37,8 @@ export interface Props {
   basemap: BasemapId;
   projection: "globe" | "mercator";
   osintFeatures: GeoJSON.Feature[];
+  /** Imported ArcGIS layers. Any geometry, so drawn as fill, line and point. */
+  arcgisFeatures?: GeoJSON.Feature[];
   onSelect: (selection: Selection | null) => void;
   onStatus: (status: Record<string, number | string>) => void;
   onCursor: (position: { lat: number; lon: number; zoom: number }) => void;
@@ -114,6 +116,7 @@ function GlobeMapImpl({
   basemap,
   projection,
   osintFeatures,
+  arcgisFeatures = [],
   onSelect,
   onStatus,
   onCursor,
@@ -1729,6 +1732,53 @@ function GlobeMapImpl({
       source.setData(data);
     }
   }, [osintFeatures, ready, redraw]);
+
+  // ── Imported ArcGIS layers ───────────────────────────────────────────────
+  // One source, three layers: a service can return polygons, lines or points
+  // and a circle layer alone would draw a pipeline as nothing at all.
+  useEffect(() => {
+    const instance = map.current;
+    if (instance === null || !ready) return;
+
+    const data: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: arcgisFeatures,
+    };
+
+    const source = instance.getSource("arcgis") as maplibregl.GeoJSONSource | undefined;
+    if (source === undefined) {
+      instance.addSource("arcgis", { type: "geojson", data });
+      instance.addLayer({
+        id: "arcgis-fill",
+        type: "fill",
+        source: "arcgis",
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: { "fill-color": "#4a9eff", "fill-opacity": 0.18 },
+      });
+      instance.addLayer({
+        id: "arcgis-line",
+        type: "line",
+        source: "arcgis",
+        filter: ["!=", ["geometry-type"], "Point"],
+        paint: { "line-color": "#4a9eff", "line-width": 1.4, "line-opacity": 0.85 },
+      });
+      instance.addLayer({
+        id: "arcgis-point",
+        type: "circle",
+        source: "arcgis",
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": 4,
+          "circle-color": "#4a9eff",
+          "circle-opacity": 0.9,
+          "circle-stroke-color": "#05050a",
+          "circle-stroke-width": 1,
+        },
+      });
+    } else {
+      source.setData(data);
+    }
+  }, [arcgisFeatures, ready, redraw]);
 
   /**
    * Attribute filters, applied to the style rather than to the data.
