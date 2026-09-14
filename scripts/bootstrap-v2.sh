@@ -79,8 +79,8 @@ fi
 # Every other v2 variable: add the example block once, without overwriting
 # anything already set.
 if ! grep -q '^S3_ENDPOINT=' .env; then
-  step "Appending v2 variables from .env.v2.example"
-  { printf '\n# ── v2 (added by scripts/bootstrap-v2.sh) ──\n'; grep -vE '^DATABASE_URL=' .env.v2.example; } >> .env
+  step "Appending v2 variables from .env.example"
+  { printf '\n# ── v2 (added by scripts/bootstrap-v2.sh) ──\n'; sed -n '/^# ── object storage/,$p' .env.example | grep -vE '^DATABASE_URL='; } >> .env
 fi
 
 set -a; . ./.env; set +a

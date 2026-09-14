@@ -26,7 +26,6 @@ apps/web/public/maplibre-gl-shared.mjs
 **/.pytest_cache/
 
 # v2 env template is a template, not a secret
-!.env.v2.example
 
 # per-run harness output; the baseline is the committed record
 services/resolution/eval/latest.json
