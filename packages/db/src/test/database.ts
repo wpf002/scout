@@ -24,13 +24,22 @@ export async function setup(): Promise<void> {
 
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-  execFileSync(
-    "pnpm",
-    ["--filter", "@scout/db", "exec", "prisma", "migrate", "deploy"],
-    {
-      cwd: root,
-      stdio: "ignore",
-      env: { ...process.env, DATABASE_URL: url },
-    },
-  );
+  try {
+    execFileSync(
+      "pnpm",
+      ["--filter", "@scout/db", "exec", "prisma", "migrate", "deploy"],
+      {
+        cwd: root,
+        // Capture rather than ignore: a swallowed setup failure told CI only
+        // "command failed", with the reason on a discarded stream. On failure
+        // the captured output is attached to the thrown error.
+        stdio: ["ignore", "pipe", "pipe"],
+        encoding: "utf8",
+        env: { ...process.env, DATABASE_URL: url },
+      },
+    );
+  } catch (error) {
+    const e = error as { stdout?: string; stderr?: string; message?: string };
+    throw new Error(`prisma migrate deploy failed against ${url}\n${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`);
+  }
 }
