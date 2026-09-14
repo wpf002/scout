@@ -231,6 +231,9 @@ export function Detail({
           }}
         />
         <h2>{selection.label}</h2>
+        {/* Which layer this came from. Colours are reused across layers, so the
+            dot alone cannot answer "what did I just click". */}
+        {def !== undefined ? <span className="hud-layer">{def.name}</span> : null}
         <button className="link" onClick={onClose} aria-label="Close">
           ×
         </button>

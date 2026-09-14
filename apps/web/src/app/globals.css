@@ -2918,6 +2918,17 @@ a:hover {
   background: rgba(155, 107, 255, 0.12);
 }
 
+.hud-layer {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 .scope-prefill {
   margin: 0 0 8px;
   padding: 6px 8px;

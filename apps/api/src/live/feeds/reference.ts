@@ -223,11 +223,20 @@ const GDELT_SCHEMA = z.object({
  * query, so a catch-all returns whatever is loudest globally rather than the
  * categories an operator watches.
  */
+/*
+ * Themes share one warm family, shaded by severity.
+ *
+ * These are news topics, not confirmed incidents, and they used to borrow the
+ * palettes of layers that do report incidents: "Armed conflict" was the exact
+ * red of Live Malware and "Displacement" the exact lavender of CCTV, so a GDELT
+ * dot was indistinguishable from a malware host on the same map. Reds stay with
+ * the threat layers; GDELT keeps the amber range of its own layer colour.
+ */
 const THEMES = [
-  { theme: "ARMEDCONFLICT", label: "Armed conflict", colour: "#ff3b52" },
+  { theme: "TERROR", label: "Terrorism", colour: "#ff6b35" },
+  { theme: "ARMEDCONFLICT", label: "Armed conflict", colour: "#ff8c42" },
   { theme: "PROTEST", label: "Protest", colour: "#ff9f0a" },
-  { theme: "TERROR", label: "Terrorism", colour: "#e0173a" },
-  { theme: "REFUGEES", label: "Displacement", colour: "#c8b0ff" },
+  { theme: "REFUGEES", label: "Displacement", colour: "#ffc300" },
   { theme: "NATURAL_DISASTER", label: "Disaster", colour: "#4fc3f7" },
   { theme: "CYBER_ATTACK", label: "Cyber", colour: "#30d0c0" },
 ];
