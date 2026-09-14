@@ -1617,14 +1617,28 @@ a:hover {
   border: 1px solid var(--border-strong);
   border-radius: 3px;
   font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--text-dim);
 }
 
+/*
+ * Active is the ordinary state, so it is marked, not celebrated: a dim border
+ * and a small dot rather than a line of bright green across the header.
+ */
 .case-status.active {
-  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
-  color: var(--ok);
+  border-color: var(--border-strong);
+  color: var(--text-dim);
+}
+
+.case-status.active::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ok) 70%, transparent);
+  vertical-align: middle;
 }
 
 /*
@@ -1839,6 +1853,22 @@ a:hover {
   color: var(--text-faint);
 }
 
+/*
+ * Inline labels are sentences, not field captions.
+ *
+ * The rule above is right for "Subject Kind" above an input and wrong for a
+ * checkbox whose label is a sentence: it shouted "ONLY WHAT WAS KNOWN THEN"
+ * across the console.
+ */
+.casefile-body label.tiny {
+  display: flex;
+  margin-bottom: 0;
+  font-size: 11px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-dim);
+}
+
 .casefile-body input,
 .casefile-body select,
 .casefile-body textarea {
@@ -1875,7 +1905,7 @@ a:hover {
 .casefile-body input[type="checkbox"] {
   width: auto;
   height: auto;
-  accent-color: var(--ok);
+  accent-color: color-mix(in srgb, var(--ok) 45%, var(--bg-raised));
 }
 
 /* ── Buttons ── */
@@ -3864,7 +3894,7 @@ a:hover {
 .investigation .scrub input[type="range"] {
   flex: 1;
   min-width: 120px;
-  accent-color: var(--ok);
+  accent-color: color-mix(in srgb, var(--ok) 45%, var(--bg-raised));
 }
 
 .investigation .scrub-when {

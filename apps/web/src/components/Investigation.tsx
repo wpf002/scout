@@ -431,16 +431,19 @@ export function Investigation({
   return (
     <div className="casefile investigation">
       <header className="casefile-head">
-        <label>
-          Investigation
-          <select value={caseId} onChange={(event) => setCaseId(event.target.value)}>
-            {cases.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {titleCase(entry.name)}
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* The panel is already titled "Investigation"; repeating it as a field
+            caption said the word twice on one line. */}
+        <select
+          aria-label="Investigation"
+          value={caseId}
+          onChange={(event) => setCaseId(event.target.value)}
+        >
+          {cases.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              {titleCase(entry.name)}
+            </option>
+          ))}
+        </select>
         {authorization ? (
           <span className={`case-status ${authorization.status === "active" ? "active" : ""}`} title={`Issued by ${authorization.issuedBy}`}>
             {authorization.reference} · {titleCase(authorization.status)} · until {stamp(authorization.validUntil)}
@@ -1044,7 +1047,7 @@ function SourcesConsulted({ sources, contributed }: { sources: SourceCoverage[];
             const has = contributed === null ? s.observations > 0 : contributed.has(s.sourceId);
             return (
               <tr key={s.sourceId} className={has ? undefined : "unseen"}>
-                <td className="mono">{s.sourceId}</td>
+                <td title={s.sourceId}>{sourceLabel(s.sourceId)}</td>
                 <td className="mono">{s.observations === 0 ? "none" : s.observations}</td>
                 <td className="mono faint">{s.lastObservedAt === null ? "—" : stamp(s.lastObservedAt)}</td>
                 {contributed !== null ? <td className={has ? "ok" : "faint"}>{has ? "Contributed" : "Nothing"}</td> : null}
