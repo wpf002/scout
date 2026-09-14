@@ -55,7 +55,7 @@ import type { CaseRecord } from "@/lib/types";
  * The scrubber sets `asOf`, the valid-time clock. Observations are already
  * loaded, so the map and the lists answer a scrub instantly; the graph reads
  * (links, timeline) follow a beat later from the server, which is the only
- * place the two-clock predicate lives. "Only what was known then" pins the
+ * place the two-clock predicate lives. "As known then" pins the
  * knowledge clock to the same instant, the audit reading.
  */
 
@@ -485,7 +485,7 @@ export function Investigation({
               </button>
               <label className="tiny scrub-strict" title="Pin the knowledge clock to the same moment: the graph exactly as it was known then, not as it is understood today.">
                 <input type="checkbox" checked={strict} onChange={(event) => setStrict(event.target.checked)} />
-                Only what was known then
+                As known then
               </label>
             </div>
 
@@ -499,7 +499,7 @@ export function Investigation({
             {tiles.length > 0 ? (
               <label className="tiny imagery-toggle" title="Stored satellite imagery over this case's areas, drawn under the observations">
                 <input type="checkbox" checked={showImagery} onChange={(event) => setShowImagery(event.target.checked)} />
-                Imagery · {tiles.filter((t) => new Date(t.sensedAt) <= asOf).length} of {tiles.length} tiles by this moment
+                Imagery · {tiles.filter((t) => new Date(t.sensedAt) <= asOf).length} of {tiles.length} tiles
               </label>
             ) : null}
 
@@ -514,7 +514,7 @@ export function Investigation({
               <input
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
-                placeholder="Ask the graph: who is connected to …, path between … and …, who was near … on 2026-08-16, timeline of …, which sources were consulted"
+                placeholder="Ask the graph…"
                 aria-label="Ask the graph"
                 disabled={asking}
                 onKeyDown={(event) => {
@@ -743,7 +743,7 @@ function Coverage({ bands, bucketAt, from, to }: { bands: ReturnType<typeof cove
       ))}
       {silent.length > 0 ? (
         <p className="tiny faint coverage-silent">
-          <span className="mono">{silent.length}</span> {silent.length === 1 ? "source" : "sources"} consulted with nothing: <span className="mono">{silent.map((b) => sourceLabel(b.sourceId)).join(", ")}</span>
+          <span className="mono">{silent.length}</span> {silent.length === 1 ? "source" : "sources"} found nothing: <span className="mono">{silent.map((b) => sourceLabel(b.sourceId)).join(", ")}</span>
         </p>
       ) : null}
     </div>
@@ -890,7 +890,7 @@ function EntityView({
       <div className="spread">
         <h3>Position</h3>
         {position === null ? (
-          <span className="faint tiny">No position by this moment.</span>
+          <span className="faint tiny">No position yet.</span>
         ) : (
           <>
             <span className="mono tiny">
@@ -952,7 +952,7 @@ function EntityView({
 
       <h3>Identifiers</h3>
       {identifiers.size === 0 ? (
-        <p className="tiny faint">None among the observations seen by this moment.</p>
+        <p className="tiny faint">None yet.</p>
       ) : (
         <div className="chip-list">
           {[...identifiers.entries()].flatMap(([k, values]) =>
@@ -1000,7 +1000,7 @@ function EntityView({
       {timeline === null ? (
         <p className="tiny faint">{note === null ? "Reading…" : ""}</p>
       ) : timeline.length === 0 ? (
-        <p className="tiny faint">Nothing by this moment.</p>
+        <p className="tiny faint">Nothing yet.</p>
       ) : (
         <ul className="timeline">
           {timeline.map((event, index) => (

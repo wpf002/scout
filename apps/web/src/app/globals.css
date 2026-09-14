@@ -1713,10 +1713,10 @@ a:hover {
 }
 
 .casefile-body h2 {
-  font-size: 12px;
-  letter-spacing: 0.06em;
+  font-size: 11px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text-faint);
 }
 /* ── Case file boards ─────────────────────────────────────────────────────
  *
@@ -1740,12 +1740,17 @@ a:hover {
   color: var(--text-dim);
 }
 
+/*
+ * Section headings mark structure; they should not compete with the content
+ * under them. Still upper-case so a section is findable at a glance, but tight
+ * and faint rather than wide and bright.
+ */
 .casefile-body h3 {
   margin: 18px 0 8px;
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text-faint);
 }
 
 /* ── Header line: a title, and the one fact that qualifies it ── */
@@ -1905,7 +1910,7 @@ a:hover {
 .casefile-body input[type="checkbox"] {
   width: auto;
   height: auto;
-  accent-color: color-mix(in srgb, var(--ok) 45%, var(--bg-raised));
+  accent-color: color-mix(in srgb, var(--ok) 28%, var(--bg-raised));
 }
 
 /* ── Buttons ── */
@@ -3894,7 +3899,7 @@ a:hover {
 .investigation .scrub input[type="range"] {
   flex: 1;
   min-width: 120px;
-  accent-color: color-mix(in srgb, var(--ok) 45%, var(--bg-raised));
+  accent-color: color-mix(in srgb, var(--ok) 28%, var(--bg-raised));
 }
 
 .investigation .scrub-when {
@@ -4588,4 +4593,8 @@ a:hover {
 .casefile-body .agent th,
 .casefile-body .recognition th {
   white-space: normal;
+}
+
+.self-note {
+  color: var(--warn);
 }

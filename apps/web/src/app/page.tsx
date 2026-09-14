@@ -50,6 +50,7 @@ const TOOLS = [
   { id: "markets", glyph: "▦", name: "Markets" },
   { id: "marauder", glyph: "✷", name: "Marauder" },
   { id: "sweep", glyph: "⊛", name: "Global Sweep" },
+  { id: "self", glyph: "⌖", name: "Self Track" },
   { id: "case", glyph: "⛁", name: "Case File" },
   { id: "investigation", glyph: "◈", name: "Investigation" },
   { id: "layers", glyph: "≡", name: "All Layers" },
@@ -91,6 +92,7 @@ export default function Page() {
   } | null>(null);
   // Bumped once scope is granted, which sends the OSINT panel back to work.
   const [runToken, setRunToken] = useState(0);
+  const [selfNote, setSelfNote] = useState<string | null>(null);
   const [basemap, setBasemap] = useState<BasemapId>("sat");
   const [projection, setProjection] = useState<"globe" | "mercator">("globe");
   const [cursor, setCursor] = useState({ lat: 0, lon: 0, zoom: 2.2 });
@@ -647,6 +649,7 @@ export default function Page() {
           <span>
             <b>{entities.toLocaleString()}</b> ENTITIES
           </span>
+          {selfNote !== null ? <span className="self-note">{selfNote}</span> : null}
           {kp !== null ? (
             <span title={`Geomagnetic activity: ${kp.level}`}>
               SOLAR <b>Kp {kp.kp ?? "?"}</b>
@@ -694,6 +697,12 @@ export default function Page() {
         </section>
       ) : null}
 
+      {/*
+        * Self Track: centre the map on this browser's own position.
+        *
+        * An action, not a panel — the browser asks for permission itself, and a
+        * refusal has to be said out loud or the button looks broken.
+        */}
       {/* ── Right tool rail ────────────────────────────────────────────── */}
       <nav className="tool-rail" aria-label="Tools">
         {TOOLS.map((item) => {
@@ -705,7 +714,33 @@ export default function Page() {
             <button
               key={item.id}
               className={`tool-icon${tool === item.id ? " on" : ""}`}
-              onClick={() =>
+              onClick={() => {
+                if (item.id === "self") {
+                  if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+                    setSelfNote("This browser has no geolocation.");
+                    return;
+                  }
+                  setSelfNote("Locating…");
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                      setSelfNote(null);
+                      setFlyTo({
+                        lat: pos.coords.latitude,
+                        lon: pos.coords.longitude,
+                        zoom: 12,
+                      });
+                    },
+                    (err) => {
+                      setSelfNote(
+                        err.code === err.PERMISSION_DENIED
+                          ? "Location permission denied."
+                          : "Could not get a location fix.",
+                      );
+                    },
+                    { enableHighAccuracy: true, timeout: 10_000 },
+                  );
+                  return;
+                }
                 setTool((current) => {
                   const next = current === item.id ? null : item.id;
                   // Leaving the measure panel leaves measure mode. A crosshair
@@ -722,8 +757,8 @@ export default function Page() {
                     setImagery([]);
                   }
                   return next;
-                })
-              }
+                });
+              }}
               title={item.name}
             >
               {item.glyph}
