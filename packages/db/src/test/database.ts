@@ -40,6 +40,6 @@ export async function setup(): Promise<void> {
     );
   } catch (error) {
     const e = error as { stdout?: string; stderr?: string; message?: string };
-    throw new Error(`prisma migrate deploy failed against ${url}\n${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`);
+    throw new Error(`prisma migrate deploy failed against ${url}\n${e.stdout ?? ""}\n${e.stderr ?? ""}`, { cause: error });
   }
 }
