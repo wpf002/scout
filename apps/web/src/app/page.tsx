@@ -82,6 +82,11 @@ export default function Page() {
   const [osintFeatures, setOsintFeatures] = useState<GeoJSON.Feature[]>([]);
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [tool, setTool] = useState<string | null>(null);
+  // A subject sent from a blocked lookup to the case's scope editor.
+  const [pendingScope, setPendingScope] = useState<{
+    kind: "domain" | "identifier";
+    value: string;
+  } | null>(null);
   const [basemap, setBasemap] = useState<BasemapId>("sat");
   const [projection, setProjection] = useState<"globe" | "mercator">("globe");
   const [cursor, setCursor] = useState({ lat: 0, lon: 0, zoom: 2.2 });
@@ -948,7 +953,7 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <div className="tool-panel-body">
-            <CaseFile />
+            <CaseFile prefillScope={pendingScope} />
           </div>
         </section>
       ) : null}
@@ -972,7 +977,17 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <div className="tool-panel-body">
-            <OsintPanel onLocated={onLocated} initialQuery={seeded} />
+            <OsintPanel
+              onLocated={onLocated}
+              initialQuery={seeded}
+              onAuthorize={(subject) => {
+                setPendingScope({
+                  kind: subject.kind === "domain" ? "domain" : "identifier",
+                  value: subject.value,
+                });
+                setTool("case");
+              }}
+            />
           </div>
         </section>
       ) : null}

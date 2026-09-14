@@ -82,10 +82,17 @@ function statusLabel(row: RunResultRow): string {
 export function OsintPanel({
   onLocated,
   initialQuery = "",
+  onAuthorize,
 }: {
   onLocated: (features: GeoJSON.Feature[]) => void;
   /** Seeded from the map's search box when it recognises an indicator. */
   initialQuery?: string;
+  /**
+   * Take the operator to the case's scope with this subject filled in.
+   * Authorising happens there, where it is the subject of the screen, rather
+   * than as a button beside a result.
+   */
+  onAuthorize?: (subject: { kind: string; value: string }) => void;
 }) {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [caseId, setCaseId] = useState("");
@@ -655,6 +662,18 @@ export function OsintPanel({
                     >
                       Open
                     </a>
+                  ) : row.status === "blocked" && onAuthorize !== undefined && result !== null ? (
+                    // "Not Authorized" is a door, not a wall: the subject is
+                    // simply not in this case's scope yet. This opens the scope
+                    // editor with it filled in.
+                    <button
+                      type="button"
+                      className="s-authorize"
+                      title="Add this subject to the case scope"
+                      onClick={() => onAuthorize(result.subject)}
+                    >
+                      Authorize
+                    </button>
                   ) : (
                     <span className="s-status" title={row.message ?? undefined}>
                       {statusLabel(row)}

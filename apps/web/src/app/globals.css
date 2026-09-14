@@ -2903,6 +2903,35 @@ a:hover {
   cursor: default;
 }
 
+.s-authorize {
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--scoped);
+  border-radius: 3px;
+  color: var(--scoped);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.s-authorize:hover {
+  background: rgba(155, 107, 255, 0.12);
+}
+
+.scope-prefill {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  background: rgba(155, 107, 255, 0.08);
+  border: 1px solid var(--scoped);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.scope-prefill b {
+  color: var(--text);
+}
+
 .detail-actions {
   display: flex;
   gap: 6px;

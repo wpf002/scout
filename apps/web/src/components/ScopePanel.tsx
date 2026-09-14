@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { CaseRecord, ScopeEntry } from "@/lib/types";
 
@@ -15,17 +15,33 @@ import type { CaseRecord, ScopeEntry } from "@/lib/types";
 export function ScopePanel({
   record,
   onChange,
+  prefill,
 }: {
   record: CaseRecord;
   onChange: (entries: ScopeEntry[]) => void;
+  /**
+   * A subject carried over from a lookup that came back "Not Authorized". It
+   * fills the form in; it does not authorise anything. The confirmation below
+   * is still the operator's to give.
+   */
+  prefill?: { kind: "domain" | "identifier"; value: string } | null;
 }) {
-  const [kind, setKind] = useState<"domain" | "identifier">("domain");
-  const [value, setValue] = useState("");
+  const [kind, setKind] = useState<"domain" | "identifier">(prefill?.kind ?? "domain");
+  const [value, setValue] = useState(prefill?.value ?? "");
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
+
+  // A later lookup can hand over a different subject while this panel is open.
+  useEffect(() => {
+    if (prefill == null) return;
+    setKind(prefill.kind);
+    setValue(prefill.value);
+    setConfirming(false);
+    setAcknowledged(false);
+  }, [prefill?.kind, prefill?.value]);
 
   async function add() {
     setPending(true);
@@ -64,6 +80,12 @@ export function ScopePanel({
 
   return (
     <div className="card">
+      {prefill != null ? (
+        <p className="scope-prefill">
+          Carried over from your lookup: <b>{prefill.value}</b>. Confirm below to
+          authorize it for this case.
+        </p>
+      ) : null}
       <div className="spread" style={{ marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>Authorization Scope</h2>
         {record.scopeEntries.length === 0 ? (

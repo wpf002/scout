@@ -83,11 +83,19 @@ const PIVOT_TAB: Record<PivotTarget, Tab> = {
   watch: "monitors",
 };
 
-export function CaseFile() {
+export function CaseFile({
+  prefillScope,
+}: {
+  /**
+   * A subject sent here from a lookup that came back "Not Authorized". It opens
+   * the scope tab with the value filled in; authorising is still done there.
+   */
+  prefillScope?: { kind: "domain" | "identifier"; value: string } | null;
+} = {}) {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [caseId, setCaseId] = useState("");
   const [record, setRecord] = useState<CaseRecord | null>(null);
-  const [tab, setTab] = useState<Tab>("plan");
+  const [tab, setTab] = useState<Tab>(prefillScope != null ? "scope" : "plan");
   const [error, setError] = useState<string | null>(null);
 
   const [findings, setFindings] = useState<FindingRecord[]>([]);
@@ -244,7 +252,11 @@ export function CaseFile() {
         ) : (
           <>
             {tab === "scope" ? (
-              <ScopePanel record={record} onChange={() => void loadCase()} />
+              <ScopePanel
+                record={record}
+                onChange={() => void loadCase()}
+                prefill={prefillScope}
+              />
             ) : null}
             {tab === "plan" ? (
               <Planner
