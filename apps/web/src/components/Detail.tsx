@@ -111,6 +111,7 @@ function format(key: string, value: string): string {
   if (key === "at" && /^\d+$/.test(value)) {
     return new Date(Number(value)).toISOString().replace("T", " ").slice(0, 19) + "Z";
   }
+  if (value === "true" || value === "false") return value.toUpperCase();
   return value;
 }
 
