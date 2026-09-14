@@ -573,6 +573,7 @@ function GlobeMapImpl({
     const instance = map.current;
     if (instance === null || !ready) return;
     const on = active.includes("terrain_3d");
+    const buildings = active.includes("buildings_3d");
 
     try {
       if (on) {
@@ -600,7 +601,7 @@ function GlobeMapImpl({
         instance.getSource("carto") !== undefined &&
         instance.getLayer("buildings-3d") === undefined;
 
-      if (on && hasBuildings) {
+      if (buildings && hasBuildings) {
         instance.addLayer({
           id: "buildings-3d",
           type: "fill-extrusion",
@@ -624,7 +625,7 @@ function GlobeMapImpl({
             "fill-extrusion-opacity": 0.85,
           },
         });
-      } else if (!on && instance.getLayer("buildings-3d") !== undefined) {
+      } else if (!buildings && instance.getLayer("buildings-3d") !== undefined) {
         instance.removeLayer("buildings-3d");
       }
     } catch {

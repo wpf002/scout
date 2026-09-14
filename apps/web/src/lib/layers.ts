@@ -137,7 +137,7 @@ export const CATEGORIES: CategoryDef[] = [
     id: "display",
     name: "Display",
     glyph: "◐",
-    layerIds: ["day_night", "terrain_3d"],
+    layerIds: ["day_night", "terrain_3d", "buildings_3d"],
   },
 ];
 
@@ -559,6 +559,15 @@ export const LAYERS: LayerDef[] = [
     colour: "#8e8e93",
     kind: "overlay",
     description: "Elevation from AWS terrain tiles, exaggerated for legibility.",
+  },
+  {
+    id: "buildings_3d",
+    source: "Basemap building layer",
+    name: "3D Buildings",
+    glyph: "▣",
+    colour: "#8e8e93",
+    kind: "overlay",
+    description: "Extruded buildings from the vector basemap, at city zoom (14+).",
   },
 ];
 
