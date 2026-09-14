@@ -167,9 +167,14 @@ export default function Page() {
 
   const toggle = useCallback((id: string) => {
     const current = activeRef.current;
+    // In an exclusive category, switching one on switches its siblings off.
+    const exclusive = CATEGORIES.find(
+      (category) => category.exclusive === true && category.layerIds.includes(id),
+    );
+    const siblings = exclusive === undefined ? [] : exclusive.layerIds.filter((layer) => layer !== id);
     const next = current.includes(id)
       ? current.filter((layer) => layer !== id)
-      : [...current, id];
+      : [...current.filter((layer) => !siblings.includes(layer)), id];
 
     activeRef.current = next;
     setActive(next);

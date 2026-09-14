@@ -51,6 +51,14 @@ export interface CategoryDef {
   name: string;
   glyph: string;
   layerIds: string[];
+  /**
+   * Only one of these layers at a time.
+   *
+   * Full-globe imagery is opaque, so a second sheet does not add to the first,
+   * it hides it — the toggles looked additive and behaved like a stack of
+   * blinds. Turning one on turns its siblings off.
+   */
+  exclusive?: boolean;
 }
 
 /**
@@ -124,6 +132,7 @@ export const CATEGORIES: CategoryDef[] = [
     id: "imagery",
     name: "Satellite Imagery",
     glyph: "◱",
+    exclusive: true,
     layerIds: [
       "goes_east",
       "goes_west",
