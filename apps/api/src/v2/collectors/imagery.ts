@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { z } from "zod";
 import { prisma } from "@scout/db";
 
@@ -112,9 +117,15 @@ export async function storeScene(input: {
   } else {
     const rendered = await input.scene.render(size);
     format = rendered.format;
-    bytes = rendered.tiff.byteLength;
-    cloudOptimized = isCloudOptimized(rendered.tiff);
-    await store.put(bucket, objectKey, rendered.tiff, rendered.format);
+    // A COG is worth the conversion: the console and any tile server can
+    // range-read one instead of pulling the whole file. When no converter is
+    // installed the plain GeoTIFF is stored and cloudOptimized stays false,
+    // rather than the row claiming a layout the bytes do not have.
+    const cog = rendered.format === "image/tiff" ? await cogify(rendered.tiff) : null;
+    const stored = cog ?? rendered.tiff;
+    cloudOptimized = cog !== null;
+    bytes = stored.byteLength;
+    await store.put(bucket, objectKey, stored, rendered.format);
     if (rendered.png !== null) {
       await store.put(bucket, previewKey, rendered.png, "image/png");
       hasPreview = true;
@@ -144,6 +155,64 @@ export async function storeScene(input: {
  * image description of one it produced. That marker is the only cheap,
  * honest test without parsing the whole file.
  */
+const run = promisify(execFile);
+
+/**
+ * The command that turns a GeoTIFF into a Cloud Optimized one, or null when
+ * none is installed. `IMAGERY_COG_COMMAND` forces one ("gdal_translate" or
+ * "rio"); otherwise the first of gdal_translate then rio that answers
+ * `--version` is used. Detection is cached for the process.
+ */
+let cogCommandCache: "gdal_translate" | "rio" | null | undefined;
+export function resetCogCommand(): void {
+  cogCommandCache = undefined;
+}
+async function cogCommand(): Promise<"gdal_translate" | "rio" | null> {
+  if (cogCommandCache !== undefined) return cogCommandCache;
+  const forced = process.env["IMAGERY_COG_COMMAND"]?.trim();
+  const candidates: ReadonlyArray<"gdal_translate" | "rio"> = forced === "gdal_translate" || forced === "rio" ? [forced] : ["gdal_translate", "rio"];
+  for (const cmd of candidates) {
+    try {
+      await run(cmd, ["--version"], { timeout: 10_000 });
+      cogCommandCache = cmd;
+      return cmd;
+    } catch {
+      // Not on PATH, or not answering; try the next.
+    }
+  }
+  cogCommandCache = null;
+  return null;
+}
+
+/**
+ * Convert a GeoTIFF's bytes to a Cloud Optimized GeoTIFF, or null when no
+ * converter is installed or the conversion fails. Storage falls back to the
+ * plain GeoTIFF in that case, and `cloudOptimized` stays false, so the row
+ * never claims a layout the bytes do not have.
+ */
+export async function cogify(tiff: Uint8Array): Promise<Uint8Array | null> {
+  const cmd = await cogCommand();
+  if (cmd === null) return null;
+  let dir: string | null = null;
+  try {
+    dir = await mkdtemp(join(tmpdir(), "scout-cog-"));
+    const src = join(dir, "in.tif");
+    const dst = join(dir, "out.tif");
+    await writeFile(src, tiff);
+    const args =
+      cmd === "gdal_translate"
+        ? ["-q", "-of", "COG", "-co", "COMPRESS=DEFLATE", src, dst]
+        : ["cogeo", "create", "--cog-profile", "deflate", src, dst];
+    await run(cmd, args, { timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
+    const out = await readFile(dst);
+    return isCloudOptimized(out) ? new Uint8Array(out) : null;
+  } catch {
+    return null;
+  } finally {
+    if (dir !== null) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 export function isCloudOptimized(tiff: Uint8Array): boolean {
   const head = Buffer.from(tiff.subarray(0, Math.min(tiff.byteLength, 65_536))).toString("latin1");
   return head.includes("LAYOUT=IFDS_BEFORE_DATA");

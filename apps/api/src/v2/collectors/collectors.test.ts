@@ -5,7 +5,7 @@ import { defineBrokerAdapter, listRunnable, naiveNormalize } from "./index.js";
 import { collectAisStream, normalizeVessels, parseSightingTime, sightingsFromMaritime, type SocketLike } from "./ais.js";
 import { normalizeTelemetry } from "./telemetry.js";
 import { extractFacts, robotsAllows } from "./open-web.js";
-import { bboxHash, isCloudOptimized, pixelSize } from "./imagery.js";
+import { bboxHash, cogify, isCloudOptimized, pixelSize, resetCogCommand } from "./imagery.js";
 import { normalizePlanet } from "./planet.js";
 import { normalizeMaxar } from "./maxar.js";
 import { normalizeAircraft } from "./adsb.js";
@@ -193,6 +193,20 @@ describe("the imagery pipeline", () => {
     const big = pixelSize([5.0, 60.0, 5.5, 60.5], 10);
     expect(big.resolutionM).toBeGreaterThan(10);
     expect(Math.max(big.width, big.height)).toBeLessThanOrEqual(1024);
+  });
+
+  it("returns null from cogify when no converter is installed, without throwing", async () => {
+    const saved = process.env["IMAGERY_COG_COMMAND"];
+    process.env["IMAGERY_COG_COMMAND"] = "scout-no-such-converter";
+    resetCogCommand();
+    try {
+      const out = await cogify(new TextEncoder().encode("II*\u0000 not really a tiff"));
+      expect(out).toBeNull();
+    } finally {
+      if (saved === undefined) delete process.env["IMAGERY_COG_COMMAND"];
+      else process.env["IMAGERY_COG_COMMAND"] = saved;
+      resetCogCommand();
+    }
   });
 
   it("hashes a box stably and only calls a TIFF cloud-optimized when it says so", () => {

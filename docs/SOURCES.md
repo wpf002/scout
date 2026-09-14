@@ -20,11 +20,13 @@ one that does not). This table is the human-readable copy and must match.
 Imagery is stored in the tiles bucket (`S3_BUCKET_TILES`) as the GeoTIFF the
 provider returned plus a PNG preview, and indexed in `ImageryTile` with a
 PostGIS polygon. A scene over a box is requested once: the index is checked,
-then the bucket, then the provider. `cloudOptimized` on the row is true only
-when the stored file carries GDAL's COG layout marker; Sentinel Hub's
-process API returns a plain GeoTIFF, so it is false until a conversion step
-with GDAL is added. The console draws the previews under the observations
-and serves them from the bucket, not the provider.
+then the bucket, then the provider. Before storing, the GeoTIFF is converted to a Cloud Optimized one when a
+converter is on PATH (`gdal_translate -of COG`, or `rio cogeo create`;
+`IMAGERY_COG_COMMAND` forces one); `cloudOptimized` on the row is set from
+the stored file's layout marker, and when no converter is installed the
+plain GeoTIFF is stored and the flag stays false. The console draws the
+previews under the observations and serves them from the bucket, not the
+provider.
 
 ## v1 sources and live layers
 
