@@ -329,6 +329,21 @@ const offline: typeof fetch = async (input, init) => {
   if (/^http:\/\/127\.0\.0\.1:8100\/resolve$/.test(url) && typeof init?.body === "string") {
     return fakeResolve(init.body);
   }
+  // The streaming route: the same stand-in, NDJSON in and out.
+  if (/^http:\/\/127\.0\.0\.1:8100\/resolve\/stream$/.test(url) && init?.body !== undefined && init.body !== null) {
+    const raw = typeof init.body === "string" ? init.body : await new Response(init.body as ConstructorParameters<typeof Response>[0]).text();
+    const lines = raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 0).map((l) => JSON.parse(l) as Record<string, unknown>);
+    const header = lines.find((l) => l["type"] === "header") ?? {};
+    const observations = lines.filter((l) => l["type"] === "observation").map(({ type: _type, ...o }) => o);
+    const json = (await fakeResolve(JSON.stringify({ ...header, observations })).json()) as { model_version: string; normalization_version: string; thresholds: unknown; decisions: unknown[]; clusters: unknown[]; counts: unknown };
+    const out = [
+      JSON.stringify({ type: "header", authorization_id: header["authorization_id"], entity_kind: header["entity_kind"], model_version: json.model_version, normalization_version: json.normalization_version, thresholds: json.thresholds }),
+      ...json.decisions.map((d) => JSON.stringify({ type: "decision", ...(d as object) })),
+      ...json.clusters.map((c) => JSON.stringify({ type: "cluster", ...(c as object) })),
+      JSON.stringify({ type: "summary", counts: json.counts }),
+    ].join("\n");
+    return new Response(out + "\n", { status: 200, headers: { "content-type": "application/x-ndjson" } });
+  }
   if (/^http:\/\/127\.0\.0\.1:9000\//.test(url)) return s3(url, init);
   if (/^https:\/\/hooks\.example\//.test(url)) {
     webhooks.push({ url, body: typeof init?.body === "string" ? JSON.parse(init.body) : null });

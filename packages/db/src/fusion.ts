@@ -119,10 +119,13 @@ export async function observationDensity(input: {
   const cell = Math.max(0.001, Math.min(10, input.cellDegrees));
   const caseClause = input.caseId === undefined || input.caseId === null ? Prisma.empty : Prisma.sql`AND "caseId" = ${input.caseId}`;
   const asOfClause = input.asOf === undefined || input.asOf === null ? Prisma.empty : Prisma.sql`AND "observedAt" <= ${input.asOf}`;
+  // Planar intersection with the box: a geography envelope that spans half
+  // the world has antipodal edges PostGIS refuses, and a lon/lat box is
+  // planar by definition. A box that covers everything is no filter.
   const boxClause =
-    input.bbox === undefined || input.bbox === null
+    input.bbox === undefined || input.bbox === null || (input.bbox[2] - input.bbox[0] >= 360 && input.bbox[3] - input.bbox[1] >= 180)
       ? Prisma.empty
-      : Prisma.sql`AND ST_Intersects("geom", ST_MakeEnvelope(${input.bbox[0]}, ${input.bbox[1]}, ${input.bbox[2]}, ${input.bbox[3]}, 4326)::geography)`;
+      : Prisma.sql`AND ST_Intersects("geom"::geometry, ST_MakeEnvelope(${input.bbox[0]}, ${input.bbox[1]}, ${input.bbox[2]}, ${input.bbox[3]}, 4326))`;
   return prisma.$queryRaw<DensityCell[]>`
     SELECT (floor(ST_X("geom"::geometry) / ${cell}::float8) * ${cell}::float8 + ${cell}::float8 / 2) AS lon,
            (floor(ST_Y("geom"::geometry) / ${cell}::float8) * ${cell}::float8 + ${cell}::float8 / 2) AS lat,
@@ -150,7 +153,7 @@ export async function observationIdsInBox(input: {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT "id" FROM "Observation"
     WHERE "authorizationId" = ${input.authorizationId} AND "geom" IS NOT NULL ${caseClause} ${asOfClause}
-      AND ST_Intersects("geom", ST_MakeEnvelope(${input.bbox[0]}, ${input.bbox[1]}, ${input.bbox[2]}, ${input.bbox[3]}, 4326)::geography)
+      AND ST_Intersects("geom"::geometry, ST_MakeEnvelope(${input.bbox[0]}, ${input.bbox[1]}, ${input.bbox[2]}, ${input.bbox[3]}, 4326))
     ORDER BY "observedAt" DESC, "id"
     LIMIT ${Math.max(1, Math.min(5_000, input.limit))}`;
   return rows.map((r) => r.id);

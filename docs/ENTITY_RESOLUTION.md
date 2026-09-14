@@ -85,3 +85,28 @@ clusters. `--train` fits the models; `--write-baseline` records the numbers;
 `--check` fails when recall drops more than 0.005 below the baseline unless
 `--override "reason"` is given. `pnpm eval:resolution` runs the check. There
 is no CI in this repository yet; the gate is a command until there is.
+
+## At scale
+
+The API and the service talk over `POST /resolve/stream`, NDJSON both ways:
+a header line, then one observation per line out; a header, one decision
+per line, one cluster per line and a summary back. The API writes
+decisions in chunks of two thousand as they arrive, against a run row it
+creates when the header arrives (the schema's band check refuses a run
+whose thresholds are not yet known), and writes entities and memberships
+in one transaction at the end. A run that fails after the header is marked
+`FAILED` with the reason; its decisions stay attributed to it. Neither
+side ever holds the run as one string, which is what capped a run near
+twenty thousand observations before.
+
+Before scoring a batch of five thousand or more, the service asks Splink
+how many comparisons each blocking rule would generate. Past
+`RESOLUTION_MAX_PAIRS` (twenty million by default) the run is refused as
+`too-many-pairs`, naming each rule's count: the answer to a batch that
+blocks too wide is tighter blocking, not a run that takes hours. Per-column
+evidence travels with MATCH and REVIEW decisions; a NON_MATCH keeps its
+score and blocking key (`RESOLUTION_FEATURES_FOR=all` restores it).
+
+An entity keeps its id across runs when its cluster is unchanged or only
+grew; a merge or a split is a new entity, and the old one is superseded
+with its memberships kept.

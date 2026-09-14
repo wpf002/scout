@@ -294,6 +294,9 @@ describe("density and windows", () => {
     // At 0.05°, observations 1 and 3 (-122.68/45.52 and -122.70/45.50) share a cell; 2 sits alone.
     const fine = await observationDensity({ authorizationId: AUTH, cellDegrees: 0.05, bbox: [-125, 44, -120, 47] });
     expect(fine.map((c) => c.count).sort()).toEqual([1, 2]);
+    // The whole world is no filter, and a wide box is planar, so neither trips PostGIS's antipodal check.
+    expect((await observationDensity({ authorizationId: AUTH, cellDegrees: 1, bbox: [-180, -90, 180, 90] })).length).toBe(2);
+    expect((await observationDensity({ authorizationId: AUTH, cellDegrees: 1, bbox: [-170, -80, 170, 80] })).length).toBe(2);
   });
 
   it("windows a box newest first, capped", async () => {

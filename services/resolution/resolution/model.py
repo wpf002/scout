@@ -260,6 +260,41 @@ def _frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
     return frame
 
 
+class TooManyPairs(Exception):
+    """Blocking would propose more pairs than the service is allowed to score."""
+
+    def __init__(self, total: int, limit: int, per_rule: dict[str, int]) -> None:
+        super().__init__(f"blocking proposes {total:,} pairs; the limit is {limit:,}")
+        self.total = total
+        self.limit = limit
+        self.per_rule = per_rule
+
+
+def max_pairs() -> int:
+    raw = os.environ.get("RESOLUTION_MAX_PAIRS", "").strip()
+    return int(raw) if raw.isdigit() else 20_000_000
+
+
+def estimate_pairs(kind: str, frame: pd.DataFrame) -> dict[str, int]:
+    """How many comparisons each blocking rule would generate on this batch,
+    from Splink's own blocking analysis. A batch is refused before scoring
+    when the total is past RESOLUTION_MAX_PAIRS: the answer would be a run
+    that takes hours and a response nothing can hold, and the message names
+    the rule responsible so the blocking can be tightened."""
+    from splink.blocking_analysis import count_comparisons_from_blocking_rule
+
+    spec = _spec(kind)
+    api = DuckDBAPI()
+    out: dict[str, int] = {}
+    for rule in spec.blocking:
+        counted = count_comparisons_from_blocking_rule(
+            table_or_tables=frame, blocking_rule=block_on(*rule.columns), link_type="dedupe_only", db_api=api,
+        )
+        n = counted.get("number_of_comparisons_to_be_scored_post_filter_conditions", counted.get("number_of_comparisons_generated_pre_filter_conditions", 0))
+        out[rule.name] = int(n) if isinstance(n, (int, float)) else 0
+    return out
+
+
 def predict(kind: str, rows: list[dict[str, Any]]) -> list[PairScore]:
     if len(rows) < 2:
         return []
@@ -269,7 +304,13 @@ def predict(kind: str, rows: list[dict[str, Any]]) -> list[PairScore]:
         raise FileNotFoundError(
             f"No trained model for {kind} at {path}. Run: uv run python -m eval.evaluate --train"
         )
-    linker = Linker(_frame(rows), str(path), db_api=DuckDBAPI())
+    frame = _frame(rows)
+    if len(rows) >= 5_000:
+        per_rule = estimate_pairs(kind, frame)
+        total = sum(per_rule.values())
+        if total > max_pairs():
+            raise TooManyPairs(total, max_pairs(), per_rule)
+    linker = Linker(frame, str(path), db_api=DuckDBAPI())
     records = linker.inference.predict(threshold_match_probability=0.0).as_record_dict()
     names = [c.create_output_column_name() for c in spec.comparisons]
     out: list[PairScore] = []

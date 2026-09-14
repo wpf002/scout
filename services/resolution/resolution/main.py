@@ -12,12 +12,17 @@ from __future__ import annotations
 import os
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException
+import json
+from collections.abc import AsyncIterator, Iterator
+from dataclasses import dataclass
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from resolution import __version__
 from resolution.cluster import Decision, Thresholds, apply_pins, classify, cluster
-from resolution.model import PairScore, SUPPORTED_KINDS, model_version, predict
+from resolution.model import PairScore, SUPPORTED_KINDS, TooManyPairs, model_version, predict
 from resolution.normalize import NORMALIZATION_VERSION, normalize_identifier
 from resolution.records import EntityKind, ObservationIn, to_row
 
@@ -155,15 +160,24 @@ def _features_for(decision: str, s: PairScore) -> dict[str, Any]:
     return {"match_weight": s.weight, "probability": s.probability}
 
 
-@app.post("/resolve", response_model=ResolveResponse)
-def resolve(req: ResolveRequest) -> ResolveResponse:
+@dataclass
+class _Prepared:
+    version: str
+    thresholds: Thresholds
+    rows: list[dict[str, Any]]
+    by_id: dict[str, dict[str, Any]]
+    ids: list[str]
+
+
+def _prepare(req: ResolveRequest) -> _Prepared:
+    """The fast half: validate, resolve thresholds, flatten rows. Everything
+    here is known before any scoring, so the stream can send its header from
+    it while the slow half runs."""
     if req.entity_kind not in SUPPORTED_KINDS:
         raise HTTPException(status_code=422, detail={"error": "unsupported-kind", "message": f"No model for {req.entity_kind}. Supported: {', '.join(SUPPORTED_KINDS)}."})
-
     version_ = model_version(req.entity_kind)
     if version_ is None:
         raise HTTPException(status_code=503, detail={"error": "no-model", "message": f"No trained model for {req.entity_kind}. Run: uv run python -m eval.evaluate --train"})
-
     try:
         t = (
             Thresholds(req.thresholds.match_bp, req.thresholds.review_bp)
@@ -172,21 +186,40 @@ def resolve(req: ResolveRequest) -> ResolveResponse:
         )
     except (ValueError, RuntimeError) as error:
         raise HTTPException(status_code=422, detail={"error": "forced-resolution", "message": str(error)}) from error
-
     # Duplicate ids would make one record two; keep the first.
     seen: set[str] = set()
     observations = [o for o in req.observations if not (o.id in seen or seen.add(o.id))]
     rows = [to_row(o) for o in observations]
     by_id = {r["unique_id"]: r for r in rows}
-    ids = list(by_id)
+    return _Prepared(version=version_, thresholds=t, rows=rows, by_id=by_id, ids=list(by_id))
 
-    scores = predict(req.entity_kind, rows)
+
+def _score(req: ResolveRequest, prep: _Prepared) -> tuple[list[Decision], list[Any]]:
+    """The slow half: predict, classify, pin, cluster."""
+    try:
+        scores = predict(req.entity_kind, prep.rows)
+    except TooManyPairs as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "too-many-pairs", "message": f"{error}. Tighten the blocking or raise RESOLUTION_MAX_PAIRS.", "per_rule": error.per_rule, "limit": error.limit},
+        ) from error
     decisions = []
     for s in scores:
-        outcome = classify(s.score_bp, t)
+        outcome = classify(s.score_bp, prep.thresholds)
         decisions.append(Decision(left=s.left, right=s.right, score_bp=s.score_bp, decision=outcome, blocking_key=s.blocking_key, features=_features_for(outcome, s)))
     decisions = apply_pins(decisions, [a.model_dump() for a in req.adjudications])
-    clusters = cluster(ids, decisions)
+    return decisions, cluster(prep.ids, decisions)
+
+
+def _run(req: ResolveRequest) -> ResolveResponse:
+    """The whole resolution, JSON in and JSON out. The plain route collects
+    what the streaming one sends line by line."""
+    prep = _prepare(req)
+    version_ = prep.version
+    t = prep.thresholds
+    by_id = prep.by_id
+    ids = prep.ids
+    decisions, clusters = _score(req, prep)
 
     counts = {
         "observations": len(ids),
@@ -212,3 +245,85 @@ def resolve(req: ResolveRequest) -> ResolveResponse:
         clusters=[ClusterOut(members=c.members, status=c.status, pending_review=c.pending_review, conflicts=[list(p) for p in c.conflicts], label=_label(req.entity_kind, by_id, c.members)) for c in clusters],
         counts=counts,
     )
+
+
+@app.post("/resolve", response_model=ResolveResponse)
+def resolve(req: ResolveRequest) -> ResolveResponse:
+    return _run(req)
+
+
+async def _ndjson_lines(request: Request) -> AsyncIterator[dict[str, Any]]:
+    """Lines of the request body as they arrive, without holding the body."""
+    buffer = b""
+    async for chunk in request.stream():
+        buffer += chunk
+        while True:
+            newline = buffer.find(b"\n")
+            if newline == -1:
+                break
+            line = buffer[:newline].strip()
+            buffer = buffer[newline + 1 :]
+            if line:
+                yield json.loads(line)
+    tail = buffer.strip()
+    if tail:
+        yield json.loads(tail)
+
+
+def _stream_run(req: ResolveRequest) -> Iterator[str]:
+    """The run, line by line, header first. The header is sent before any
+    scoring, so a caller sees bytes within a second however long the run
+    takes; the slow work happens between the header line and the first
+    decision line. A refusal during preparation is raised before the
+    response starts and becomes an ordinary error status."""
+    prep = _prepare(req)
+    yield json.dumps({"type": "header", "authorization_id": req.authorization_id, "entity_kind": req.entity_kind, "model_version": prep.version, "normalization_version": NORMALIZATION_VERSION, "thresholds": {"match_bp": prep.thresholds.match_bp, "review_bp": prep.thresholds.review_bp}}) + "\n"
+    try:
+        decisions, clusters = _score(req, prep)
+    except HTTPException as error:
+        # The stream has begun, so a refusal here cannot change the status.
+        # It travels as an error line the caller raises on.
+        yield json.dumps({"type": "error", "detail": error.detail}) + "\n"
+        return
+    counts = {
+        "observations": len(prep.ids), "pairs": len(decisions),
+        "match": sum(d.decision == "MATCH" for d in decisions), "non_match": sum(d.decision == "NON_MATCH" for d in decisions),
+        "review": sum(d.decision == "REVIEW" for d in decisions), "indeterminate": sum(d.decision == "INDETERMINATE" for d in decisions),
+        "pinned": sum(d.pinned for d in decisions), "entities": len(clusters),
+        "resolved": sum(c.status == "RESOLVED" for c in clusters), "provisional": sum(c.status == "PROVISIONAL" for c in clusters), "disputed": sum(c.status == "DISPUTED" for c in clusters),
+    }
+    for d in decisions:
+        yield json.dumps({"type": "decision", "left": d.left, "right": d.right, "score_bp": d.score_bp, "decision": d.decision, "blocking_key": d.blocking_key, "features": d.features, "pinned": d.pinned}) + "\n"
+    for c in clusters:
+        yield json.dumps({"type": "cluster", "members": c.members, "status": c.status, "pending_review": c.pending_review, "conflicts": [list(p) for p in c.conflicts], "label": _label(req.entity_kind, prep.by_id, c.members)}) + "\n"
+    yield json.dumps({"type": "summary", "counts": counts}) + "\n"
+
+
+@app.post("/resolve/stream")
+async def resolve_stream(request: Request) -> StreamingResponse:
+    """NDJSON in, NDJSON out. The first line is the header (authorization,
+    kind, adjudications, thresholds); every following line is one
+    observation. The reply is the same run as /resolve, sent header-first so
+    time-to-first-byte does not grow with the run."""
+    header: dict[str, Any] | None = None
+    observations: list[ObservationIn] = []
+    async for line in _ndjson_lines(request):
+        kind = line.get("type")
+        if kind == "header":
+            header = line
+        elif kind == "observation":
+            line.pop("type", None)
+            observations.append(ObservationIn.model_validate(line))
+        else:
+            raise HTTPException(status_code=422, detail={"error": "bad-line", "message": f"unknown line type {kind!r}"})
+    if header is None:
+        raise HTTPException(status_code=422, detail={"error": "no-header", "message": "the first line must be the header"})
+    req = ResolveRequest(
+        authorization_id=header["authorization_id"], entity_kind=header["entity_kind"], observations=observations,
+        adjudications=[Adjudication.model_validate(a) for a in header.get("adjudications", [])],
+        thresholds=None if header.get("thresholds") is None else ThresholdsIn.model_validate(header["thresholds"]),
+    )
+    # _prepare runs once here so a bad kind or a collapsed band is a real
+    # error status, not an error line inside a 200 stream.
+    _prepare(req)
+    return StreamingResponse(_stream_run(req), media_type="application/x-ndjson")
