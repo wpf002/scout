@@ -48,6 +48,14 @@ jobs:
       - run: pnpm lint
       - name: Migrate the dev database the tests derive theirs from
         run: pnpm --filter @scout/db exec prisma migrate deploy
+      # Create and migrate the shared test database once, up front. `pnpm test`
+      # runs the db and api suites in parallel, and each package's setup would
+      # otherwise race to create scout_test (P1009: already exists). Doing it
+      # here leaves both setups a no-op deploy against a database that exists.
+      - name: Migrate the shared test database
+        run: pnpm --filter @scout/db exec prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://scout:scout@localhost:5432/scout_test?schema=public
       - run: pnpm test
 
   python:
