@@ -408,6 +408,67 @@ async function ottawa(): Promise<Camera[]> {
   });
 }
 
+// ── 511 traffic platforms ────────────────────────────────────────────────────
+// A large family of US state DOT camera maps run the same "511" platform
+// (ATMS/OneStop). Each exposes /List/GetData/Cameras (every camera, with a WKT
+// point and an image path) and serves the live frame at /map/Cctv/<id>. One
+// adapter, parameterised by host, covers all of them — together the biggest
+// block of cameras there is.
+
+const FIVE_ELEVEN_SITES = [
+  { host: "fl511.com", operator: "FDOT" },
+  { host: "511ga.org", operator: "GDOT" },
+  { host: "prod-ut.ibi511.com", operator: "UDOT" },
+  { host: "az511.gov", operator: "ADOT" },
+  { host: "www.nvroads.com", operator: "NDOT" },
+  { host: "511la.org", operator: "LADOTD" },
+];
+
+// One call per host returns every camera as a map icon: an id, a [lat, lon]
+// pair, and a title. The live frame is served per camera at /map/Cctv/<id>,
+// which returns a still that refreshes — enough for a map preview and a click.
+const FIVE_ELEVEN_SCHEMA = z.object({
+  item2: z
+    .array(
+      z
+        .object({
+          itemId: z.union([z.string(), z.number()]),
+          location: z.array(z.number()),
+          title: z.string().nullish(),
+        })
+        .passthrough(),
+    )
+    .default([]),
+});
+
+function fiveEleven(site: { host: string; operator: string }): () => Promise<Camera[]> {
+  return async () => {
+    const parsed = FIVE_ELEVEN_SCHEMA.parse(
+      await getJson(`https://${site.host}/map/mapIcons/Cameras`, { timeoutMs: 30_000 }),
+    );
+    return parsed.item2.flatMap((row): Camera[] => {
+      const lat = row.location[0];
+      const lon = row.location[1];
+      if (lat === undefined || lon === undefined || !usable(lon, lat)) return [];
+      const image = `https://${site.host}/map/Cctv/${row.itemId}`;
+      return [
+        {
+          id: `${site.operator.toLowerCase()}-${row.itemId}`,
+          name: row.title?.trim() || `${site.operator} camera ${row.itemId}`,
+          lat,
+          lon,
+          city: null,
+          country: "United States",
+          streamUrl: image,
+          streamType: "image",
+          stillUrl: image,
+          operator: site.operator,
+        },
+      ];
+    });
+  };
+}
+
 // ── Curated world cameras ────────────────────────────────────────────────────
 // Public live city views (mostly YouTube Live), embedded through the player's
 // own iframe. Static, so this never fails; kept here so it merges like any other
@@ -440,6 +501,7 @@ export async function cctv(): Promise<FeatureCollection> {
     ottawa,
     singapore,
     worldCams,
+    ...FIVE_ELEVEN_SITES.map(fiveEleven),
   ]);
 
   const operators: Record<string, number> = {};
