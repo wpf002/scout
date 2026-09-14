@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getJson } from "../http.js";
 import { merge } from "../http.js";
 import { point, usable, type Feature, type FeatureCollection } from "../types.js";
+import { WORLD_CAMS } from "./cctv-world.js";
 
 /**
  * Public cameras, from the agencies that publish their positions.
@@ -407,6 +408,28 @@ async function ottawa(): Promise<Camera[]> {
   });
 }
 
+// ── Curated world cameras ────────────────────────────────────────────────────
+// Public live city views (mostly YouTube Live), embedded through the player's
+// own iframe. Static, so this never fails; kept here so it merges like any other
+// source. A YouTube thumbnail stands in as the map preview.
+
+async function worldCams(): Promise<Camera[]> {
+  return WORLD_CAMS.map((c) => ({
+    id: c.id,
+    name: c.name,
+    lat: c.lat,
+    lon: c.lon,
+    city: c.city,
+    country: c.country,
+    streamUrl: c.yt
+      ? `https://www.youtube.com/embed/${c.yt}?autoplay=1&mute=1&playsinline=1`
+      : (c.iframe ?? null),
+    streamType: "iframe",
+    stillUrl: c.yt ? `https://img.youtube.com/vi/${c.yt}/hqdefault.jpg` : null,
+    operator: c.operator,
+  }));
+}
+
 export async function cctv(): Promise<FeatureCollection> {
   const { items, failures } = await merge<Camera>([
     caltrans,
@@ -416,6 +439,7 @@ export async function cctv(): Promise<FeatureCollection> {
     nyc,
     ottawa,
     singapore,
+    worldCams,
   ]);
 
   const operators: Record<string, number> = {};
