@@ -24,6 +24,7 @@ import { CaseFile } from "@/components/CaseFile";
 import { Investigation } from "@/components/Investigation";
 import { SpacePanel } from "@/components/SpacePanel";
 import { MarketsPanel } from "@/components/MarketsPanel";
+import { MarauderPanel } from "@/components/MarauderPanel";
 import { EMPTY_LAYER, type ImageryOverlay, type MapLayer, type Viewport } from "@/lib/investigation";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
@@ -46,6 +47,7 @@ const TOOLS = [
   { id: "intel", glyph: "◫", name: "Intel Feed" },
   { id: "space", glyph: "◉", name: "Live from Space" },
   { id: "markets", glyph: "▦", name: "Markets" },
+  { id: "marauder", glyph: "✷", name: "Marauder" },
   { id: "case", glyph: "⛁", name: "Case File" },
   { id: "investigation", glyph: "◈", name: "Investigation" },
   { id: "layers", glyph: "≡", name: "All Layers" },
@@ -992,6 +994,16 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <MarketsPanel kp={kp} />
+        </section>
+      ) : null}
+
+      {tool === "marauder" ? (
+        <section className="tool-panel">
+          <div className="tool-panel-head">
+            <h2>Marauder</h2>
+            <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          <MarauderPanel />
         </section>
       ) : null}
 
