@@ -4,6 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Scout",
   description: "Live global intelligence map with OSINT indicator search.",
+  icons: { icon: "/icon.svg" },
 };
 
 export default function RootLayout({
