@@ -22,6 +22,7 @@ import { Filters } from "@/components/Filters";
 import { Aoi, type Box } from "@/components/Aoi";
 import { CaseFile } from "@/components/CaseFile";
 import { Investigation } from "@/components/Investigation";
+import { SpacePanel } from "@/components/SpacePanel";
 import { EMPTY_LAYER, type ImageryOverlay, type MapLayer, type Viewport } from "@/lib/investigation";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
@@ -42,6 +43,7 @@ const TOOLS = [
   { id: "aoi", glyph: "▢", name: "Area of Interest" },
   { id: "directions", glyph: "⇄", name: "Directions" },
   { id: "intel", glyph: "◫", name: "Intel Feed" },
+  { id: "space", glyph: "◉", name: "Live from Space" },
   { id: "case", glyph: "⛁", name: "Case File" },
   { id: "investigation", glyph: "◈", name: "Investigation" },
   { id: "layers", glyph: "≡", name: "All Layers" },
@@ -968,6 +970,16 @@ export default function Page() {
           <div className="tool-panel-body">
             <OsintPanel onLocated={onLocated} initialQuery={seeded} />
           </div>
+        </section>
+      ) : null}
+
+      {tool === "space" ? (
+        <section className="tool-panel">
+          <div className="tool-panel-head">
+            <h2>Live from Space</h2>
+            <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          <SpacePanel />
         </section>
       ) : null}
 
