@@ -23,6 +23,7 @@ import { Aoi, type Box } from "@/components/Aoi";
 import { CaseFile } from "@/components/CaseFile";
 import { Investigation } from "@/components/Investigation";
 import { SpacePanel } from "@/components/SpacePanel";
+import { MarketsPanel } from "@/components/MarketsPanel";
 import { EMPTY_LAYER, type ImageryOverlay, type MapLayer, type Viewport } from "@/lib/investigation";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
 
@@ -44,6 +45,7 @@ const TOOLS = [
   { id: "directions", glyph: "⇄", name: "Directions" },
   { id: "intel", glyph: "◫", name: "Intel Feed" },
   { id: "space", glyph: "◉", name: "Live from Space" },
+  { id: "markets", glyph: "▦", name: "Markets" },
   { id: "case", glyph: "⛁", name: "Case File" },
   { id: "investigation", glyph: "◈", name: "Investigation" },
   { id: "layers", glyph: "≡", name: "All Layers" },
@@ -980,6 +982,16 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <SpacePanel />
+        </section>
+      ) : null}
+
+      {tool === "markets" ? (
+        <section className="tool-panel">
+          <div className="tool-panel-head">
+            <h2>Markets &amp; Intel</h2>
+            <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          <MarketsPanel kp={kp} />
         </section>
       ) : null}
 

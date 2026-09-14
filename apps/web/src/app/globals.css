@@ -2670,6 +2670,82 @@ a:hover {
   font-family: var(--mono, monospace);
 }
 
+.markets-panel {
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.markets-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.markets-summary b {
+  color: var(--text);
+}
+
+.markets-summary .up,
+.mk-chg.up {
+  color: var(--ok);
+}
+
+.markets-summary .down,
+.mk-chg.down {
+  color: var(--deny);
+}
+
+.markets-group {
+  margin-top: 10px;
+}
+
+.markets-group h3 {
+  margin: 0 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+
+.markets-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.markets-group li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.mk-name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mk-price {
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+
+.mk-chg {
+  font-family: var(--mono);
+  min-width: 62px;
+  text-align: right;
+}
+
 .detail-actions {
   display: flex;
   gap: 6px;
