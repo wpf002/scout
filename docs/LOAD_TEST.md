@@ -30,18 +30,19 @@ observations per true person carrying the variation the resolver is for
 |---|---|---|---|---|
 | 2 000 | 400 | 2.7 s | 288 | 28 327 |
 | 20 000 | 4 000 | 87.1 s | 3 082 | 1 401 771 |
-| 30 000 | 6 000 | failed | — | — |
+| 30 000 | 6 000 | 241 s | 4 641 | 3 219 703 |
 
-The 30 000 run failed in the API, not the service: the service's JSON
-response (every scored pair) outgrew the largest string Node can hold
-(`0x1fffffe8` bytes), even after per-column evidence was trimmed from
-NON_MATCH decisions. Pairs grow faster than observations because the
-day-bucket blocking rule pairs everything observed on the same day. The
-ceiling of the current design is therefore about 20 000 observations per
-kind per run on this data, set by the single-request contract between the
-API and the service, not by the model. Lifting it means streaming
-decisions (NDJSON) and persisting them as they arrive, or writing
-NON_MATCH decisions on the service side; that is listed as remaining work.
+The 30 000 run failed in the earlier single-request design: the service's
+JSON response (every scored pair) outgrew the largest string Node can hold
+(`0x1fffffe8` bytes), and before that the request headers arrived after
+undici's socket timeout because the service computed the whole run before
+sending a byte. Both are gone: the API and the service now talk over
+`POST /resolve/stream`, NDJSON both ways, header-first, and the API
+persists decisions in chunks of 2 000 as they arrive
+(`docs/ENTITY_RESOLUTION.md`, "At scale"). A 30 000-observation run
+completes in about four minutes; pairs, not observations, are the cost, and
+`RESOLUTION_MAX_PAIRS` refuses a batch that would block too wide before it
+starts.
 
 Three defects surfaced on the way and are fixed (`8e095ee`): an all-null
 text column broke Splink's comparison; the run's persistence exceeded
