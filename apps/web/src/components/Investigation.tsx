@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, ApiError } from "@/lib/api";
-import { titleCase } from "@/lib/label";
+import { sourceLabel, titleCase } from "@/lib/label";
 import { Loading } from "@/components/Loading";
 import {
   ENTITY_KINDS,
@@ -659,7 +659,7 @@ function AnswerView({
                 {claim.basis === "collection-log"
                   ? (claim.sourceIds ?? []).map((sourceId) => (
                       <span className="cite faint" key={sourceId} title="From the collection log">
-                        {sourceId}
+                        {sourceLabel(sourceId)}
                       </span>
                     ))
                   : claim.observationIds.map((id) => {
@@ -722,7 +722,7 @@ function Coverage({ bands, bucketAt, from, to }: { bands: ReturnType<typeof cove
       {spoke.map((b) => (
         <div className="coverage-row" key={b.sourceId} role="row">
           <span className="coverage-name mono" title={b.sourceId}>
-            {b.sourceId}
+            {sourceLabel(b.sourceId)}
           </span>
           <div className="coverage-bars">
             {b.counts.map((n, i) => (
@@ -740,7 +740,7 @@ function Coverage({ bands, bucketAt, from, to }: { bands: ReturnType<typeof cove
       ))}
       {silent.length > 0 ? (
         <p className="tiny faint coverage-silent">
-          <span className="mono">{silent.length}</span> {silent.length === 1 ? "source" : "sources"} consulted with nothing: <span className="mono">{silent.map((b) => b.sourceId).join(", ")}</span>
+          <span className="mono">{silent.length}</span> {silent.length === 1 ? "source" : "sources"} consulted with nothing: <span className="mono">{silent.map((b) => sourceLabel(b.sourceId)).join(", ")}</span>
         </p>
       ) : null}
     </div>
@@ -816,7 +816,7 @@ function CaseOverview({ entities, sources, observations, clusters, onChoose }: {
       <SourcesConsulted sources={sources} contributed={null} />
       {silent.length > 0 ? (
         <p className="notice">
-          {silent.length} of {sources.length} sources had nothing for this authorization: {silent.map((s) => s.sourceId).join(", ")}. Absence here is a
+          {silent.length} of {sources.length} sources had nothing for this authorization: {silent.map((s) => sourceLabel(s.sourceId)).join(", ")}. Absence here is a
           fact about those sources, not about the case.
         </p>
       ) : null}

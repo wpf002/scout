@@ -12,23 +12,13 @@ import {
   type RunResultRow,
 } from "@/lib/api";
 import type { Alert, MonitorRecord } from "@/lib/types";
+import { KIND_LABEL } from "@/lib/types";
 import type { CaseRecord, SubjectKind } from "@/lib/types";
 import { flattenObservations, groupRank, type ResultRow } from "@/lib/flatten";
 import { buildGraph, TYPE_COLOR } from "@/lib/graph";
 import { analyze } from "@/lib/rules";
 
 /** Plain names for the subject kinds. "hash" means nothing to most people. */
-const KIND_LABEL: Record<SubjectKind, string> = {
-  domain: "Domain",
-  ip: "IP Address",
-  email: "Email Address",
-  username: "Username",
-  person: "Person",
-  company: "Company",
-  hash: "File Hash",
-  keyword: "Keyword",
-};
-
 const KINDS = Object.keys(KIND_LABEL) as SubjectKind[];
 
 /** Groups worth showing expanded. The rest open on demand. */

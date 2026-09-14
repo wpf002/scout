@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { SUBJECT_KINDS } from "@/lib/types";
+import { KIND_LABEL, SUBJECT_KINDS } from "@/lib/types";
 import type {
   CaseRecord,
   DatasetSweepResult,
@@ -104,7 +104,7 @@ export function GlobalSweep() {
         >
           {KINDS.map((k) => (
             <option key={k} value={k}>
-              {k}
+              {KIND_LABEL[k]}
             </option>
           ))}
         </select>

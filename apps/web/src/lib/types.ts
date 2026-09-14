@@ -31,6 +31,24 @@ export const SUBJECT_KINDS = [
 
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];
 
+/**
+ * Display names for subject kinds.
+ *
+ * Shared so every picker reads the same: acronyms upper-cased, everything else
+ * title cased. Raw kind ids are lower-case identifiers and must never reach a
+ * label.
+ */
+export const KIND_LABEL: Record<SubjectKind, string> = {
+  domain: "Domain",
+  ip: "IP Address",
+  email: "Email Address",
+  username: "Username",
+  person: "Person",
+  company: "Company",
+  hash: "File Hash",
+  keyword: "Keyword",
+};
+
 export interface Subject {
   kind: SubjectKind;
   value: string;

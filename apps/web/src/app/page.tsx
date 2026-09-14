@@ -1005,7 +1005,7 @@ export default function Page() {
       ) : null}
 
       {tool === "space" ? (
-        <section className="tool-panel">
+        <section className="tool-panel fit">
           <div className="tool-panel-head">
             <h2>Live from Space</h2>
             <button className="link" onClick={() => setTool(null)}>×</button>

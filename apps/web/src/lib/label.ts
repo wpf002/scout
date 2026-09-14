@@ -80,3 +80,23 @@ export function titleCase(input: string): string {
     })
     .join("");
 }
+
+/**
+ * Collector ids, written out.
+ *
+ * These are hyphenated identifiers, so title-casing them word by word gives
+ * "Adsb-Live" and "Sec-Edgar". The set is small and known, so it is spelled
+ * rather than derived; anything unrecognised falls back to titleCase.
+ */
+const SOURCE_LABEL: Record<string, string> = {
+  "adsb-live": "ADS-B Live",
+  "ais-live": "AIS Live",
+  "first-party-telemetry": "First-Party Telemetry",
+  "open-web": "Open Web",
+  "sec-edgar": "SEC EDGAR",
+  "sentinel-2": "Sentinel-2",
+};
+
+export function sourceLabel(id: string): string {
+  return SOURCE_LABEL[id] ?? titleCase(id);
+}

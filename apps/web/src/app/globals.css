@@ -31,6 +31,38 @@
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --row: 30px;
+
+  /*
+   * Native controls follow the app, not the OS.
+   *
+   * Without this the select popup, its arrow and the scrollbars render in the
+   * system light scheme on a near-black page.
+   */
+  color-scheme: dark;
+}
+
+/*
+ * Base styling for every select.
+ *
+ * Panels used to theme their own selects, so any select whose panel forgot —
+ * the investigation picker in the case-file header was one — rendered as a
+ * white native control. Component rules are more specific and still win; this
+ * only catches what they miss.
+ */
+select {
+  height: 28px;
+  padding: 0 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--text-faint);
 }
 
 * {
@@ -2663,11 +2695,35 @@ a:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.space-meta {
+.space-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
   margin: 8px 0 0;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-family: var(--mono, monospace);
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.space-stats > div {
+  background: var(--bg-inset);
+  padding: 6px 8px;
+}
+
+.space-stats dt {
+  margin: 0;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.space-stats dd {
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
 }
 
 .markets-panel {
@@ -3113,6 +3169,18 @@ a:hover {
 
 .tool-panel {
   overflow: auto;
+}
+
+/*
+ * Panels short enough to end where their content ends.
+ *
+ * The base panel is pinned top and bottom, which is right for a long list and
+ * wrong for a player and three numbers — those left a tall empty well under the
+ * content that read as a rendering fault.
+ */
+.tool-panel.fit {
+  bottom: auto;
+  max-height: calc(100vh - 212px);
 }
 
 .layer-list li,

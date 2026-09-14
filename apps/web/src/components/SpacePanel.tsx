@@ -46,7 +46,20 @@ export function SpacePanel() {
           </button>
         ))}
       </div>
-      <p className="space-meta">Live cameras on the ISS · ALT ~408 km · ORBIT ~93 min</p>
+      <dl className="space-stats">
+        <div>
+          <dt>Altitude</dt>
+          <dd>~408 km</dd>
+        </div>
+        <div>
+          <dt>Orbit</dt>
+          <dd>~93 min</dd>
+        </div>
+        <div>
+          <dt>Platform</dt>
+          <dd>ISS</dd>
+        </div>
+      </dl>
     </div>
   );
 }
