@@ -19,7 +19,13 @@ import { centroid, imageryParamsSchema, storeScene, type ImageryParams, type Sto
 
 export const SENTINELHUB_ID_ENV = "SENTINELHUB_CLIENT_ID";
 export const SENTINELHUB_SECRET_ENV = "SENTINELHUB_CLIENT_SECRET";
-const BASE = "https://services.sentinel-hub.com";
+// Copernicus Data Space Ecosystem by default: that is the free tier, and its
+// OAuth clients (created at dataspace.copernicus.eu) authenticate against the
+// CDSE identity server and call the sh.dataspace.copernicus.eu APIs, not the
+// legacy Sentinel Hub host. Both are overridable for a legacy or enterprise
+// account.
+const BASE = (process.env["SENTINELHUB_BASE_URL"]?.trim() || "https://sh.dataspace.copernicus.eu").replace(/\/$/, "");
+const TOKEN_URL = process.env["SENTINELHUB_TOKEN_URL"]?.trim() || "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token";
 const COLLECTION = "sentinel-2-l2a";
 const NATIVE_M = 10;
 
@@ -34,7 +40,7 @@ async function token(): Promise<string> {
   if (id === "" || secret === "") throw new Error(`Sentinel Hub needs ${SENTINELHUB_ID_ENV} and ${SENTINELHUB_SECRET_ENV}.`);
   return cached("sentinelhub:token", 50 * 60_000, async () => {
     const body = new URLSearchParams({ grant_type: "client_credentials", client_id: id, client_secret: secret }).toString();
-    const raw = await getText(`${BASE}/auth/realms/main/protocol/openid-connect/token`, {
+    const raw = await getText(TOKEN_URL, {
       method: "POST", body, timeoutMs: 20_000, headers: { "content-type": "application/x-www-form-urlencoded" },
     });
     return tokenSchema.parse(JSON.parse(raw)).access_token;
@@ -58,7 +64,9 @@ export async function searchScenes(params: ImageryParams, bearer: string): Promi
     fields: { include: ["id", "properties.datetime", "properties.eo:cloud_cover"] },
   });
   const raw = await getJson(`${BASE}/api/v1/catalog/1.0.0/search`, {
-    method: "POST", body, timeoutMs: 30_000, headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+    // CDSE's STAC search negotiates on geo+json and answers 406 to a plain
+    // application/json Accept; the legacy host accepts geo+json too.
+    method: "POST", body, timeoutMs: 30_000, headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json", accept: "application/geo+json" },
   });
   return catalogSchema
     .parse(raw)

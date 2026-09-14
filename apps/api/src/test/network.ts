@@ -163,8 +163,8 @@ const ROUTES: Array<{ match: RegExp; reply: () => Response }> = [
   { match: /^https:\/\/example\.org\/robots\.txt$/, reply: () => text(EXAMPLE_ROBOTS, "text/plain") },
   { match: /^https:\/\/example\.org\/$/, reply: () => text(EXAMPLE_PAGE, "text/html") },
   { match: /^https:\/\/closed\.example\/robots\.txt$/, reply: () => text(CLOSED_ROBOTS, "text/plain") },
-  { match: /^https:\/\/services\.sentinel-hub\.com\/auth\//, reply: () => text(SH_TOKEN, "application/json") },
-  { match: /^https:\/\/services\.sentinel-hub\.com\/api\/v1\/catalog\//, reply: () => text(SH_CATALOG, "application/json") },
+  { match: /^https:\/\/services\.sentinel-hub\.com\/auth\/|^https:\/\/identity\.dataspace\.copernicus\.eu\/auth\//, reply: () => text(SH_TOKEN, "application/json") },
+  { match: /^https:\/\/(services\.sentinel-hub\.com|sh\.dataspace\.copernicus\.eu)\/api\/v1\/catalog\//, reply: () => text(SH_CATALOG, "application/json") },
   { match: /^https:\/\/api\.planet\.com\/data\/v1\/quick-search/, reply: () => text(PLANET_SEARCH, "application/json") },
   { match: /^https:\/\/api\.maxar\.com\/discovery\/v1\/search/, reply: () => text(MAXAR_SEARCH, "application/json") },
   { match: /^https:\/\/opensky-network\.org\//, reply: () => text(OPENSKY, "application/json") },
@@ -352,7 +352,7 @@ const offline: typeof fetch = async (input, init) => {
   const recognition = /^http:\/\/127\.0\.0\.1:8200(\/embed|\/compare)$/.exec(url);
   if (recognition !== null && typeof init?.body === "string") return fakeRecognition(recognition[1] as string, init.body);
   // The process API answers in the format the caller accepted.
-  if (/^https:\/\/services\.sentinel-hub\.com\/api\/v1\/process$/.test(url)) {
+  if (/^https:\/\/(services\.sentinel-hub\.com|sh\.dataspace\.copernicus\.eu)\/api\/v1\/process$/.test(url)) {
     const accept = String((init?.headers as Record<string, string> | undefined)?.["accept"] ?? "image/tiff");
     return new Response(accept === "image/png" ? PNG_1PX : TIFF_STUB, { status: 200, headers: { "content-type": accept } });
   }

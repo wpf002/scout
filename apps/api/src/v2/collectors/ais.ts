@@ -78,6 +78,8 @@ export function sightingsFromMaritime(collection: { features: Array<{ geometry: 
 
 /** The subset of a websocket this collector needs, so a test can hand in a fake. */
 export interface SocketLike {
+  /** Set to "arraybuffer" so binary frames arrive decodable, not as a Blob. */
+  binaryType?: string;
   send(data: string): void;
   close(): void;
   addEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; message?: string }) => void): void;
@@ -124,9 +126,22 @@ export function collectAisStream(input: { apiKey: string; params: AisParams; ope
       socket.send(JSON.stringify({ APIKey: input.apiKey, BoundingBoxes: [[[s, w], [n, e]]], FilterMessageTypes: ["PositionReport"] }));
     });
     socket.addEventListener("message", (event) => {
+      // AISStream sends each report as a binary frame. With binaryType set to
+      // "arraybuffer" it arrives as an ArrayBuffer to decode; String(blob)
+      // would be "[object Blob]" and every report would be dropped silently.
+      const data = event.data;
+      const text =
+        typeof data === "string"
+          ? data
+          : data instanceof ArrayBuffer
+            ? new TextDecoder().decode(new Uint8Array(data))
+            : ArrayBuffer.isView(data)
+              ? new TextDecoder().decode(new Uint8Array((data as ArrayBufferView).buffer, (data as ArrayBufferView).byteOffset, (data as ArrayBufferView).byteLength))
+              : null;
+      if (text === null) return;
       let parsed: unknown;
       try {
-        parsed = JSON.parse(typeof event.data === "string" ? event.data : String(event.data));
+        parsed = JSON.parse(text);
       } catch {
         return;
       }
@@ -238,7 +253,15 @@ export const aisCollector = {
     const streamed =
       key === ""
         ? []
-        : await collectAisStream({ apiKey: key, params, open: (url) => new WebSocket(url) as unknown as SocketLike });
+        : await collectAisStream({
+            apiKey: key,
+            params,
+            open: (url) => {
+              const ws = new WebSocket(url);
+              ws.binaryType = "arraybuffer";
+              return ws as unknown as SocketLike;
+            },
+          });
     const box = params.bbox;
     const inside = (v: VesselSighting) => box === undefined || (v.lon >= box[0] && v.lon <= box[2] && v.lat >= box[1] && v.lat <= box[3]);
     return { sightings: [...national, ...streamed].filter(inside) };
