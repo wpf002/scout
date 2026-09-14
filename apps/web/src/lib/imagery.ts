@@ -37,6 +37,16 @@ export interface ImageryDef {
   /** Geostationary layers take `default`; daily composites need a date. */
   cadence: "continuous" | "daily";
   maxzoom: number;
+  /**
+   * West, south, east, north of what this instrument actually sees.
+   *
+   * A geostationary satellite watches one disc, and GIBS publishes no tile
+   * outside it — so the map asked for tiles that cannot exist, got a 404 for
+   * each, and drew the gaps as torn edges. Declaring the coverage stops the
+   * request rather than papering over the reply. Global products leave it
+   * unset.
+   */
+  bounds?: [number, number, number, number];
   opacity: number;
   description: string;
 }
@@ -44,6 +54,7 @@ export interface ImageryDef {
 export const IMAGERY: ImageryDef[] = [
   {
     id: "goes_east",
+    bounds: [-152, -60, 6, 60],
     name: "GOES-East (Americas)",
     layer: "GOES-East_ABI_GeoColor",
     level: 7,
@@ -55,6 +66,7 @@ export const IMAGERY: ImageryDef[] = [
   },
   {
     id: "goes_west",
+    bounds: [-180, -60, -60, 60],
     name: "GOES-West (Pacific)",
     layer: "GOES-West_ABI_GeoColor",
     level: 7,
@@ -65,6 +77,7 @@ export const IMAGERY: ImageryDef[] = [
   },
   {
     id: "goes_infrared",
+    bounds: [-152, -60, 6, 60],
     name: "Cloud-Top Infrared",
     layer: "GOES-East_ABI_Band13_Clean_Infrared",
     level: 6,
@@ -76,6 +89,7 @@ export const IMAGERY: ImageryDef[] = [
   },
   {
     id: "goes_airmass",
+    bounds: [-152, -60, 6, 60],
     name: "Air Mass",
     layer: "GOES-East_ABI_Air_Mass",
     level: 6,

@@ -547,6 +547,10 @@ function GlobeMapImpl({
               tiles: [imageryTiles(image)],
               tileSize: 256,
               maxzoom: image.maxzoom,
+              // A geostationary disc covers part of the globe; without this the
+              // map requests tiles that were never published and draws the 404s
+              // as torn edges.
+              ...(image.bounds === undefined ? {} : { bounds: image.bounds }),
               attribution: "NASA GIBS / Worldview",
             });
           }
