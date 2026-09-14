@@ -4598,3 +4598,32 @@ a:hover {
 .self-note {
   color: var(--warn);
 }
+
+.overview {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.overview-run {
+  padding: 4px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.overview-run:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.overview-bullets {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}

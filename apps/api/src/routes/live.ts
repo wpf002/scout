@@ -6,6 +6,22 @@ import { BY_ID, availableLayers, capabilities } from "../live/registry.js";
 import { layerHealth } from "../live/warm.js";
 import { markets } from "../live/feeds/markets.js";
 import { news } from "../live/feeds/news.js";
+import { modelClientFromEnv, parseJsonReply } from "@scout/reason";
+
+/** What the client is showing. Bounded so a huge map cannot send a huge prompt. */
+const overviewSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        label: z.string().max(200),
+        detail: z.string().max(200).optional(),
+        severity: z.string().max(40).optional(),
+        kind: z.string().max(60).optional(),
+        at: z.string().max(40).optional(),
+      }),
+    )
+    .max(200),
+});
 
 export { clearLiveCache } from "../live/cache.js";
 
@@ -105,6 +121,92 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
       })),
       pending: cold.map((layer) => layer.id),
     };
+  });
+
+  /**
+   * POST /live/overview — a short read of what the live layers are showing.
+   *
+   * Live alerts are public feed data (quakes, incidents, outages), not case
+   * material, so this is outside the scope gate by construction: it never
+   * touches the graph and takes no case id. The caller sends the alerts it is
+   * already displaying and gets prose back.
+   *
+   * With no model configured this says so rather than inventing a summary —
+   * a blank overview is better than a confident guess about live hazards.
+   */
+  app.post("/live/overview", async (request, reply) => {
+    const body = overviewSchema.parse(request.body);
+
+    let client;
+    try {
+      client = modelClientFromEnv(process.env);
+    } catch (error) {
+      return reply.header("cache-control", "no-store").send({
+        available: false,
+        bullets: [],
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (client === null) {
+      return reply.header("cache-control", "no-store").send({
+        available: false,
+        bullets: [],
+        reason: "No model configured. Set REASON_PROVIDER.",
+      });
+    }
+    if (body.items.length === 0) {
+      return reply.header("cache-control", "no-store").send({
+        available: true,
+        bullets: ["Nothing on the active layers right now."],
+        model: null,
+      });
+    }
+
+    const lines = body.items
+      .slice(0, 80)
+      .map((item) =>
+        [item.severity, item.kind, item.label, item.detail, item.at]
+          .filter((part) => part !== undefined && part !== "")
+          .join(" · "),
+      )
+      .join("\n");
+
+    try {
+      // Every provider in this client is put in JSON mode — the planner needs
+      // it — so ask for structured bullets rather than fighting for prose.
+      const answer = await client.complete({
+        role: "synthesis",
+        maxTokens: 400,
+        system:
+          "You summarise live monitoring alerts for an operator. Use only the lines given. " +
+          "Name places and counts. State no cause, forecast or recommendation; if the lines " +
+          'do not support a statement, leave it out. Reply as JSON: {"bullets": ["…"]} with ' +
+          "at most three entries, each one short sentence.",
+        user: `Alerts currently on the map:\n${lines}`,
+      });
+      const parsed = parseJsonReply(answer.text) as { bullets?: unknown };
+      const bullets = Array.isArray(parsed.bullets)
+        ? parsed.bullets.filter((b): b is string => typeof b === "string" && b.trim() !== "").slice(0, 3)
+        : [];
+      if (bullets.length === 0) {
+        return reply.header("cache-control", "no-store").send({
+          available: false,
+          bullets: [],
+          reason: "The model returned nothing usable.",
+        });
+      }
+      return reply.header("cache-control", "no-store").send({
+        available: true,
+        bullets,
+        model: answer.model,
+      });
+    } catch (error) {
+      return reply.header("cache-control", "no-store").send({
+        available: false,
+        bullets: [],
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   /** The markets crawl. Not geographic, so not a layer. */

@@ -93,6 +93,8 @@ export default function Page() {
   // Bumped once scope is granted, which sends the OSINT panel back to work.
   const [runToken, setRunToken] = useState(0);
   const [selfNote, setSelfNote] = useState<string | null>(null);
+  const [overview, setOverview] = useState<string[] | null>(null);
+  const [overviewing, setOverviewing] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>("sat");
   const [projection, setProjection] = useState<"globe" | "mercator">("globe");
   const [cursor, setCursor] = useState({ lat: 0, lon: 0, zoom: 2.2 });
@@ -1084,6 +1086,48 @@ export default function Page() {
           <div className="tool-panel-head">
             <h2>Live Alerts</h2>
             <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          <div className="overview">
+            <button
+              type="button"
+              className="overview-run"
+              disabled={overviewing || alerts.length === 0}
+              onClick={() => {
+                setOverviewing(true);
+                setOverview(null);
+                fetch("/api/live/overview", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    items: alerts.slice(0, 80).map((alert) => ({
+                      label: alert.label,
+                      detail: alert.detail,
+                      severity: alert.severity,
+                      kind: alert.layer,
+                    })),
+                  }),
+                })
+                  .then((r) => r.json() as Promise<{ bullets?: string[]; reason?: string }>)
+                  .then((d) =>
+                    setOverview(
+                      (d.bullets ?? []).length > 0
+                        ? (d.bullets as string[])
+                        : [d.reason ?? "No overview available."],
+                    ),
+                  )
+                  .catch(() => setOverview(["Could not reach the overview service."]))
+                  .finally(() => setOverviewing(false));
+              }}
+            >
+              {overviewing ? "Reading…" : "Overview"}
+            </button>
+            {overview !== null ? (
+              <ul className="overview-bullets">
+                {overview.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            ) : null}
           </div>
           {alerts.length === 0 ? (
             <p className="panel-empty">No alerts from the layers currently on.</p>
