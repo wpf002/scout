@@ -54,6 +54,24 @@ const LABELS: Record<string, string> = {
   frp: "Radiative power",
 };
 
+/**
+ * Labels for keys not in LABELS: acronyms upper-cased, every other word title
+ * cased. "mmsi" → "MMSI", "heading" → "Heading", "sourceId" → "Source ID".
+ */
+const ACRONYMS = new Set(["mmsi", "imo", "icao", "ip", "id", "url", "mw", "utc", "eta", "aoi", "gps", "vhf"]);
+
+function humanize(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[\s_]+/)
+    .map((word) =>
+      ACRONYMS.has(word.toLowerCase())
+        ? word.toUpperCase()
+        : word.charAt(0).toUpperCase() + word.slice(1),
+    )
+    .join(" ");
+}
+
 /** Per-layer field order. Anything not listed here is not shown. */
 const FIELDS: Record<string, string[]> = {
   "aircraft:commercial": ["callsign", "registration", "aircraftType", "altitudeM", "speedKts", "heading", "squawk", "emergency", "origin", "icao24", "source"],
@@ -169,12 +187,12 @@ export function Detail({
       <dl>
         {shown.map(({ key, value }) => (
           <div key={key}>
-            <dt>{LABELS[key] ?? key.replace(/([A-Z])/g, " $1").toLowerCase()}</dt>
+            <dt>{LABELS[key] ?? humanize(key)}</dt>
             <dd>{format(key, value)}</dd>
           </div>
         ))}
         <div>
-          <dt>position</dt>
+          <dt>Position</dt>
           <dd>
             {selection.lngLat.lat.toFixed(4)}, {selection.lngLat.lng.toFixed(4)}
           </dd>
