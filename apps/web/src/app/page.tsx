@@ -96,6 +96,7 @@ export default function Page() {
   // Bumped once scope is granted, which sends the OSINT panel back to work.
   const [runToken, setRunToken] = useState(0);
   const [selfNote, setSelfNote] = useState<string | null>(null);
+  const [mapBusy, setMapBusy] = useState(true);
   const [overview, setOverview] = useState<string[] | null>(null);
   const [overviewing, setOverviewing] = useState(false);
   const [arcgisFeatures, setArcgisFeatures] = useState<GeoJSON.Feature[]>([]);
@@ -564,6 +565,19 @@ export default function Page() {
   );
 
   const countFor = (layerId: string) => status[layerId];
+
+  /*
+   * Still working.
+   *
+   * The map's own `idle` covers tiles and style, but the feed layers arrive
+   * separately — a layer that has not reported a count yet is still in flight.
+   * Either one means a drag may do nothing, which is the whole reason this is
+   * shown at all.
+   */
+  const pendingLayers = active.filter(
+    (id) => offered(id) && LAYER_BY_ID.get(id)?.kind === "feed" && countFor(id) === undefined,
+  ).length;
+  const busy = mapBusy || pendingLayers > 0;
   const activeInCategory = (ids: string[]) =>
     ids.filter((id) => active.includes(id) && offered(id)).length;
 
@@ -637,6 +651,7 @@ export default function Page() {
         arcgisFeatures={arcgisFeatures}
         onSelect={setSelection}
         onStatus={onStatus}
+        onBusy={setMapBusy}
         onCursor={onCursor}
         flyTo={flyTo}
         onCentre={onCentre}
@@ -670,7 +685,8 @@ export default function Page() {
         <div className="hud-readout">
           <LocalClock />
           <span>
-            STATUS <b className="live">LIVE</b>
+            STATUS{" "}
+            <b className={busy ? "busy" : "live"}>{busy ? "LOADING" : "LIVE"}</b>
           </span>
           <span>
             <b>{active.length}</b> LAYERS

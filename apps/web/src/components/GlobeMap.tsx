@@ -41,6 +41,14 @@ export interface Props {
   arcgisFeatures?: GeoJSON.Feature[];
   onSelect: (selection: Selection | null) => void;
   onStatus: (status: Record<string, number | string>) => void;
+  /**
+   * Whether the map is still working.
+   *
+   * With a lot of layers on, attaching them takes tens of seconds during which
+   * drags do nothing. The header said LIVE throughout, so a map that was merely
+   * busy read as a map that was broken.
+   */
+  onBusy?: (busy: boolean) => void;
   onCursor: (position: { lat: number; lon: number; zoom: number }) => void;
   /** `offset` shifts where the target lands, in pixels from the centre, for a target that would otherwise sit under a panel. */
   flyTo: { lat: number; lon: number; zoom?: number; offset?: [number, number] } | null;
@@ -119,6 +127,7 @@ function GlobeMapImpl({
   arcgisFeatures = [],
   onSelect,
   onStatus,
+  onBusy,
   onCursor,
   flyTo,
   onCentre,
@@ -311,6 +320,12 @@ function GlobeMapImpl({
       }
     }, 250);
     becomeReady();
+
+    // Busy until the map says it has nothing left to draw. `idle` fires when
+    // every pending source and tile has settled, which is exactly the moment
+    // interaction stops feeling dead.
+    instance.on("dataloading", () => onBusy?.(true));
+    instance.on("idle", () => onBusy?.(false));
 
     // The cursor readout, coalesced to one report per frame.
     //

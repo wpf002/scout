@@ -4724,3 +4724,7 @@ a:hover {
   font-size: 9px;
   white-space: nowrap;
 }
+
+.hud-readout .busy {
+  color: var(--warn);
+}
