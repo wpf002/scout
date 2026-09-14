@@ -4717,3 +4717,10 @@ a:hover {
   font-size: 11px;
   line-height: 1.45;
 }
+
+.switch-limit {
+  color: var(--warn);
+  font-family: var(--mono);
+  font-size: 9px;
+  white-space: nowrap;
+}

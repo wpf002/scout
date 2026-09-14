@@ -29,6 +29,7 @@ import { GlobalSweep } from "@/components/GlobalSweep";
 import { ArcGisPanel } from "@/components/ArcGisPanel";
 import { EMPTY_LAYER, type ImageryOverlay, type MapLayer, type Viewport } from "@/lib/investigation";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
+import { IMAGERY_BY_ID } from "@/lib/imagery";
 
 /**
  * MapLibre touches `window` at import time, so it cannot be server-rendered.
@@ -578,6 +579,12 @@ export default function Page() {
     const parentOff =
       layer.parent !== undefined && !active.includes(layer.parent);
 
+    // Imagery only: how deep this product actually publishes, when the view has
+    // already gone past it.
+    const native = IMAGERY_BY_ID.get(layerId)?.maxzoom;
+    const overzoomed =
+      native !== undefined && cursor.zoom > native + 0.5 ? native : null;
+
     return (
       <li
         key={layerId}
@@ -603,7 +610,18 @@ export default function Page() {
           {layer.name}
         </span>
         <span className="switch-count">
-          {!on ? "" : count === undefined ? "…" : failed ? String(count) : count.toLocaleString()}
+          {on && overzoomed !== null ? (
+            /*
+             * Past a product's deepest published tile the map stretches the
+             * last one, which looks like a rendering fault rather than the
+             * instrument's resolution. GOES ABI is about 2 km a pixel and
+             * NASA publishes nothing below zoom 7; saying so is the only
+             * honest fix, since there is no sharper tile to fetch.
+             */
+            <span className="switch-limit" title={`No tiles below zoom ${overzoomed}. This is the instrument's resolution, not a loading state.`}>
+              max z{overzoomed}
+            </span>
+          ) : !on ? "" : count === undefined ? "…" : failed ? String(count) : count.toLocaleString()}
         </span>
       </li>
     );

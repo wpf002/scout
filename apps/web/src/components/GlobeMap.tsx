@@ -335,6 +335,24 @@ function GlobeMapImpl({
       });
     });
 
+    /*
+     * Zoom changes without the pointer moving.
+     *
+     * The readout was fed by mousemove alone, so scrolling or using the zoom
+     * buttons left it showing the zoom the pointer last saw — the footer said
+     * 2.2 while the map was at 10.7, and anything keyed off it was equally
+     * stale. The wheel does not move the pointer, so the map has to say so
+     * itself.
+     */
+    instance.on("zoomend", () => {
+      const centre = instance.getCenter();
+      onCursor({
+        lat: pending?.lat ?? centre.lat,
+        lon: pending?.lon ?? centre.lng,
+        zoom: instance.getZoom(),
+      });
+    });
+
     cursorFrame.current = () => {
       if (frame !== 0) cancelAnimationFrame(frame);
       frame = 0;
