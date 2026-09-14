@@ -244,7 +244,14 @@ out (ArcFace via InsightFace for faces, ECAPA-TDNN via SpeechBrain for
 voices, installed only with `uv sync --extra models`; without them a
 request is answered 503, never with an invented vector), and cosine
 ranking of a probe against the candidates it is handed, in integer basis
-points. MATCH needs the best candidate inside the threshold *and* clear of
+points. The real embedders have been run: buffalo_l detects (a blank image
+is a clean no-subject, not a crash) and ECAPA embeds. A WAV probe is
+decoded with the standard library so the common case needs no FFmpeg;
+other formats fall back to torchaudio and, where FFmpeg is absent, become
+a clear no-subject naming the fix. Non-image bytes are a no-subject too.
+Pyannote diarisation is gated behind a Hugging Face token, so its real
+path is unverified here; its logic is covered by the deterministic
+diariser. MATCH needs the best candidate inside the threshold *and* clear of
 the runner-up by the margin; a close call is INDETERMINATE; no candidates
 is INDETERMINATE.
 

@@ -106,9 +106,15 @@ def test_without_models_a_real_embedder_is_unavailable_not_invented(monkeypatch:
     try:
         import insightface  # noqa: F401
     except ImportError:
+        # Without the extra a real embedder is unavailable, never invented.
         assert r.status_code == 503
         assert r.json()["detail"]["error"] == "model-unavailable"
         assert "uv sync --extra models" in r.json()["detail"]["message"]
+    else:
+        # With the extra the model loads and rejects non-image bytes cleanly,
+        # as a no-subject, not a crash.
+        assert r.status_code == 422
+        assert r.json()["detail"]["error"] == "no-subject"
 
 
 def test_deterministic_diariser_splits_speakers_and_refuses_silence() -> None:

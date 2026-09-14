@@ -65,10 +65,13 @@ class PyannoteDiariser:
         self._pipeline = Pipeline.from_pretrained(source, use_auth_token=token)
 
     def split(self, media: bytes, content_type: str) -> list[SpeakerMedia]:  # pragma: no cover - depends on the extra
-        import torch
-        import torchaudio
+        import torch  # noqa: F401
 
-        waveform, rate = torchaudio.load(io.BytesIO(media))
+        from recognition.embedders import SpeechBrainEmbedder
+
+        # The same stdlib WAV decode the voice embedder uses, so a WAV probe
+        # needs no FFmpeg here either.
+        waveform, rate = SpeechBrainEmbedder._decode(media)
         if waveform.numel() == 0:
             raise NoSubject("empty audio")
         diarisation = self._pipeline({"waveform": waveform, "sample_rate": rate})

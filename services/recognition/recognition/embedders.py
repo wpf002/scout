@@ -18,7 +18,7 @@ import io
 import math
 import os
 import random
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class NoSubject(Exception):
@@ -81,9 +81,12 @@ class InsightFaceEmbedder:
 
     def embed(self, media: bytes, content_type: str) -> list[float]:  # pragma: no cover - depends on the extra
         import numpy as np
-        from PIL import Image
+        from PIL import Image, UnidentifiedImageError
 
-        image = Image.open(io.BytesIO(media)).convert("RGB")
+        try:
+            image = Image.open(io.BytesIO(media)).convert("RGB")
+        except (UnidentifiedImageError, OSError, ValueError) as error:
+            raise NoSubject(f"not a readable image ({error})") from error
         array = np.asarray(image)[:, :, ::-1]  # RGB → BGR, which InsightFace expects
         faces = self._app.get(array)
         if not faces:
@@ -110,18 +113,58 @@ class SpeechBrainEmbedder:
 
     def embed(self, media: bytes, content_type: str) -> list[float]:  # pragma: no cover - depends on the extra
         import torch
-        import torchaudio
 
-        waveform, rate = torchaudio.load(io.BytesIO(media))
+        waveform, rate = self._decode(media)
         if waveform.numel() == 0:
             raise NoSubject("empty audio")
         if rate != 16_000:
+            import torchaudio
+
             waveform = torchaudio.functional.resample(waveform, rate, 16_000)
         if waveform.shape[0] > 1:
             waveform = waveform.mean(dim=0, keepdim=True)
         with torch.no_grad():
             embedding = self._encoder.encode_batch(waveform).squeeze()
         return _unit([float(x) for x in embedding.tolist()])
+
+    @staticmethod
+    def _decode(media: bytes) -> "tuple[Any, int]":  # pragma: no cover - depends on the extra
+        """A WAV probe is decoded with the standard library, so the common
+        case needs no FFmpeg. Modern torchaudio routes `load` through
+        torchcodec/FFmpeg, which is not always present; anything that is not
+        a PCM WAV falls back to that path and, when it is missing, becomes a
+        clear NoSubject naming the fix."""
+        import wave
+
+        import torch
+
+        try:
+            with wave.open(io.BytesIO(media), "rb") as w:
+                channels, width, rate, frames = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
+                raw = w.readframes(frames)
+        except (wave.Error, EOFError):
+            try:
+                import torchaudio
+
+                tensor, rate = torchaudio.load(io.BytesIO(media))
+                return tensor, rate
+            except Exception as error:  # noqa: BLE001
+                raise NoSubject(f"could not decode audio ({error}); send 16-bit PCM WAV, or install FFmpeg for other formats") from error
+        import numpy as np
+
+        dtype = {1: np.uint8, 2: np.int16, 4: np.int32}.get(width)
+        if dtype is None:
+            raise NoSubject(f"unsupported WAV sample width {width * 8}-bit; send 16-bit PCM WAV")
+        samples = np.frombuffer(raw, dtype=dtype).astype(np.float32)
+        if width == 1:
+            samples = (samples - 128.0) / 128.0
+        else:
+            samples = samples / float(1 << (width * 8 - 1))
+        if channels > 1:
+            samples = samples.reshape(-1, channels).T
+        else:
+            samples = samples.reshape(1, -1)
+        return torch.from_numpy(samples), rate
 
 
 _cache: dict[str, Embedder] = {}
