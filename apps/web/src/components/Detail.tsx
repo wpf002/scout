@@ -1,7 +1,11 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import type { Selection } from "./GlobeMap";
 import { LAYER_BY_ID } from "@/lib/layers";
+
+// Browser-only: hls.js must not enter the server or prerender bundle.
+const HlsVideo = dynamic(() => import("./HlsVideo"), { ssr: false });
 
 /**
  * The feature card.
@@ -115,6 +119,66 @@ function format(key: string, value: string): string {
   return value;
 }
 
+/**
+ * A YouTube watch/live URL as an /embed URL, or null. YouTube is the one
+ * third-party player embedded inline: the iframe loads YouTube's player, not
+ * the source site's own scripts.
+ */
+function youtubeEmbed(u: string | null): string | null {
+  if (u === null) return null;
+  const m = u.match(
+    /(?:youtube\.com\/(?:watch\?v=|embed\/|live\/|v\/)|youtu\.be\/)([\w-]{11})/,
+  );
+  return m ? `https://www.youtube.com/embed/${m[1]}?autoplay=1&mute=1&playsinline=1` : null;
+}
+
+/**
+ * The camera view, inline. An embeddable page (YouTube, or streamType
+ * "iframe") plays in an iframe; an HLS playlist plays in a <video>, with hls.js
+ * loaded on demand where the browser cannot play HLS natively; anything else
+ * falls back to a still image. Renders nothing for features that carry none of
+ * these, so it is safe on every layer.
+ */
+function CctvMedia({
+  label,
+  streamType,
+  streamUrl,
+  stillUrl,
+  url,
+}: {
+  label: string;
+  streamType: string;
+  streamUrl: string | null;
+  stillUrl: string | null;
+  url: string | null;
+}) {
+  const embed =
+    youtubeEmbed(streamUrl) ??
+    youtubeEmbed(url) ??
+    (streamType === "iframe" ? streamUrl : null);
+  const hlsUrl =
+    streamType === "hls" && streamUrl !== null && embed === null ? streamUrl : null;
+
+  if (embed !== null) {
+    return (
+      <iframe
+        className="detail-video"
+        src={embed}
+        title={label}
+        allow="autoplay; encrypted-media; picture-in-picture"
+        allowFullScreen
+      />
+    );
+  }
+  if (hlsUrl !== null) {
+    return <HlsVideo src={hlsUrl} label={label} />;
+  }
+  if (stillUrl !== null) {
+    return <img className="detail-still" src={stillUrl} alt={label} />;
+  }
+  return null;
+}
+
 export function Detail({
   selection,
   onClose,
@@ -176,14 +240,13 @@ export function Detail({
         <p className="detail-alarm">Squawking {emergency}</p>
       ) : null}
 
-      {/*
-        * A still image is shown inline; anything else is a link. Embedding an
-        * agency's video player would mean loading their scripts into this
-        * page, which is not a trade worth making for a thumbnail.
-        */}
-      {stillUrl !== null ? (
-        <img className="detail-still" src={stillUrl} alt={selection.label} />
-      ) : null}
+      <CctvMedia
+        label={selection.label}
+        streamType={streamType}
+        streamUrl={streamUrl}
+        stillUrl={stillUrl}
+        url={url}
+      />
 
       <dl>
         {shown.map(({ key, value }) => (

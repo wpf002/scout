@@ -2609,6 +2609,16 @@ a:hover {
   border-bottom: 1px solid var(--border);
 }
 
+.detail-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: #000;
+  object-fit: cover;
+}
+
 .detail-actions {
   display: flex;
   gap: 6px;
