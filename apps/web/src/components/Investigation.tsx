@@ -134,6 +134,8 @@ export function Investigation({
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState<AskResult | null>(null);
   const [asking, setAsking] = useState(false);
+  const [overview, setOverview] = useState<string[] | null>(null);
+  const [summarising, setSummarising] = useState(false);
 
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [neighborhood, setNeighborhood] = useState<{ nodes: GraphNode[]; edges: GraphEdge[]; truncated: boolean } | null>(null);
@@ -210,6 +212,26 @@ export function Investigation({
   useEffect(() => {
     if (pick !== null) setSelectedId(pick.entityId);
   }, [pick]);
+
+  /**
+   * The case's own figures, written out.
+   *
+   * Not a question for the planner — it expresses six operations and this is
+   * none of them. The server reads the counts and the model only phrases them.
+   */
+  const summarise = async () => {
+    if (caseId === "" || summarising) return;
+    setSummarising(true);
+    setOverview(null);
+    try {
+      const result = await v2.overview(caseId);
+      setOverview(result.bullets.length > 0 ? result.bullets : [result.reason ?? "No overview available."]);
+    } catch (caught) {
+      setOverview([describeError(caught)]);
+    } finally {
+      setSummarising(false);
+    }
+  };
 
   const asOf = useMemo(() => new Date(asOfMs), [asOfMs]);
   const asOfIso = asOf.toISOString();
@@ -530,7 +552,18 @@ export function Investigation({
               <button type="submit" className="tiny" disabled={asking || question.trim().length < 3}>
                 {asking ? "Asking…" : "Ask"}
               </button>
+              <button type="button" className="tiny" onClick={() => void summarise()} disabled={summarising}>
+                {summarising ? "Reading…" : "Overview"}
+              </button>
             </form>
+
+            {overview !== null ? (
+              <ul className="overview-bullets">
+                {overview.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            ) : null}
 
             <div className="investigation-split">
               {/* ── Who ── */}

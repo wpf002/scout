@@ -441,6 +441,13 @@ export const v2 = {
 
   ask: (caseId: string, question: string) => request<AskResult>("/v2/ask", { method: "POST", body: { caseId, question } }),
 
+  /** The case's own figures, written out. Refuses rather than guesses with no model. */
+  overview: (caseId: string) =>
+    request<{ available: boolean; bullets: string[]; model?: string | null; reason?: string }>(
+      "/v2/overview",
+      { method: "POST", body: { caseId } },
+    ),
+
   review: (caseId: string, kind?: EntityKind, limit = 500) =>
     request<{ count: number; kinds: ReviewKind[]; pairs: ReviewPair[] }>(`/v2/review?${q({ caseId, kind, limit })}`),
 

@@ -24,6 +24,7 @@ import { objectStore, TILES_BUCKET } from "../v2/storage.js";
 import { compare, compareSchema, createGallery, enroll, enrollSchema, gallerySchema, recognitionEnabled, revokeEnrollment } from "../v2/recognition.js";
 import { runResolution } from "../v2/resolution.js";
 import { deriveLinks } from "../v2/links.js";
+import { modelClientFromEnv, parseJsonReply } from "@scout/reason";
 import { coLocationClusters, coLocationWindow, neighbors, pathBetween, timelineForEntity, visibleEntities } from "../v2/graph.js";
 import { checkGraphConsistency, edgesAsOf, observationDensity, observationIdsInBox } from "@scout/db";
 import {
@@ -571,6 +572,80 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     ctx.assertAction("READ_GRAPH");
     const asked = await ask({ ctx, operator, question: body.question });
     return { caseId, authorizationId: ctx.authorizationId, ...asked };
+  });
+
+  /**
+   * POST /v2/overview — the case in three lines.
+   *
+   * Not routed through the planner on purpose. The planner expresses six
+   * operations and "summarise this case" is none of them, so it would refuse.
+   * Instead the aggregates are read from the graph here — counts by kind and
+   * status, the observation span, which sources contributed — and the model is
+   * given those facts and asked only to write them out. It never sees the
+   * graph and cannot add to it, so a sentence it produces is traceable to a
+   * number above it.
+   *
+   * Scope-gated and logged like every other read.
+   */
+  app.post("/v2/overview", async (request, reply) => {
+    const body = z.object({ caseId: z.string().min(1) }).parse(request.body);
+    const operator = operatorOf(request);
+    const { ctx, caseId } = await scopeContextForCase(body.caseId, operator);
+    ctx.assertAction("READ_GRAPH");
+
+    let client;
+    try {
+      client = modelClientFromEnv(process.env);
+    } catch (error) {
+      return reply.send({ available: false, bullets: [], reason: error instanceof Error ? error.message : String(error) });
+    }
+    if (client === null) {
+      return reply.send({ available: false, bullets: [], reason: "No model configured. Set REASON_PROVIDER." });
+    }
+
+    const live = { resolutionRun: { authorizationId: ctx.authorizationId }, members: { some: { supersededAt: null } } };
+    const [byKind, byStatus, observations, consulted, span] = await Promise.all([
+      prisma.entity.groupBy({ by: ["kind"], where: live, _count: { _all: true } }),
+      prisma.entity.groupBy({ by: ["status"], where: live, _count: { _all: true } }),
+      prisma.observation.count({ where: { authorizationId: ctx.authorizationId } }),
+      prisma.observation.groupBy({ by: ["sourceId"], where: { authorizationId: ctx.authorizationId }, _count: { _all: true } }),
+      prisma.observation.aggregate({ where: { authorizationId: ctx.authorizationId }, _min: { observedAt: true }, _max: { observedAt: true } }),
+    ]);
+
+    const registered = listRunnable().map((c) => c.id);
+    const silent = registered.filter((id) => !consulted.some((c) => c.sourceId === id));
+    const facts = [
+      `Observations: ${observations}`,
+      `Entities by kind: ${byKind.map((k) => `${k.kind} ${k._count._all}`).join(", ") || "none"}`,
+      `Entities by status: ${byStatus.map((s) => `${s.status} ${s._count._all}`).join(", ") || "none"}`,
+      `Sources that contributed: ${consulted.map((c) => `${c.sourceId} ${c._count._all}`).join(", ") || "none"}`,
+      `Sources consulted that returned nothing: ${silent.join(", ") || "none"}`,
+      `Observed between: ${span._min.observedAt?.toISOString() ?? "n/a"} and ${span._max.observedAt?.toISOString() ?? "n/a"}`,
+    ].join("\n");
+
+    try {
+      const answer = await client.complete({
+        role: "synthesis",
+        maxTokens: 400,
+        system:
+          "You describe the state of an investigation case to its operator. Use only the figures given. " +
+          "Do not name a person, place or organisation that does not appear in them, and draw no conclusion " +
+          'about what the case means. Reply as JSON: {"bullets": ["…"]} with at most three entries, each one ' +
+          "short sentence. Mention sources that returned nothing, because absence is a finding.",
+        user: facts,
+      });
+      const parsed = parseJsonReply(answer.text) as { bullets?: unknown };
+      const bullets = Array.isArray(parsed.bullets)
+        ? parsed.bullets.filter((b): b is string => typeof b === "string" && b.trim() !== "").slice(0, 3)
+        : [];
+      if (bullets.length === 0) {
+        return reply.send({ available: false, bullets: [], reason: "The model returned nothing usable." });
+      }
+      await logRead(operator, ctx.authorizationId, "case", [caseId], "overview");
+      return reply.send({ available: true, caseId, bullets, model: answer.model });
+    } catch (error) {
+      return reply.send({ available: false, bullets: [], reason: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   const logRead = async (operator: string, authorizationId: string, targetType: string, targetIds: string[], queryText: string) =>
