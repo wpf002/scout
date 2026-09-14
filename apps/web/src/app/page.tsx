@@ -87,6 +87,8 @@ export default function Page() {
     kind: "domain" | "identifier";
     value: string;
   } | null>(null);
+  // Bumped once scope is granted, which sends the OSINT panel back to work.
+  const [runToken, setRunToken] = useState(0);
   const [basemap, setBasemap] = useState<BasemapId>("sat");
   const [projection, setProjection] = useState<"globe" | "mercator">("globe");
   const [cursor, setCursor] = useState({ lat: 0, lon: 0, zoom: 2.2 });
@@ -953,7 +955,14 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <div className="tool-panel-body">
-            <CaseFile prefillScope={pendingScope} />
+            <CaseFile
+              prefillScope={pendingScope}
+              onScopeAdded={() => {
+                setPendingScope(null);
+                setRunToken((n) => n + 1);
+                setTool("osint");
+              }}
+            />
           </div>
         </section>
       ) : null}
@@ -980,6 +989,7 @@ export default function Page() {
             <OsintPanel
               onLocated={onLocated}
               initialQuery={seeded}
+              runToken={runToken}
               onAuthorize={(subject) => {
                 setPendingScope({
                   kind: subject.kind === "domain" ? "domain" : "identifier",

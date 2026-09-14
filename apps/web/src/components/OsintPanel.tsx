@@ -83,6 +83,7 @@ export function OsintPanel({
   onLocated,
   initialQuery = "",
   onAuthorize,
+  runToken = 0,
 }: {
   onLocated: (features: GeoJSON.Feature[]) => void;
   /** Seeded from the map's search box when it recognises an indicator. */
@@ -93,6 +94,11 @@ export function OsintPanel({
    * than as a button beside a result.
    */
   onAuthorize?: (subject: { kind: string; value: string }) => void;
+  /**
+   * Bumped by the caller once scope has been granted for the subject. Re-runs,
+   * so authorising does not also mean walking back here and pressing Run.
+   */
+  runToken?: number;
 }) {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [caseId, setCaseId] = useState("");
@@ -233,6 +239,34 @@ export function OsintPanel({
       setRunning(false);
     }
   }, [indicator, caseId, kind, running]);
+
+  /*
+   * Re-run once the caller says scope was granted.
+   *
+   * Guarded on a non-zero token so the panel does not fire a run the moment it
+   * mounts — the default means "nothing has been authorised yet".
+   */
+  const lastToken = useRef(runToken);
+  useEffect(() => {
+    if (runToken === lastToken.current) return;
+    lastToken.current = runToken;
+    if (runToken > 0) void run();
+  }, [runToken, run]);
+
+  /**
+   * Whether the typed subject already sits in the open case's scope.
+   *
+   * The case list may not carry scope entries; when it does not, say nothing
+   * rather than guess, so the prompt never appears on a subject that is in fact
+   * authorised.
+   */
+  const subjectInScope = useMemo(() => {
+    const term = indicator.trim().toLowerCase();
+    if (term === "" || caseId === "") return true;
+    const entries = cases.find((c) => c.id === caseId)?.scopeEntries;
+    if (entries === undefined) return true;
+    return entries.some((entry) => entry.value.trim().toLowerCase() === term);
+  }, [indicator, caseId, cases]);
 
   /** During a run the live rows are the truth; afterwards the final set is. */
   const resultRows = useMemo<RunResultRow[]>(
@@ -498,6 +532,20 @@ export function OsintPanel({
         >
           {running ? "Searching" : "Search"}
         </button>
+        {/* Say up front that the person-facing sources will refuse, rather than
+            spending a run to find out. */}
+        {!subjectInScope && onAuthorize !== undefined ? (
+          <button
+            type="button"
+            className="s-authorize"
+            title="This subject is not in the case's scope yet"
+            onClick={() =>
+              onAuthorize({ kind: kind === "" ? "identifier" : kind, value: indicator.trim() })
+            }
+          >
+            Authorize subject
+          </button>
+        ) : null}
         {result !== null && !running ? (
           <button
             className="watch"

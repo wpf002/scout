@@ -15,10 +15,13 @@ import type { CaseRecord, ScopeEntry } from "@/lib/types";
 export function ScopePanel({
   record,
   onChange,
+  onAdded,
   prefill,
 }: {
   record: CaseRecord;
   onChange: (entries: ScopeEntry[]) => void;
+  /** Fired after scope is granted, so the caller can resume what it was doing. */
+  onAdded?: (entry: ScopeEntry) => void;
   /**
    * A subject carried over from a lookup that came back "Not Authorized". It
    * fills the form in; it does not authorise anything. The confirmation below
@@ -57,6 +60,7 @@ export function ScopePanel({
       setNote("");
       setConfirming(false);
       setAcknowledged(false);
+      onAdded?.(entry);
     } catch (caught) {
       setError(
         caught instanceof ApiError ? caught.message : "Failed to add scope.",
