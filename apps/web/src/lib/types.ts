@@ -28,6 +28,10 @@ export const SUBJECT_KINDS = [
   "hash",
   "keyword",
   "location",
+  "address",
+  "phone",
+  "vessel",
+  "plate",
 ] as const;
 
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];
@@ -49,6 +53,10 @@ export const KIND_LABEL: Record<SubjectKind, string> = {
   hash: "File Hash",
   keyword: "Keyword",
   location: "Place",
+  address: "Address",
+  phone: "Phone Number",
+  vessel: "Vessel",
+  plate: "Plate",
 };
 
 export interface Subject {

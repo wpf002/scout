@@ -22,6 +22,16 @@ import { fetchRdap, rdapSource } from "./rdap.js";
 import { fetchThreatFox, threatFoxSource } from "./threatfox.js";
 import { fetchPlace, placeSource } from "./place.js";
 import {
+  addressSource,
+  fetchAddress,
+  fetchPhone,
+  fetchPlate,
+  fetchVessel,
+  phoneSource,
+  plateSource,
+  vesselSource,
+} from "./identifiers.js";
+import {
   feodoSource,
   fetchFeodo,
   fetchGreyNoise,
@@ -57,6 +67,10 @@ export const INFRA_ADAPTERS: readonly InfraAdapter[] = Object.freeze([
   { source: feodoSource, run: fetchFeodo },
   { source: threatFoxSource, run: fetchThreatFox },
   { source: placeSource, run: fetchPlace },
+  { source: addressSource, run: fetchAddress },
+  { source: vesselSource, run: fetchVessel },
+  { source: phoneSource, run: fetchPhone },
+  { source: plateSource, run: fetchPlate },
 ]);
 
 const BY_ID = new Map(INFRA_ADAPTERS.map((a) => [a.source.id, a]));

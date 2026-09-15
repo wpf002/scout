@@ -47,6 +47,14 @@ export const SUBJECT_KINDS = [
   // aircraft, vessels and incidents, but a coordinate could never be the
   // SUBJECT of a case, which is what kept the map and the case graph apart.
   "location",
+  /** A street address. Geocoded, then answered as a place. */
+  "address",
+  /** A phone number, in any format people write them. */
+  "phone",
+  /** A ship, by MMSI or IMO number. */
+  "vessel",
+  /** A vehicle registration plate. */
+  "plate",
 ] as const;
 
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];

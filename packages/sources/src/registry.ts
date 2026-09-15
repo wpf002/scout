@@ -9,7 +9,7 @@ import { TIERS } from "./types.js";
 const q = encodeURIComponent;
 
 /**
- * The tiered source registry: 31 sources across 6 tiers.
+ * The tiered source registry: 35 sources across 6 tiers.
  *
  * Two fields carry the platform's safety posture:
  *   - `mode`          — deeplink sources never route subject data through Scout.
@@ -436,6 +436,50 @@ export const SOURCES: readonly Source[] = Object.freeze([
     accepts: ["location"],
     description: "What sits at a coordinate — power, aviation, ports, military, government.",
     homepage: "https://www.openstreetmap.org",
+    keyEnv: null,
+  },
+  {
+    id: "osm-address",
+    name: "Address Lookup",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["address"],
+    description: "Geocodes an address, then reports what sits around it.",
+    homepage: "https://www.openstreetmap.org",
+    keyEnv: null,
+  },
+  {
+    id: "vessel-id",
+    name: "Vessel Identity",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["vessel"],
+    description: "Flag state from an MMSI, check-digit validation for an IMO number.",
+    homepage: "https://www.itu.int/en/ITU-R/terrestrial/fmd/Pages/mid.aspx",
+    keyEnv: null,
+  },
+  {
+    id: "phone-id",
+    name: "Phone Identity",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["phone"],
+    description: "Country from the dialling code. Subscriber lookup is not public.",
+    homepage: "https://www.itu.int",
+    keyEnv: null,
+  },
+  {
+    id: "plate-id",
+    name: "Plate Registry",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["plate"],
+    description: "Says why plate-to-owner has no lawful free source.",
+    homepage: "https://www.ecfr.gov/current/title-49/subtitle-VI/part-B/chapter-303",
     keyEnv: null,
   },
 ]);

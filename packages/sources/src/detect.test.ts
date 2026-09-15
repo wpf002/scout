@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asCoordinate, detectSubjectKind, normalizeIndicator } from "./detect.js";
+import { asCoordinate, detectSubjectKind, isImoNumber, isMmsi, normalizeIndicator } from "./detect.js";
 
 const kindOf = (raw: string) => detectSubjectKind(raw).kind;
 
@@ -128,5 +128,59 @@ describe("location", () => {
 
   it("returns the numbers a caller needs, not just the verdict", () => {
     expect(asCoordinate("32.9240, -96.7645")).toEqual({ lat: 32.924, lon: -96.7645 });
+  });
+});
+
+describe("maritime, phone and address", () => {
+  it("validates an IMO number by its check digit", () => {
+    // 9074729 is a real IMO checksum; flipping the last digit must fail.
+    expect(isImoNumber("9074729")).toBe(true);
+    expect(isImoNumber("9074728")).toBe(false);
+  });
+
+  it("reads a prefixed IMO number as a vessel", () => {
+    expect(kindOf("IMO 9074729")).toBe("vessel");
+    expect(detectSubjectKind("IMO 9074729").normalized).toBe("IMO9074729");
+  });
+
+  it("accepts an MMSI only when the MID is a real flag state", () => {
+    expect(isMmsi("366999712")).toBe(true);
+    // 199 is below the MID range, so this is nine digits and not a ship.
+    expect(isMmsi("199999712")).toBe(false);
+  });
+
+  it("offers phone as an alternative to a bare MMSI, never silently deciding", () => {
+    const d = detectSubjectKind("366999712");
+    expect(d.kind).toBe("vessel");
+    expect(d.confidence).toBe("likely");
+    expect(d.alternatives).toContain("phone");
+  });
+
+  it("reads E.164 as a phone and normalizes to digits", () => {
+    const d = detectSubjectKind("+1 (555) 010-9999");
+    expect(d.kind).toBe("phone");
+    expect(d.normalized).toBe("+15550109999");
+  });
+
+  it("reads a punctuated number as a phone", () => {
+    expect(kindOf("555-010-9999")).toBe("phone");
+  });
+
+  it("reads a street address", () => {
+    expect(kindOf("1600 Pennsylvania Avenue NW")).toBe("address");
+    expect(kindOf("221 Baker Street")).toBe("address");
+  });
+
+  it("does not call a company an address", () => {
+    expect(kindOf("Anvil Logistics Inc")).toBe("company");
+  });
+
+  it("does not let a domain or IP fall into the new kinds", () => {
+    expect(kindOf("acme.com")).toBe("domain");
+    // acme.example stays a username with domain offered — .example is not a
+    // known TLD, so the handle reading wins. Pre-existing and deliberate.
+    expect(detectSubjectKind("acme.example").alternatives).toContain("domain");
+    expect(kindOf("192.168.1.1")).toBe("ip");
+    expect(kindOf("32.9240, -96.7645")).toBe("location");
   });
 });

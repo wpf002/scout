@@ -54,6 +54,13 @@ enum SubjectKind {
   KEYWORD
   /// A place on the ground, as a coordinate pair.
   LOCATION
+  /// A street address, geocoded before it is answered.
+  ADDRESS
+  PHONE
+  /// A ship, by MMSI or IMO number.
+  VESSEL
+  /// A vehicle registration plate.
+  PLATE
 }
 
 enum Tier {

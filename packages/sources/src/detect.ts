@@ -125,6 +125,62 @@ export function normalizeIndicator(raw: string): string {
   return value.trim();
 }
 
+
+/**
+ * An IMO ship number: seven digits whose last is a checksum.
+ *
+ * The check digit is what makes this safe to detect from a bare number. Each
+ * of the first six digits is weighted 7..2, and the sum's last digit must equal
+ * the seventh. A random seven-digit string passes one time in ten, and the
+ * "IMO" prefix removes even that.
+ */
+export function isImoNumber(digits: string): boolean {
+  if (!/^\d{7}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = 0; i < 6; i += 1) {
+    sum += Number(digits[i]) * (7 - i);
+  }
+  return sum % 10 === Number(digits[6]);
+}
+
+/**
+ * An MMSI: nine digits opening with a Maritime Identification Digit.
+ *
+ * MIDs run 201–775 and identify the flag state. Requiring one keeps this from
+ * swallowing every nine-digit number — an account number or a short phone
+ * number is not a ship.
+ */
+export function isMmsi(digits: string): boolean {
+  if (!/^\d{9}$/.test(digits)) return false;
+  const mid = Number(digits.slice(0, 3));
+  return mid >= 201 && mid <= 775;
+}
+
+/** Digits only, so "+1 (555) 010-9999" and "15550109999" compare equal. */
+function digitsOf(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+/**
+ * Street suffixes that make a string an address rather than a company or a
+ * person. Short on purpose: it only has to beat "assume keyword".
+ */
+const STREET_WORDS = new Set([
+  "street", "st", "avenue", "ave", "road", "rd", "drive", "dr", "lane", "ln",
+  "boulevard", "blvd", "way", "court", "ct", "place", "pl", "terrace", "parkway",
+  "pkwy", "highway", "hwy", "circle", "cir", "square", "sq", "suite", "ste",
+  "floor", "apt", "unit",
+]);
+
+function looksLikeAddress(value: string): boolean {
+  const words = value.toLowerCase().replace(/[.,]/g, "").split(/\s+/).filter((w) => w !== "");
+  if (words.length < 3) return false;
+  // A leading house number plus a street word is the unambiguous shape.
+  const hasNumber = /^\d+[a-z]?$/.test(words[0] ?? "");
+  const hasStreetWord = words.some((w) => STREET_WORDS.has(w));
+  return hasNumber && hasStreetWord;
+}
+
 /** Best reading of an indicator, with the runners-up kept. */
 export function detectSubjectKind(raw: string): Detection {
   const normalized = normalizeIndicator(raw);
@@ -191,6 +247,45 @@ export function detectSubjectKind(raw: string): Detection {
           alternatives: [],
           normalized,
         };
+  }
+
+  // ── Maritime, phone, plate, address ──────────────────────────────────────
+  // All of these are digit-shaped, so order is load-bearing: the checksum and
+  // the MID range are what keep a phone number from reading as a ship.
+
+  const imoTagged = /^imo[\s:-]*(\d{7})$/i.exec(normalized);
+  if (imoTagged !== null && isImoNumber(imoTagged[1] as string)) {
+    return {
+      kind: "vessel",
+      confidence: "certain",
+      alternatives: [],
+      normalized: `IMO${imoTagged[1]}`,
+    };
+  }
+
+  const mmsiTagged = /^mmsi[\s:-]*(\d{9})$/i.exec(normalized);
+  if (mmsiTagged !== null) {
+    return { kind: "vessel", confidence: "certain", alternatives: [], normalized: mmsiTagged[1] as string };
+  }
+
+  const bare = digitsOf(normalized);
+
+  // A bare nine-digit number with a real MID. Likely, not certain — offer phone.
+  if (bare === normalized && isMmsi(bare)) {
+    return { kind: "vessel", confidence: "likely", alternatives: ["phone", "keyword"], normalized: bare };
+  }
+
+  // E.164, or a punctuated number of plausible length. The leading + is the
+  // only unambiguous marker a phone number has.
+  if (/^\+\d[\d\s()-]{6,20}$/.test(normalized)) {
+    return { kind: "phone", confidence: "certain", alternatives: [], normalized: `+${bare}` };
+  }
+  if (/[\s()-]/.test(normalized) && bare.length >= 10 && bare.length <= 15 && /^[\d\s()+-]+$/.test(normalized)) {
+    return { kind: "phone", confidence: "likely", alternatives: ["keyword"], normalized: bare };
+  }
+
+  if (looksLikeAddress(normalized)) {
+    return { kind: "address", confidence: "likely", alternatives: ["company", "keyword"], normalized };
   }
 
   const words = value.split(/\s+/).filter((w) => w.length > 0);
