@@ -52,6 +52,8 @@ enum SubjectKind {
   COMPANY
   HASH
   KEYWORD
+  /// A place on the ground, as a coordinate pair.
+  LOCATION
 }
 
 enum Tier {

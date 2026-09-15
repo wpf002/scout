@@ -20,6 +20,7 @@ import {
 } from "./keyless.js";
 import { fetchRdap, rdapSource } from "./rdap.js";
 import { fetchThreatFox, threatFoxSource } from "./threatfox.js";
+import { fetchPlace, placeSource } from "./place.js";
 import {
   feodoSource,
   fetchFeodo,
@@ -55,6 +56,7 @@ export const INFRA_ADAPTERS: readonly InfraAdapter[] = Object.freeze([
   { source: greyNoiseSource, run: fetchGreyNoise },
   { source: feodoSource, run: fetchFeodo },
   { source: threatFoxSource, run: fetchThreatFox },
+  { source: placeSource, run: fetchPlace },
 ]);
 
 const BY_ID = new Map(INFRA_ADAPTERS.map((a) => [a.source.id, a]));

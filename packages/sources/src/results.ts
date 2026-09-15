@@ -480,6 +480,31 @@ export interface ReputationObservation {
   reportUrl: string | null;
 }
 
+/**
+ * Something that physically sits at a place.
+ *
+ * Separate from every other observation because the identity is geographic: a
+ * substation is the same substation whether OSM or an operator's own feed
+ * named it, and two sources reporting it are corroboration rather than two
+ * findings. The OSM type and id travel with it so any claim can be opened and
+ * checked upstream — this is crowd-sourced data, and absence of a feature is
+ * never evidence that nothing is there.
+ */
+export interface PlaceObservation {
+  kind: "place-feature";
+  /** What it is, in OSM's vocabulary: "power=substation", "aeroway=aerodrome". */
+  category: string;
+  name: string;
+  lat: number;
+  lon: number;
+  /** Metres from the queried point. */
+  distanceM: number;
+  /** "node/12345" — addresses the feature in OSM. */
+  osmRef: string | null;
+  /** Admin hierarchy from reverse geocoding, coarse to fine. */
+  address: string | null;
+}
+
 export type InfraObservation =
   | HostObservation
   | ReputationObservation
@@ -488,7 +513,8 @@ export type InfraObservation =
   | SubdomainObservation
   | RegistrationObservation
   | DnsObservation
-  | CertObservation;
+  | CertObservation
+  | PlaceObservation;
 
 /** One observation plus every source that reported it. */
 export interface AttributedObservation {
@@ -526,6 +552,12 @@ export function observationKey(observation: InfraObservation): string {
       return `pulse:${observation.name.toLowerCase()}`;
     case "reputation":
       return `reputation:${observation.ip}:${observation.verdict.toLowerCase()}`;
+    case "place-feature":
+      // The OSM ref is the real identity. Without one, name and position are
+      // what two sources would have to agree on to be the same thing.
+      return observation.osmRef !== null
+        ? `place:${observation.osmRef}`
+        : `place:${observation.name.toLowerCase()}:${observation.lat.toFixed(5)}:${observation.lon.toFixed(5)}`;
   }
 }
 
@@ -590,6 +622,8 @@ function canonicalize(observation: InfraObservation): InfraObservation {
       return { ...observation, tags: unionSorted(observation.tags, []) };
     case "reputation":
       return { ...observation, ip: observation.ip.trim() };
+    case "place-feature":
+      return { ...observation, name: observation.name.trim() };
     case "subdomain":
       return {
         ...observation,

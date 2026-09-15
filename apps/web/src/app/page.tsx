@@ -857,6 +857,21 @@ export default function Page() {
         <span>
           ZOOM <b>{cursor.zoom.toFixed(1)}</b>
         </span>
+        {/*
+          The map could always show a place and never investigate one. This is
+          the whole of the bridge: the coordinate under the cursor becomes the
+          subject, and the OSINT panel answers it like any other indicator.
+        */}
+        <button
+          type="button"
+          className="cursor-investigate"
+          onClick={() =>
+            onIndicator(`${cursor.lat.toFixed(4)}, ${cursor.lon.toFixed(4)}`)
+          }
+          title="Investigate this place"
+        >
+          Investigate
+        </button>
       </div>
 
       {/* ── Tool panels ────────────────────────────────────────────────── */}

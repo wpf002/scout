@@ -4932,3 +4932,22 @@ a:hover {
   font-size: 11px;
   color: var(--text-faint);
 }
+
+/* Turns the cursor readout from a display into an entry point. */
+.cursor-investigate {
+  padding: 2px 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.cursor-investigate:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}

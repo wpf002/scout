@@ -38,6 +38,7 @@ export interface ResultRow {
 
 /** Group display order. Anything unlisted sorts after these, alphabetically. */
 const GROUP_ORDER = [
+  "Places",
   "Registration",
   "DNS Records",
   "Organization",
@@ -174,6 +175,27 @@ function draftFor(
   const base = { source: sourceName, firstSeen: null, lastSeen: null, extra: null };
 
   switch (kind) {
+    case "place-feature": {
+      const name = str(observation.name);
+      if (name === null) return null;
+      const distance = num(observation.distanceM);
+      const lat = num(observation.lat);
+      const lon = num(observation.lon);
+      const osmRef = str(observation.osmRef);
+      return {
+        ...base,
+        type: "Places",
+        value: name,
+        // Distance first: at a place, "how close" is the ordering question.
+        detail: detailOf(
+          distance === null ? null : `${distance} m`,
+          str(observation.category),
+          lat === null || lon === null ? null : `${lat.toFixed(4)}, ${lon.toFixed(4)}`,
+        ),
+        url: osmRef === null ? null : `https://www.openstreetmap.org/${osmRef}`,
+      };
+    }
+
     case "subdomain": {
       const hostname = str(observation.hostname);
       if (hostname === null) return null;

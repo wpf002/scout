@@ -44,6 +44,37 @@ const HEX = /^[0-9a-f]+$/i;
 const USERNAME = /^[a-z0-9][a-z0-9._-]{1,38}$/i;
 
 /**
+ * A decimal coordinate pair, in the forms people paste: "32.9, -96.7",
+ * "32.9 -96.7". Both parts must carry a decimal point — bare "32 96" is far
+ * more likely to be something else, and reading it as a place would send a
+ * query to the middle of a desert.
+ */
+const COORDINATE =
+  /^(-?\d{1,2}(?:\.\d+)?|-?[0-8]\d(?:\.\d+)?|-?90(?:\.0+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)$/;
+
+/** Degrees/minutes/seconds with hemisphere letters: 32°55'26"N 96°45'11"W. */
+const DMS =
+  /^\d{1,3}[°:\s]\s*\d{1,2}[\u2032'":\s]\s*[\d.]+\s*[\u2033"]?\s*[NS][,\s]+\d{1,3}[°:\s]\s*\d{1,2}[\u2032'":\s]\s*[\d.]+\s*[\u2033"]?\s*[EW]$/i;
+
+/**
+ * A coordinate pair, or null when the string is not one.
+ *
+ * Exported because the surfaces need the numbers, not just the verdict: the
+ * map flies to them and the place adapter queries around them.
+ */
+export function asCoordinate(raw: string): { lat: number; lon: number } | null {
+  const m = COORDINATE.exec(raw.trim());
+  if (m === null) return null;
+  const lat = Number(m[1]);
+  const lon = Number(m[2]);
+  if (Number.isNaN(lat) || Number.isNaN(lon)) return null;
+  // A decimal point on at least one side. "32 96" stays a keyword.
+  if (!raw.includes(".")) return null;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  return { lat, lon };
+}
+
+/**
  * Suffixes that make a multi-word string a company rather than a person.
  * Not exhaustive, and not meant to be — it only has to beat "assume person".
  */
@@ -103,6 +134,16 @@ export function detectSubjectKind(raw: string): Detection {
     return {
       kind: "keyword",
       confidence: "guess",
+      alternatives: [],
+      normalized,
+    };
+  }
+
+  // Before IP: "10.5, 20.3" is a coordinate pair, not an address.
+  if (asCoordinate(normalized) !== null || DMS.test(normalized)) {
+    return {
+      kind: "location",
+      confidence: "certain",
       alternatives: [],
       normalized,
     };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectSubjectKind, normalizeIndicator } from "./detect.js";
+import { asCoordinate, detectSubjectKind, normalizeIndicator } from "./detect.js";
 
 const kindOf = (raw: string) => detectSubjectKind(raw).kind;
 
@@ -92,5 +92,41 @@ describe("ambiguity is reported, not resolved", () => {
 
   it("carries the normalized value so the run uses it", () => {
     expect(detectSubjectKind("https://ACME.com/x").normalized).toBe("ACME.com");
+  });
+});
+
+describe("location", () => {
+  it("reads a decimal coordinate pair as a location", () => {
+    expect(kindOf("32.9240, -96.7645")).toBe("location");
+    expect(kindOf("32.9240 -96.7645")).toBe("location");
+    expect(kindOf("-33.8688, 151.2093")).toBe("location");
+  });
+
+  it("is certain about a coordinate, with no alternatives to offer", () => {
+    const d = detectSubjectKind("51.5074, -0.1278");
+    expect(d.confidence).toBe("certain");
+    expect(d.alternatives).toEqual([]);
+  });
+
+  it("reads degrees-minutes-seconds", () => {
+    expect(kindOf("32°55'26\"N 96°45'11\"W")).toBe("location");
+  });
+
+  it("does not mistake an IP for a coordinate", () => {
+    expect(kindOf("10.5.20.3")).toBe("ip");
+    expect(kindOf("192.168.1.1")).toBe("ip");
+  });
+
+  it("leaves a bare integer pair alone — that is not a place", () => {
+    expect(kindOf("32 96")).not.toBe("location");
+  });
+
+  it("refuses an out-of-range pair", () => {
+    expect(asCoordinate("91.5, 0.0")).toBeNull();
+    expect(asCoordinate("0.0, 181.5")).toBeNull();
+  });
+
+  it("returns the numbers a caller needs, not just the verdict", () => {
+    expect(asCoordinate("32.9240, -96.7645")).toEqual({ lat: 32.924, lon: -96.7645 });
   });
 });

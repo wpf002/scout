@@ -43,6 +43,10 @@ export const SUBJECT_KINDS = [
   "company",
   "hash",
   "keyword",
+  // A place on the ground. The live map already answers "what is here" for
+  // aircraft, vessels and incidents, but a coordinate could never be the
+  // SUBJECT of a case, which is what kept the map and the case graph apart.
+  "location",
 ] as const;
 
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];

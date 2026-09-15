@@ -9,7 +9,7 @@ import { TIERS } from "./types.js";
 const q = encodeURIComponent;
 
 /**
- * The tiered source registry: 30 sources across 6 tiers.
+ * The tiered source registry: 31 sources across 6 tiers.
  *
  * Two fields carry the platform's safety posture:
  *   - `mode`          — deeplink sources never route subject data through Scout.
@@ -426,6 +426,17 @@ export const SOURCES: readonly Source[] = Object.freeze([
     keyEnv: null,
     deeplink: (term) =>
       `https://threatfox.abuse.ch/browse.php?search=ioc%3A${q(term)}`,
+  },
+  {
+    id: "osm-place",
+    name: "OpenStreetMap Place",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["location"],
+    description: "What sits at a coordinate — power, aviation, ports, military, government.",
+    homepage: "https://www.openstreetmap.org",
+    keyEnv: null,
   },
 ]);
 

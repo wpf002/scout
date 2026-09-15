@@ -261,6 +261,7 @@ describe("invariant 6 — inert without keys, never guessed", () => {
       "gravatar",
       "greynoise",
       "hackertarget",
+      "osm-place",
       "rapiddns",
       "rdap",
       "sec-edgar-fts",
