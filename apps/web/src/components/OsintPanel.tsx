@@ -18,6 +18,7 @@ import { flattenObservations, groupRank, type ResultRow } from "@/lib/flatten";
 import { buildGraph, TYPE_COLOR } from "@/lib/graph";
 import { analyze } from "@/lib/rules";
 import { buildProfile } from "@/lib/profile";
+import { buildIdentities } from "@/lib/identity";
 
 /** Plain names for the subject kinds. "hash" means nothing to most people. */
 const KINDS = Object.keys(KIND_LABEL) as SubjectKind[];
@@ -350,6 +351,16 @@ export function OsintPanel({
   // nothing here can claim a fact that is not also visible below it.
   const profile = useMemo(() => (rows.length === 0 ? null : buildProfile(rows)), [rows]);
 
+  // Candidate people, assembled across sources. Only for a person subject —
+  // grouping hostnames by "name and locality" would be nonsense.
+  const identities = useMemo(
+    () =>
+      result?.subject.kind === "person" && resultRows.length > 0
+        ? buildIdentities(resultRows, result.subject.value)
+        : null,
+    [resultRows, result],
+  );
+
   const isOpen = (type: string) => open[type] ?? OPEN_BY_DEFAULT.has(type);
 
   /**
@@ -641,6 +652,45 @@ export function OsintPanel({
             </span>
           ))}
         </div>
+      ) : null}
+
+      {identities !== null && identities.identities.length > 0 ? (
+        <section className="identities">
+          <div className="profile-head">
+            <h2>Candidate People</h2>
+            <span className="profile-reach">
+              {identities.identities.length} grouped
+              {identities.discarded > 0 ? ` · ${identities.discarded} name mismatches dropped` : ""}
+            </span>
+          </div>
+          <ul className="identity-list">
+            {identities.identities.slice(0, 12).map((person) => (
+              <li key={`${person.name}-${person.locality ?? ""}-${person.birthYear ?? ""}`}>
+                <div className="id-line">
+                  <span className="id-name">{person.name}</span>
+                  {person.birthYear !== null ? <span className="id-born">b. {person.birthYear}</span> : null}
+                  <span className="id-sources" title={person.sources.join(", ")}>
+                    {person.sources.length}×
+                  </span>
+                </div>
+                <div className="id-meta">
+                  {[
+                    person.address,
+                    person.locality,
+                    person.occupation,
+                    person.employer,
+                    person.party,
+                  ]
+                    .filter((x): x is string => x !== null && x !== "")
+                    .join(" · ")}
+                </div>
+                {/* The grouping is a hypothesis. Saying what it rests on is
+                    what lets a reader reject it. */}
+                <div className="id-basis">Grouped on {person.basis}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       {profile !== null && profile.reach.values > 0 ? (
