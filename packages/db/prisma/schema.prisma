@@ -61,6 +61,8 @@ enum SubjectKind {
   VESSEL
   /// A vehicle registration plate.
   PLATE
+  /// An aircraft, by tail number or ICAO address.
+  AIRCRAFT
 }
 
 enum Tier {
@@ -1050,4 +1052,43 @@ model AccessLog {
   @@index([authorizationId, createdAt])
   @@index([actor, createdAt])
   @@index([targetType, createdAt])
+}
+
+/// The FAA's civil aircraft registry, loaded locally.
+///
+/// The registry is published as a 194 MB fixed-format dump with no per-tail
+/// API, so answering "who owns this aircraft" means holding it. 316k rows,
+/// refreshed by `pnpm faa:sync`.
+///
+/// `modeSHex` is the join that matters: it is the same ICAO address the live
+/// ADS-B layer already shows, so an aircraft on the map resolves to a
+/// registered owner without the operator retyping anything.
+model AircraftRegistration {
+  /// Tail number without the leading N.
+  nNumber      String   @id
+  serialNumber String?
+  /// ICAO 24-bit address, hex, uppercase. Indexed — this is the ADS-B join.
+  modeSHex     String?
+  yearMfr      Int?
+  /// Registered owner, exactly as filed.
+  ownerName    String
+  /// Registrant type as the FAA codes it: Individual, Corporation, Co-Owned…
+  ownerType    String?
+  street       String?
+  city         String?
+  state        String?
+  zip          String?
+  county       String?
+  country      String?
+  /// Manufacturer and model, resolved from ACFTREF.
+  aircraft     String?
+  statusCode   String?
+  certIssued   DateTime?
+  lastAction   DateTime?
+  /// When this row was loaded, so a stale registry is visible as stale.
+  syncedAt     DateTime @default(now())
+
+  @@index([modeSHex])
+  @@index([ownerName])
+  @@index([state, city])
 }

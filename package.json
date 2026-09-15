@@ -2,7 +2,7 @@
   "name": "scout",
   "private": true,
   "version": "0.1.0",
-  "description": "Tiered OSINT investigation platform — a launcher, not an aggregator.",
+  "description": "Tiered OSINT investigation platform \u2014 a launcher, not an aggregator.",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=20.11"
@@ -27,7 +27,8 @@
     "bootstrap:v2": "./scripts/bootstrap-v2.sh",
     "test:services": "for s in resolution recognition; do (cd services/$s && uv run --quiet pytest -q) || exit 1; done",
     "eval:resolution": "cd services/resolution && uv run --quiet python -m eval.evaluate --check",
-    "graph:check": "pnpm --filter @scout/db run graph:check"
+    "graph:check": "pnpm --filter @scout/db run graph:check",
+    "faa:sync": "pnpm --filter @scout/db run faa:sync"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

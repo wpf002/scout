@@ -9,7 +9,7 @@ import { TIERS } from "./types.js";
 const q = encodeURIComponent;
 
 /**
- * The tiered source registry: 36 sources across 6 tiers.
+ * The tiered source registry: 38 sources across 6 tiers.
  *
  * Two fields carry the platform's safety posture:
  *   - `mode`          — deeplink sources never route subject data through Scout.
@@ -493,6 +493,31 @@ export const SOURCES: readonly Source[] = Object.freeze([
     homepage: "https://www.virustotal.com",
     keyEnv: "VIRUSTOTAL_API_KEY",
     deeplink: (term) => `https://www.virustotal.com/gui/search/${q(term)}`,
+  },
+  {
+    id: "faa-registry",
+    name: "FAA Aircraft Registry",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["aircraft"],
+    description: "US civil aircraft: registered owner, address and type. Held locally.",
+    homepage: "https://registry.faa.gov",
+    keyEnv: null,
+  },
+  {
+    id: "usaspending",
+    name: "USASpending",
+    tier: "datasets",
+    mode: "api",
+    requiresScope: false,
+    // Companies are public recipients of public money. An individual appearing
+    // as a sole proprietor is a person-facing lookup and gated as one.
+    scopedKinds: ["person"],
+    accepts: ["company", "person", "keyword"],
+    description: "Federal contracts, grants and loans by recipient.",
+    homepage: "https://www.usaspending.gov",
+    keyEnv: null,
   },
 ]);
 

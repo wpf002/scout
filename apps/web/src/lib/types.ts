@@ -32,6 +32,7 @@ export const SUBJECT_KINDS = [
   "phone",
   "vessel",
   "plate",
+  "aircraft",
 ] as const;
 
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];
@@ -57,6 +58,7 @@ export const KIND_LABEL: Record<SubjectKind, string> = {
   phone: "Phone Number",
   vessel: "Vessel",
   plate: "Plate",
+  aircraft: "Aircraft",
 };
 
 export interface Subject {

@@ -253,6 +253,33 @@ export function detectSubjectKind(raw: string): Detection {
   // All of these are digit-shaped, so order is load-bearing: the checksum and
   // the MID range are what keep a phone number from reading as a ship.
 
+  // An ICAO 24-bit address: six hex digits. US aircraft are A00000–ADF7C7,
+  // which is specific enough to call certain; other allocations overlap with
+  // ordinary hex strings, so they stay a guess with hash offered.
+  const icao = /^(?:icao[\s:-]*)?([0-9a-f]{6})$/i.exec(normalized);
+  if (icao !== null) {
+    const hex = (icao[1] as string).toUpperCase();
+    const n = Number.parseInt(hex, 16);
+    const isUs = n >= 0xa00000 && n <= 0xadf7c7;
+    return {
+      kind: "aircraft",
+      confidence: isUs ? "certain" : "guess",
+      alternatives: isUs ? [] : ["hash", "keyword"],
+      normalized: hex,
+    };
+  }
+
+  // A US tail number: N, then 1–5 alphanumerics. I and O are never used.
+  const tail = /^n([0-9][0-9a-hj-np-z]{0,4})$/i.exec(normalized);
+  if (tail !== null) {
+    return {
+      kind: "aircraft",
+      confidence: "likely",
+      alternatives: ["keyword"],
+      normalized: normalized.toUpperCase(),
+    };
+  }
+
   const imoTagged = /^imo[\s:-]*(\d{7})$/i.exec(normalized);
   if (imoTagged !== null && isImoNumber(imoTagged[1] as string)) {
     return {

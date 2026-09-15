@@ -55,6 +55,8 @@ export const SUBJECT_KINDS = [
   "vessel",
   /** A vehicle registration plate. */
   "plate",
+  /** An aircraft, by tail number or ICAO 24-bit address. */
+  "aircraft",
 ] as const;
 
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];

@@ -16,6 +16,7 @@ import {
   secEdgarSource,
   wikidataSource,
 } from "./records.js";
+import { fetchUsaSpending, usaSpendingSource } from "./usaspending.js";
 
 export interface DatasetAdapter {
   source: Source;
@@ -38,6 +39,7 @@ export const DATASET_ADAPTERS: readonly DatasetAdapter[] = Object.freeze([
   { source: wikidataSource, run: fetchWikidata },
   { source: courtListenerSource, run: fetchCourtListener },
   { source: secEdgarSource, run: fetchEdgarFullText },
+  { source: usaSpendingSource, run: fetchUsaSpending },
 ]);
 
 const BY_ID = new Map(DATASET_ADAPTERS.map((a) => [a.source.id, a]));
