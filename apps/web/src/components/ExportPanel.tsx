@@ -23,8 +23,7 @@ export function ExportPanel({ record }: { record: CaseRecord }) {
       </div>
 
       <p>
-        Findings by tier, each with the source and query behind it, plus the
-        query log. Out-of-scope identifiers are stripped before anything leaves.
+        Findings with their sources, plus the query log. Out-of-scope identifiers are stripped.
       </p>
 
       <div className="row">
@@ -47,8 +46,7 @@ export function ExportPanel({ record }: { record: CaseRecord }) {
       </div>
 
       <p className="faint">
-        The report is self-contained and prints to PDF. The audit trail exports
-        separately — a query log and a deliverable rarely share a retention rule.
+        The report prints to PDF. The audit trail exports separately.
       </p>
     </div>
   );

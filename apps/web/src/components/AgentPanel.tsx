@@ -26,7 +26,7 @@ const KIND_HINT: Record<ActionKind, string> = {
   "dispatch-collection": "Consequential: calls an upstream and writes observations.",
   "send-report": "Consequential: delivers the report outside Scout.",
   "write-external": "Consequential: no writer is registered; refused.",
-  "request-scope-expansion": "Consequential: records a request to the issuer; changes nothing itself.",
+  "request-scope-expansion": "Sends a request to the issuer.",
 };
 const describe = (caught: unknown, fallback: string) => (caught instanceof ApiError ? (caught.reason ? `${caught.message} (${caught.reason})` : caught.message) : fallback);
 
@@ -86,12 +86,12 @@ export function AgentPanel({ record, onActed }: { record: CaseRecord; onActed?: 
       {error !== null ? <p className="error">{error}</p> : null}
       {notice !== null ? <p className="notice">{notice}</p> : null}
       <p className="tiny faint">
-        Runs on its own up to the <b>{maxTier}</b> tier (<span className="mono">AGENT_MAX_AUTONOMOUS_TIER</span>). Everything above it waits for one approval, used once, with your name on it. Consequential acts never run without one.
+        Runs on its own up to <b>{maxTier}</b>. Anything above that waits for your approval.
       </p>
 
       <div className="spread">
         <h2>Monitors</h2>
-        <span className="faint tiny">Standing watches inside this authorization. They stop when it does.</span>
+        <span className="faint tiny">Stop when the authorization does.</span>
         <button className="tiny agent-right" disabled={busy !== null} onClick={() => void act("tick", async () => { const r = await v2.agentTick(); return `Sweep: ${r.checked} checked, ${r.alerted} alerted, ${r.disabled} disabled, ${r.proposed} proposed.`; })}>
           {busy === "tick" ? "Sweeping…" : "Sweep Now"}
         </button>
@@ -105,7 +105,7 @@ export function AgentPanel({ record, onActed }: { record: CaseRecord; onActed?: 
         />
       ) : null}
       {monitors.length === 0 ? (
-        <p className="tiny faint">No monitors. A monitor alerts when an entity gains observations, changes membership after a run, or is co-located with another.</p>
+        <p className="tiny faint">No watches yet.</p>
       ) : (
         <table>
           <thead>
@@ -166,7 +166,7 @@ export function AgentPanel({ record, onActed }: { record: CaseRecord; onActed?: 
 
       <div className="spread">
         <h2>Proposals</h2>
-        <span className="faint tiny">What the agent, or you, proposed. Consequential acts wait for approval.</span>
+        <span className="faint tiny">Awaiting approval.</span>
         <button className="tiny agent-right" onClick={() => setShowPropose((s) => !s)}>{showPropose ? "Cancel" : "Propose"}</button>
       </div>
       {showPropose ? (
@@ -210,7 +210,7 @@ export function AgentPanel({ record, onActed }: { record: CaseRecord; onActed?: 
               {canExecute ? (
                 <div className="review-actions">
                   {live === undefined && p.status === "PROPOSED" ? (
-                    <button className="review-decide match" disabled={busy !== null} onClick={() => { const note = window.prompt("Approval note (recorded with your name; the approval expires in 60 minutes and is used once):"); if (note && note.trim()) void act(`approve:${p.id}`, async () => { await v2.approveProposal(caseId, p.id, note.trim()); return null; }); }}>
+                    <button className="review-decide match" disabled={busy !== null} onClick={() => { const note = window.prompt("Approval note (recorded, single use, expires in 60 minutes):"); if (note && note.trim()) void act(`approve:${p.id}`, async () => { await v2.approveProposal(caseId, p.id, note.trim()); return null; }); }}>
                       Approve
                     </button>
                   ) : null}

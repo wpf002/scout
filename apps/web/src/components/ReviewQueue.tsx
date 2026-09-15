@@ -124,7 +124,7 @@ export function ReviewQueue({ record, onCount, onDecided }: { record: CaseRecord
   if (!loaded || authorization === undefined) return <Loading what="the review queue" />;
 
   if (authorization === null) {
-    return <p className="notice">This case has no authorization. Resolution runs under one, so there is nothing to review until it's issued in the Scope tab.</p>;
+    return <p className="notice">No authorization on this case. Issue one in the Scope tab.</p>;
   }
 
   const waiting = kinds.filter((k) => k.adjudicatedSinceRun > 0);
@@ -166,7 +166,7 @@ export function ReviewQueue({ record, onCount, onDecided }: { record: CaseRecord
             <span className="tiny faint">{listed.length} to review</span>
           </div>
           {listed.length === 0 ? (
-            <p className="empty">Nothing in the review band{kind === "" ? "" : ` for ${titleCase(kind)}`}. The model was sure about every pair it scored, or a decision has been recorded for each one.</p>
+            <p className="empty">Nothing to review{kind === "" ? "" : ` for ${titleCase(kind)}`}.</p>
           ) : (
             <ul>
               {listed.map((p) => (
@@ -317,7 +317,7 @@ function PairView({
           </button>
         ))}
       </div>
-      <p className="tiny faint">A decision is a pin. It outranks the model on the next run for this kind and is kept forever, with your name on it.</p>
+      <p className="tiny faint">A decision outranks the model on the next run and is kept.</p>
     </div>
   );
 }

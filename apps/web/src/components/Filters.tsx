@@ -64,8 +64,7 @@ export function Filters({
   if (filterable.length === 0) {
     return (
       <p className="panel-empty">
-        Turn on a layer that carries attributes — aircraft, vessels, satellites,
-        fires — and its fields appear here.
+        Turn on a layer and its fields appear here.
       </p>
     );
   }

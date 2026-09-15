@@ -203,8 +203,7 @@ export function InfraBoard({
 
           {shown.length === 0 ? (
             <div className="empty">
-              Nothing returned. Sources with no key report inert rather than
-              guessing.
+              Nothing returned. Sources without a key stay inert.
             </div>
           ) : (
             <table>

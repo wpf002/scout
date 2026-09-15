@@ -6,6 +6,7 @@ import { BY_ID, availableLayers, capabilities } from "../live/registry.js";
 import { layerHealth } from "../live/warm.js";
 import { markets } from "../live/feeds/markets.js";
 import { news } from "../live/feeds/news.js";
+import { bluetoothSnapshot } from "../live/feeds/bluetooth.js";
 import { modelClientFromEnv, parseJsonReply } from "@scout/reason";
 
 /**
@@ -236,6 +237,26 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * ArcGIS is fronted by CloudFront, which drops a connection often enough that
+   * a single attempt is not worth reporting on: a bare fetch throws a raw
+   * TypeError, and the error handler turns that into "The request failed. See
+   * server logs." — no retry, and nothing the operator can act on. One retry,
+   * then a message naming the upstream.
+   */
+  async function arcgisFetch(url: string, timeoutMs: number): Promise<Response> {
+    let last: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      } catch (error) {
+        last = error;
+      }
+    }
+    const reason = last instanceof Error && last.name === "TimeoutError" ? "timed out" : "could not be reached";
+    throw badRequest(`ArcGIS ${reason}. It does this intermittently — try again.`);
+  }
+
+  /**
    * GET /live/arcgis/search — public feature services matching a query.
    *
    * ArcGIS Online's catalogue is public and keyless. `access:public` is pinned
@@ -250,7 +271,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
       "https://www.arcgis.com/sharing/rest/search?f=json&num=20&sortField=numViews&sortOrder=desc&q=" +
       encodeURIComponent(`${q} type:"Feature Service" access:public`);
 
-    const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    const response = await arcgisFetch(url, 20_000);
     if (!response.ok) throw badRequest(`ArcGIS answered ${response.status}.`);
     const body = (await response.json()) as { results?: unknown[] };
     const results = (body.results ?? []).flatMap((raw) => {
@@ -288,7 +309,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
     const url =
       `${base}/query?f=geojson&where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&resultRecordCount=${limit}`;
 
-    const response = await fetch(url, { signal: AbortSignal.timeout(25_000) });
+    const response = await arcgisFetch(url, 25_000);
     if (!response.ok) throw badRequest(`ArcGIS answered ${response.status}.`);
     const body = (await response.json()) as { type?: string; features?: unknown[]; error?: { message?: string } };
     if (body.error !== undefined) {
@@ -298,6 +319,16 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
       type: "FeatureCollection",
       features: Array.isArray(body.features) ? body.features : [],
     });
+  });
+
+  /**
+   * GET /live/bluetooth — radios this machine knows about.
+   *
+   * Host-side, so it works in Safari and Firefox where Web Bluetooth does not
+   * exist at all. Localhost only: this reports the operator's own hardware.
+   */
+  app.get("/live/bluetooth", async (_request, reply) => {
+    return reply.header("cache-control", "no-store").send(await bluetoothSnapshot());
   });
 
   /** The markets crawl. Not geographic, so not a layer. */

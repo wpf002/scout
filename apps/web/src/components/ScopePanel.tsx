@@ -106,8 +106,7 @@ export function ScopePanel({
 
       {record.scopeEntries.length === 0 ? (
         <div className="notice">
-          No scope on this case, so every person-facing source is off. Empty
-          scope means <strong>off</strong>, never unrestricted.
+          No scope set, so every person-facing source is <strong>off</strong>.
         </div>
       ) : (
         <div className="chip-list" style={{ marginBottom: 14 }}>
@@ -177,9 +176,7 @@ export function ScopePanel({
           <div className="modal">
             <h2>Confirm You Are Authorized</h2>
             <p className="dim" style={{ fontSize: 13 }}>
-              Adding scope widens what Scout is permitted to do against real
-              people and real infrastructure. This claim is written to the
-              case&rsquo;s audit log under your operator name.
+              This widens what Scout may do against real people. The claim is logged under your name.
             </p>
 
             <div className="confirm-table">

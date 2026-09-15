@@ -1,219 +1,232 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Marauder — a Web Bluetooth device scanner.
+ * Marauder — nearby radios.
  *
- * Web Bluetooth cannot silently enumerate nearby radios; for privacy the
- * browser shows its own chooser and hands back the one device the user picks.
- * So "Scan" opens that chooser, and each pick is added here. Connecting reads
- * the device's advertised GATT services. Chrome/Edge only, over HTTPS or
- * localhost — elsewhere navigator.bluetooth is absent and the panel says so.
+ * Two sources, because neither is enough alone:
  *
- * Everything stays in this browser tab: nothing is sent anywhere. Export writes
- * a file the viewer saves themselves.
+ * - The host scan (`/live/bluetooth`) reads what macOS already knows, with the
+ *   RSSI it last measured. Works in every browser, needs no permission, and is
+ *   the reason this panel is no longer Chrome-only.
+ * - Web Bluetooth pairs one new device at a time via the browser's own chooser.
+ *   Chrome and Edge only. It cannot enumerate — that is a privacy rule of the
+ *   API, not a gap here — so it supplements the host list rather than replacing
+ *   it, and the button is hidden where the API is absent.
+ *
+ * Nothing leaves the machine. Export writes a file the operator saves.
  */
 
-interface Seen {
+interface Radio {
   id: string;
   name: string;
+  address: string;
   connected: boolean;
+  rssi: number | null;
+  kind: string | null;
+  battery: number | null;
   services: string[];
-  at: number;
+  /** Host list vs. a device paired through the browser chooser. */
+  origin: "host" | "paired";
 }
 
-type Tab = "devices" | "intel" | "log";
+interface Snapshot {
+  supported: boolean;
+  poweredOn: boolean;
+  controllerAddress: string | null;
+  devices: Array<{
+    name: string;
+    address: string;
+    connected: boolean;
+    rssi: number | null;
+    kind: string | null;
+    battery: number | null;
+  }>;
+  note: string | null;
+}
 
-// Minimal shape of the Web Bluetooth API we touch, so this compiles without
-// DOM lib "bluetooth" types.
 interface BtDevice {
   id: string;
   name?: string;
   gatt?: {
-    connect: () => Promise<{
-      getPrimaryServices: () => Promise<{ uuid: string }[]>;
-    }>;
+    connect: () => Promise<{ getPrimaryServices: () => Promise<{ uuid: string }[]> }>;
   };
 }
 interface BtApi {
-  requestDevice: (opts: { acceptAllDevices: boolean; optionalServices?: string[] }) => Promise<BtDevice>;
+  requestDevice: (opts: { acceptAllDevices: boolean }) => Promise<BtDevice>;
 }
 
 function bluetooth(): BtApi | null {
   if (typeof navigator === "undefined") return null;
-  const bt = (navigator as unknown as { bluetooth?: BtApi }).bluetooth;
-  return bt ?? null;
+  return (navigator as unknown as { bluetooth?: BtApi }).bluetooth ?? null;
+}
+
+/** dBm to a four-step bar. -50 is in the room, -90 is through a wall. */
+function bars(rssi: number | null): string {
+  if (rssi === null) return "····";
+  if (rssi >= -55) return "▮▮▮▮";
+  if (rssi >= -70) return "▮▮▮·";
+  if (rssi >= -85) return "▮▮··";
+  return "▮···";
 }
 
 export function MarauderPanel() {
-  const [tab, setTab] = useState<Tab>("devices");
-  const [devices, setDevices] = useState<Seen[]>([]);
+  const [host, setHost] = useState<Snapshot | null>(null);
+  const [paired, setPaired] = useState<Radio[]>([]);
   const [log, setLog] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  // The live BluetoothDevice objects, kept out of state so they are not walked
-  // by JSON export and survive re-renders.
+  const [showLog, setShowLog] = useState(false);
   const live = useRef<Map<string, BtDevice>>(new Map());
 
-  const available = bluetooth() !== null;
+  // Web Bluetooth is absent during the server render, so this is resolved after
+  // mount. Reading it during render would latch "unavailable" into the markup.
+  const [canPair, setCanPair] = useState(false);
+  useEffect(() => setCanPair(bluetooth() !== null), []);
+
   const write = (line: string) =>
     setLog((l) => [`${new Date().toLocaleTimeString()}  ${line}`, ...l].slice(0, 200));
 
-  async function scan() {
-    const bt = bluetooth();
-    if (bt === null) return;
+  const refresh = useCallback(async () => {
     setBusy(true);
     try {
-      const device = await bt.requestDevice({ acceptAllDevices: true });
-      live.current.set(device.id, device);
-      const seen: Seen = {
-        id: device.id,
-        name: device.name?.trim() || "(unnamed)",
-        connected: false,
-        services: [],
-        at: Date.now(),
-      };
-      setDevices((d) => (d.some((x) => x.id === seen.id) ? d : [seen, ...d]));
-      write(`paired ${seen.name} [${seen.id.slice(0, 8)}]`);
-    } catch (error) {
-      // The chooser being dismissed rejects; that is a normal outcome, not a
-      // failure worth shouting about.
-      write(`scan cancelled${error instanceof Error && error.name !== "NotFoundError" ? `: ${error.message}` : ""}`);
+      const response = await fetch("/api/live/bluetooth");
+      setHost((await response.json()) as Snapshot);
+    } catch {
+      setHost(null);
     } finally {
       setBusy(false);
     }
-  }
+  }, []);
 
-  async function connect(seen: Seen) {
-    const device = live.current.get(seen.id);
-    if (device === undefined) return;
+  useEffect(() => {
+    void refresh();
+    const timer = setInterval(() => void refresh(), 15_000);
+    return () => clearInterval(timer);
+  }, [refresh]);
+
+  async function pair() {
+    const bt = bluetooth();
+    if (bt === null) return;
     try {
-      const server = await device.gatt?.connect();
-      const services = (await server?.getPrimaryServices()) ?? [];
-      const uuids = services.map((s) => s.uuid);
-      setDevices((d) =>
-        d.map((x) => (x.id === seen.id ? { ...x, connected: true, services: uuids } : x)),
-      );
-      write(`connected ${seen.name}: ${uuids.length} services`);
+      const device = await bt.requestDevice({ acceptAllDevices: true });
+      live.current.set(device.id, device);
+      const radio: Radio = {
+        id: device.id,
+        name: device.name?.trim() || "(unnamed)",
+        address: "",
+        connected: false,
+        rssi: null,
+        kind: null,
+        battery: null,
+        services: [],
+        origin: "paired",
+      };
+      setPaired((d) => (d.some((x) => x.id === radio.id) ? d : [radio, ...d]));
+      write(`paired ${radio.name}`);
     } catch (error) {
-      write(`connect failed: ${error instanceof Error ? error.message : String(error)}`);
+      // Dismissing the chooser rejects. That is a normal outcome.
+      if (error instanceof Error && error.name !== "NotFoundError") write(`pair failed: ${error.message}`);
     }
   }
 
-  function download(kind: "json" | "csv") {
-    const body =
-      kind === "json"
-        ? JSON.stringify(devices, null, 2)
-        : ["id,name,connected,services,seen", ...devices.map((d) =>
-            [d.id, d.name, d.connected, d.services.join("|"), new Date(d.at).toISOString()].join(","),
-          )].join("\n");
-    const blob = new Blob([body], { type: kind === "json" ? "application/json" : "text/csv" });
-    const url = URL.createObjectURL(blob);
+  async function readServices(radio: Radio) {
+    const device = live.current.get(radio.id);
+    if (device === undefined) return;
+    try {
+      const server = await device.gatt?.connect();
+      const uuids = ((await server?.getPrimaryServices()) ?? []).map((s) => s.uuid);
+      setPaired((d) => d.map((x) => (x.id === radio.id ? { ...x, connected: true, services: uuids } : x)));
+      write(`${radio.name}: ${uuids.length} services`);
+    } catch (error) {
+      write(`read failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  const rows: Radio[] = [
+    ...paired,
+    ...(host?.devices ?? []).map((d) => ({
+      id: d.address || d.name,
+      name: d.name,
+      address: d.address,
+      connected: d.connected,
+      rssi: d.rssi,
+      kind: d.kind,
+      battery: d.battery,
+      services: [],
+      origin: "host" as const,
+    })),
+  ];
+
+  function download() {
+    const body = JSON.stringify(rows, null, 2);
+    const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `marauder-devices.${kind}`;
+    a.download = "marauder-devices.json";
     a.click();
     URL.revokeObjectURL(url);
-    write(`exported ${devices.length} device(s) as ${kind.toUpperCase()}`);
   }
 
   return (
     <div className="marauder-panel">
       <div className="marauder-head">
-        <span>{devices.length} DEVS</span>
-        <button type="button" onClick={scan} disabled={!available || busy}>
-          {busy ? "SCANNING…" : "SCAN"}
+        <span>
+          {rows.length} {rows.length === 1 ? "Radio" : "Radios"}
+        </span>
+        <div className="mr-actions">
+          <button type="button" onClick={() => void refresh()} disabled={busy}>
+            {busy ? "Scanning…" : "Rescan"}
+          </button>
+          {canPair ? (
+            <button type="button" onClick={() => void pair()}>
+              Pair
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {host?.note !== null && host?.note !== undefined ? <p className="arcgis-note">{host.note}</p> : null}
+
+      {rows.length === 0 ? (
+        <p className="panel-empty">
+          {host === null ? "Host scan unavailable." : "No radios in range."}
+        </p>
+      ) : (
+        <ul className="marauder-list">
+          {rows.map((d) => (
+            <li key={`${d.origin}-${d.id}`}>
+              <span className="mr-sig" title={d.rssi === null ? "No measurement" : `${d.rssi} dBm`}>
+                {bars(d.rssi)}
+              </span>
+              <span className="mr-name">{d.name}</span>
+              <span className="mr-id">
+                {[d.address || null, d.kind, d.battery === null ? null : `${d.battery}%`]
+                  .filter((x): x is string => x !== null)
+                  .join(" · ")}
+              </span>
+              {d.origin === "paired" ? (
+                <button type="button" onClick={() => void readServices(d)}>
+                  {d.connected ? `${d.services.length} svc` : "Read"}
+                </button>
+              ) : (
+                <span className={d.connected ? "mr-on" : "mr-off"}>{d.connected ? "Linked" : "Known"}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="marauder-vault">
+        <button type="button" onClick={() => setShowLog((s) => !s)}>
+          {showLog ? "Hide Log" : "Log"}
+        </button>
+        <button type="button" onClick={download} disabled={rows.length === 0}>
+          Export
         </button>
       </div>
 
-      {!available ? (
-        <p className="panel-empty">Web Bluetooth unavailable — use Chrome or Edge over HTTPS or localhost.</p>
-      ) : (
-        <>
-          <div className="marauder-tabs" role="tablist">
-            {(["devices", "intel", "log"] as Tab[]).map((t) => (
-              <button
-                key={t}
-                type="button"
-                role="tab"
-                aria-selected={t === tab}
-                className={t === tab ? "on" : undefined}
-                onClick={() => setTab(t)}
-              >
-                {t === "devices" ? "Devices" : t === "intel" ? "Intel" : "Log"}
-              </button>
-            ))}
-          </div>
-
-          {tab === "devices" ? (
-            devices.length === 0 ? (
-              <p className="panel-empty">No devices yet. Press SCAN and pick one from the browser chooser.</p>
-            ) : (
-              <ul className="marauder-list">
-                {devices.map((d) => (
-                  <li key={d.id}>
-                    <span className="mr-name">{d.name}</span>
-                    <span className="mr-id">{d.id.slice(0, 12)}</span>
-                    <button type="button" onClick={() => connect(d)}>
-                      {d.connected ? `${d.services.length} svc` : "Connect"}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )
-          ) : null}
-
-          {tab === "intel" ? (
-            <div className="marauder-intel">
-              <h3>GATT services</h3>
-              {devices.filter((d) => d.connected).length === 0 ? (
-                <p className="panel-empty">Connect a device to read its advertised services.</p>
-              ) : (
-                <ul className="marauder-list">
-                  {devices
-                    .filter((d) => d.connected)
-                    .map((d) => (
-                      <li key={d.id} className="mr-svc">
-                        <span className="mr-name">{d.name}</span>
-                        <span className="mr-id">{d.services.join(", ") || "none"}</span>
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </div>
-          ) : null}
-
-          {tab === "log" ? (
-            <pre className="marauder-log">{log.join("\n") || "No activity yet."}</pre>
-          ) : null}
-
-          <div className="marauder-vault">
-            <span>
-              VAULT · {devices.length} device{devices.length === 1 ? "" : "s"}
-            </span>
-            <div>
-              <button type="button" onClick={() => download("json")} disabled={devices.length === 0}>
-                JSON
-              </button>
-              <button type="button" onClick={() => download("csv")} disabled={devices.length === 0}>
-                CSV
-              </button>
-              <button
-                type="button"
-                className="danger"
-                onClick={() => {
-                  setDevices([]);
-                  live.current.clear();
-                  write("vault wiped");
-                }}
-                disabled={devices.length === 0}
-              >
-                Wipe
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      {showLog ? <pre className="marauder-log">{log.join("\n") || "Nothing yet."}</pre> : null}
     </div>
   );
 }

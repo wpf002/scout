@@ -235,8 +235,7 @@ export function Planner({
 
                     {entry.status === "deeplink" && (
                       <div className="entry-note">
-                        Opens in your browser. The subject term never passes
-                        through Scout for this source.
+                        Opens in your browser. Nothing passes through Scout.
                       </div>
                     )}
 

@@ -111,16 +111,10 @@ export function AlertFeed({
         <div className="empty">
           {caseId === undefined ? (
             <>
-              Nothing changed. Standing watches raise an alert here when
-              something appears or disappears — start one from a case&rsquo;s
-              Watch tab.
+              Nothing changed. Start a watch from a case&rsquo;s Watch tab.
             </>
           ) : (
-            <>
-              Nothing changed on this case yet. A watch reports nothing on its
-              first run by design: the first pass records what is already there,
-              so the first real change is not buried under a hundred false ones.
-            </>
+            <>Nothing changed yet. The first pass records a baseline.</>
           )}
         </div>
       )}

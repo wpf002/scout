@@ -48,7 +48,7 @@ export function AuditPanel({ audit }: { audit: AuditView | null }) {
 
       {audit.queryLogs.length === 0 ? (
         <div className="empty">
-          No scoped queries yet. Every attempt — allowed or refused — lands here.
+          No queries yet. Allowed and refused both land here.
         </div>
       ) : (
         <>

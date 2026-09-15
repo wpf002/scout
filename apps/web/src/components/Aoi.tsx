@@ -224,8 +224,7 @@ export function Aoi({
           {infra !== null ? (
             Object.keys(infra).length === 0 ? (
               <p className="measure-hint">
-                OpenStreetMap has nothing tagged in these categories inside this
-                box. That is not evidence that nothing is there.
+                Nothing tagged in this box. Absence is not evidence.
               </p>
             ) : (
               <ul className="aoi-list">

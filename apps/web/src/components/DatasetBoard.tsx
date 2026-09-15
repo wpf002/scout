@@ -151,8 +151,7 @@ export function DatasetBoard({
       </div>
 
       <p>
-        Leaks, corporate records and sanctions screening. Gating is per input:
-        Intelligence X is open for a domain, scope-gated for an email.
+        Leaks, company records and sanctions.
       </p>
 
       <div className="row" style={{ alignItems: "flex-end" }}>

@@ -17,8 +17,7 @@ export function FindingsBoard({ findings }: { findings: FindingRecord[] }) {
 
       {findings.length === 0 ? (
         <div className="empty">
-          Nothing saved yet. Run a plan, then save what matters — provenance is
-          attached for you.
+          Nothing saved yet. Sources are attached automatically.
         </div>
       ) : (
         <table>

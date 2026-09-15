@@ -444,7 +444,11 @@ export async function registerV2Routes(app: FastifyInstance): Promise<void> {
     const latestByKind = new Map<string, { runId: string; modelVersion: string; startedAt: Date }>();
     for (const run of runs) {
       const kindRow = await prisma.entity.findFirst({ where: { resolutionRunId: run.id }, select: { kind: true } });
-      const kind = kindRow?.kind ?? "UNKNOWN";
+      // A run that produced no entities has no kind and no review queue. It
+      // used to get an "UNKNOWN" sentinel, which is not a FusionEntityKind —
+      // the cast below then failed and took the whole tab down with it.
+      if (kindRow === null) continue;
+      const kind = kindRow.kind;
       if (!latestByKind.has(kind)) latestByKind.set(kind, { runId: run.id, modelVersion: run.modelVersion, startedAt: run.startedAt });
     }
     const chosen = [...latestByKind.entries()].filter(([kind]) => query.kind === undefined || kind === query.kind);

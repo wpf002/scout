@@ -68,7 +68,7 @@ export function TimelineBoard({ record }: { record: CaseRecord }) {
         </div>
       </div>
 
-      <p>Queries, findings and case events in order. Refusals included.</p>
+      <p>Everything that happened, in order.</p>
 
       {error !== null && <div className="error">{error}</div>}
 

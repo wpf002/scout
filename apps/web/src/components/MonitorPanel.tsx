@@ -143,9 +143,7 @@ export function MonitorPanel({
       </div>
 
       <p>
-        Re-runs ungated sources on a schedule and alerts on anything that
-        appears or disappears. Scope-gated sources cannot be watched: they run
-        one confirmed action at a time, which a recurring lookup is not.
+        Re-runs open sources on a schedule and alerts on any change. Person-facing sources cannot be watched.
       </p>
 
       {error !== null && <div className="notice">{error}</div>}

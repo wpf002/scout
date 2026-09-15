@@ -172,10 +172,7 @@ export function GlobalSweep() {
           ) : null}
         </>
       ) : (
-        <p className="panel-empty">
-          Sweeps every non-person-facing source at once. Person lookups stay in OSINT Search,
-          one authorized subject at a time.
-        </p>
+        <p className="panel-empty">Runs every open source at once. People are looked up in OSINT Search.</p>
       )}
     </div>
   );

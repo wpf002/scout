@@ -106,6 +106,34 @@ export function CaseFile({
   const [pivot, setPivot] = useState<PivotRequest | null>(null);
   const [reviewCount, setReviewCount] = useState(0);
 
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newRef, setNewRef] = useState("");
+
+  /**
+   * An investigation needs a name and the authorization it runs under. Both are
+   * required by the API, so both are asked for here rather than inventing a
+   * placeholder reference that would then sit in the audit log as if it meant
+   * something.
+   */
+  async function createCase() {
+    try {
+      const created = await api.createCase({
+        name: newName.trim(),
+        authorizationRef: newRef.trim(),
+      });
+      const refreshed = await api.listCases();
+      setCases(refreshed.cases);
+      setCaseId(created.id);
+      setCreating(false);
+      setNewName("");
+      setNewRef("");
+      setError(null);
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "Could not create the investigation.");
+    }
+  }
+
   useEffect(() => {
     api
       .listCases()
@@ -188,17 +216,8 @@ export function CaseFile({
     [findings.length, record?.scopeEntries.length],
   );
 
-  if (cases.length === 0) {
-    return (
-      <div className="casefile">
-        <p className="faint">
-          No cases yet. Every query here is recorded against one, so a case has
-          to exist before anything can run.
-        </p>
-      </div>
-    );
-  }
-
+  // No early return for an empty list: the header carries the New button, and
+  // bailing out before it left the first-run case with no way to create one.
   return (
     <div className="casefile">
       <header className="casefile-head">
@@ -208,6 +227,7 @@ export function CaseFile({
             value={caseId}
             onChange={(event) => setCaseId(event.target.value)}
           >
+            {cases.length === 0 ? <option value="">None yet</option> : null}
             {cases.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {titleCase(entry.name)}
@@ -215,12 +235,45 @@ export function CaseFile({
             ))}
           </select>
         </label>
+        <button type="button" className="case-new" onClick={() => setCreating(true)}>
+          New
+        </button>
         {record !== null ? (
           <span className={`case-status ${record.status.toLowerCase()}`}>
             {titleCase(record.status)}
           </span>
         ) : null}
       </header>
+
+      {creating ? (
+        <form
+          className="case-new-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createCase();
+          }}
+        >
+          <input
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            placeholder="Name"
+            aria-label="Investigation name"
+            autoFocus
+          />
+          <input
+            value={newRef}
+            onChange={(event) => setNewRef(event.target.value)}
+            placeholder="Authorization reference"
+            aria-label="Authorization reference"
+          />
+          <button type="submit" disabled={newName.trim() === "" || newRef.trim() === ""}>
+            Create
+          </button>
+          <button type="button" onClick={() => setCreating(false)}>
+            Cancel
+          </button>
+        </form>
+      ) : null}
 
       <nav className="casefile-tabs" aria-label="Case sections">
         {TABS.map((entry) => {
@@ -250,7 +303,9 @@ export function CaseFile({
       {error !== null ? <p className="error">{error}</p> : null}
 
       <div className="casefile-body">
-        {record === null ? (
+        {cases.length === 0 ? (
+          <p className="panel-empty">No investigations yet. Press New to create one.</p>
+        ) : record === null ? (
           <Loading what="the case" />
         ) : (
           <>

@@ -1597,6 +1597,59 @@ a:hover {
   padding: 8px 0 10px;
 }
 
+.case-new {
+  padding: 4px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.case-new:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.case-new-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding-bottom: 10px;
+}
+
+.case-new-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.case-new-form button {
+  padding: 5px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.case-new-form button[type="submit"]:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.case-new-form button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .casefile-head label {
   display: flex;
   align-items: center;
@@ -2902,10 +2955,39 @@ a:hover {
 
 .marauder-list li {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto;
   gap: 8px;
   align-items: center;
   font-size: 12px;
+}
+
+/* Signal bars. Monospace so the four steps stay the same width. */
+.mr-sig {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: -1px;
+}
+
+.mr-on,
+.mr-off {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mr-on {
+  color: var(--ok, #4ade80);
+}
+
+.mr-off {
+  color: var(--text-faint);
+}
+
+.mr-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .marauder-list li.mr-svc {
@@ -2961,8 +3043,9 @@ a:hover {
 .marauder-vault {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   border-top: 1px solid var(--border);
+  margin-top: 8px;
   padding-top: 8px;
   font-family: var(--mono);
   font-size: 11px;

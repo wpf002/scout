@@ -108,7 +108,9 @@ export function ArcGisPanel({
       {note !== null ? <p className="arcgis-note">{note}</p> : null}
 
       {items === null ? (
-        <p className="panel-empty">Search the public ArcGIS catalogue, then import a layer onto the map.</p>
+        // The prompt is for a panel that has not run yet. Showing it under an
+        // error read as if the search had simply not happened.
+        note === null ? <p className="panel-empty">Search public layers, then import one onto the map.</p> : null
       ) : items.length === 0 ? (
         <p className="panel-empty">Nothing public matched that.</p>
       ) : (

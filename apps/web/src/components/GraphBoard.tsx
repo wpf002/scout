@@ -323,8 +323,7 @@ export function GraphBoard({
 
       {graph.entities.length === 0 ? (
         <div className="empty">
-          No findings yet, so there is nothing to correlate. Save findings from
-          the boards above and they will resolve into entities here.
+          No findings yet. Saved findings resolve into entities here.
         </div>
       ) : (
         <div className="graph-canvas">
@@ -441,8 +440,7 @@ export function GraphBoard({
         <>
           <h3 style={{ marginTop: 20 }}>Possible Same Entity</h3>
           <p className="faint">
-            Near matches only. Nothing merges until you say so — merging two
-            similarly-named people automatically would read as a finding.
+            Near matches. Nothing merges until you say so.
           </p>
           {graph.suggestions.map((suggestion) => (
             <div className="entry" key={suggestion.id}>

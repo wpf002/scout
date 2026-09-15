@@ -112,7 +112,7 @@ export function RecognitionPanel({ record, onActed }: { record: CaseRecord; onAc
     <div className="recognition">
       {enabled === false ? (
         <p className="notice">
-          Recognition is <b>off</b> (<span className="mono">RECOGNITION_ENABLED=false</span>). Galleries can be prepared; enrollment and comparison are refused until the flag is set and the service runs.
+          Recognition is <b>off</b>. Galleries can be built; enrollment and comparison are refused.
         </p>
       ) : null}
       {error !== null ? <p className="error">{error}</p> : null}
@@ -192,7 +192,7 @@ export function RecognitionPanel({ record, onActed }: { record: CaseRecord; onAc
 
           <h3>Enrollments</h3>
           {detail.enrollments.length === 0 ? (
-            <p className="tiny faint">Nobody is enrolled. A comparison against this gallery would be INDETERMINATE.</p>
+            <p className="tiny faint">Nobody enrolled. Comparison would be INDETERMINATE.</p>
           ) : (
             <table>
               <thead>
@@ -286,7 +286,7 @@ export function RecognitionPanel({ record, onActed }: { record: CaseRecord; onAc
 
           <h3>Comparison Log</h3>
           {detail.comparisons.length === 0 ? (
-            <p className="tiny faint">No comparisons yet. Every one, matched or not, will be listed here permanently.</p>
+            <p className="tiny faint">No comparisons yet. Every one is kept.</p>
           ) : (
             <table>
               <thead>
@@ -468,7 +468,7 @@ function EnrollForm({
           {busy ? "Enrolling…" : "Enroll"}
         </button>
       </div>
-      <p className="tiny faint">Scraped or open-web media is not an option here and is refused by the server. The file is embedded once and not kept; its hash goes to the audit trail.</p>
+      <p className="tiny faint">Scraped media is refused. The file is not kept; its hash is logged.</p>
     </form>
   );
 }
@@ -507,7 +507,7 @@ function CompareForm({ disabled, busy, onSubmit }: { disabled: boolean; busy: bo
           <input id="cmp-file" type="file" accept={modality === "FACE" ? "image/*" : "audio/*"} onChange={(e) => setFile(e.target.files?.[0] ?? null)} disabled={disabled} />
         </div>
         {modality === "VOICE" ? (
-          <label className="recognition-confirm" style={{ flex: "0 0 auto", minWidth: 0 }} title="Split the recording by speaker first; each speaker is compared and logged on its own.">
+          <label className="recognition-confirm" style={{ flex: "0 0 auto", minWidth: 0 }} title="Split by speaker first. Each is compared separately.">
             <input type="checkbox" checked={diarize} onChange={(e) => setDiarize(e.target.checked)} disabled={disabled} />
             Several speakers
           </label>
