@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { defineConfig } from "vitest/config";
 
 /**
@@ -14,12 +17,34 @@ import { defineConfig } from "vitest/config";
  * a different database name. Override with `SCOUT_TEST_DATABASE_URL` when the
  * test database belongs somewhere else entirely.
  */
+/**
+ * `DATABASE_URL` from the repo's .env.
+ *
+ * The app loads .env at startup; vitest does not, so `pnpm test` ran with an
+ * empty URL and the whole db suite failed on "You must provide a nonempty URL"
+ * — a failure that looked like a broken database rather than a missing
+ * variable. Read here so the suite works from a clean shell.
+ */
+function envFileUrl(): string {
+  for (const candidate of ["../../.env", "../../../.env"]) {
+    const path = resolve(__dirname, candidate);
+    if (!existsSync(path)) continue;
+    for (const line of readFileSync(path, "utf8").split("\n")) {
+      const match = /^\s*DATABASE_URL\s*=\s*(.*)$/.exec(line);
+      if (match === null) continue;
+      return (match[1] ?? "").trim().replace(/^["']|["']$/g, "");
+    }
+  }
+  return "";
+}
+
 function testDatabaseUrl(): string {
   const override = process.env["SCOUT_TEST_DATABASE_URL"];
   if (override !== undefined && override !== "") return override;
 
-  const dev = process.env["DATABASE_URL"];
-  if (dev === undefined || dev === "") return "";
+  const fromShell = process.env["DATABASE_URL"];
+  const dev = fromShell !== undefined && fromShell !== "" ? fromShell : envFileUrl();
+  if (dev === "") return "";
 
   const url = new URL(dev);
   // Idempotent. This runs once for the main process and once for the workers'

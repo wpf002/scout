@@ -26,6 +26,7 @@ import { SpacePanel } from "@/components/SpacePanel";
 import { MarketsPanel } from "@/components/MarketsPanel";
 import { MarauderPanel } from "@/components/MarauderPanel";
 import { GlobalSweep } from "@/components/GlobalSweep";
+import { PanelBoundary } from "@/components/PanelBoundary";
 import { ArcGisPanel } from "@/components/ArcGisPanel";
 import { EMPTY_LAYER, type ImageryOverlay, type MapLayer, type Viewport } from "@/lib/investigation";
 import { filtersToSearch, parseFilters, type Predicate } from "@/lib/filters";
@@ -874,6 +875,10 @@ export default function Page() {
         </button>
       </div>
 
+      {/* One boundary, not sixteen: only one panel is mounted at a time, so
+          this contains a crash to the panel that caused it while leaving the
+          map, the layer rail and everything else standing. */}
+      <PanelBoundary name={TOOLS.find((t) => t.id === tool)?.name ?? "Panel"}>
       {/* ── Tool panels ────────────────────────────────────────────────── */}
       {tool === "layers" ? (
         <section className="tool-panel">
@@ -1259,6 +1264,7 @@ export default function Page() {
           )}
         </section>
       ) : null}
+      </PanelBoundary>
 
       {selection !== null ? (
         <Detail

@@ -4983,3 +4983,41 @@ a:hover {
   font-size: 10px;
   color: var(--text-dim);
 }
+
+/* A panel that threw. Shown rather than swallowed: a panel silently rendering
+   nothing is indistinguishable from one with no results. */
+.panel-crash {
+  position: absolute;
+  top: 44px;
+  right: 56px;
+  width: 320px;
+  padding: 12px 14px;
+  background: var(--bg-panel, #0d0f14);
+  border: 1px solid var(--deny, #ff3b52);
+  border-radius: 6px;
+  z-index: 20;
+}
+
+.panel-crash-head {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--deny, #ff3b52);
+}
+
+.panel-crash-detail {
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+
+.panel-crash button {
+  padding: 4px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
