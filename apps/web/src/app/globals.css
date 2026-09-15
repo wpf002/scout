@@ -4811,3 +4811,124 @@ a:hover {
 .hud-readout .busy {
   color: var(--warn);
 }
+
+/* ── Correlated profile ──────────────────────────────────────────────────────
+   Sits above the grouped table and answers "what is this thing" before the
+   operator has to read twelve groups to work it out. Every line here is also
+   a row below it; this view ranks, it does not add. */
+
+.profile {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--bg-inset);
+}
+
+.profile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.profile-head h2 {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.profile-reach {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.profile-agree,
+.profile-conflicts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.profile-agree li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+/* How many independent sources agreed. The whole point of the panel. */
+.pa-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  min-width: 24px;
+}
+
+.pa-value {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pa-value:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.pa-type {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.profile-conflicts {
+  margin-bottom: 8px;
+}
+
+.profile-conflicts li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-left: 2px solid var(--warn, #f5a524);
+  background: color-mix(in srgb, var(--warn, #f5a524) 8%, transparent);
+}
+
+.pc-field {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--warn, #f5a524);
+  white-space: nowrap;
+}
+
+.pc-claims {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.profile-thin {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}

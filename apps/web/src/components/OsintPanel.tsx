@@ -17,6 +17,7 @@ import type { CaseRecord, SubjectKind } from "@/lib/types";
 import { flattenObservations, groupRank, type ResultRow } from "@/lib/flatten";
 import { buildGraph, TYPE_COLOR } from "@/lib/graph";
 import { analyze } from "@/lib/rules";
+import { buildProfile } from "@/lib/profile";
 
 /** Plain names for the subject kinds. "hash" means nothing to most people. */
 const KINDS = Object.keys(KIND_LABEL) as SubjectKind[];
@@ -345,6 +346,10 @@ export function OsintPanel({
     [visibleRows, result],
   );
 
+  // Correlation across sources. Built from the same rows the table shows, so
+  // nothing here can claim a fact that is not also visible below it.
+  const profile = useMemo(() => (rows.length === 0 ? null : buildProfile(rows)), [rows]);
+
   const isOpen = (type: string) => open[type] ?? OPEN_BY_DEFAULT.has(type);
 
   /**
@@ -636,6 +641,53 @@ export function OsintPanel({
             </span>
           ))}
         </div>
+      ) : null}
+
+      {profile !== null && profile.reach.values > 0 ? (
+        <section className="profile">
+          <div className="profile-head">
+            <h2>Profile</h2>
+            <span className="profile-reach">
+              {profile.reach.sourcesAnswering} sources · {profile.reach.values} values ·{" "}
+              {profile.reach.corroborated} corroborated
+            </span>
+          </div>
+
+          {profile.conflicts.length > 0 ? (
+            <ul className="profile-conflicts">
+              {profile.conflicts.map((conflict) => (
+                <li key={conflict.field}>
+                  <span className="pc-field">{conflict.field}</span>
+                  <span className="pc-claims">
+                    {conflict.claims
+                      .map((claim) => `${claim.value} (${claim.sources.join(", ")})`)
+                      .join("  vs  ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {profile.corroborated.length > 0 ? (
+            <ul className="profile-agree">
+              {profile.corroborated.slice(0, 10).map((item) => (
+                <li key={`${item.type}-${item.value}`}>
+                  <span className="pa-count" title={item.sources.join(", ")}>
+                    {item.sources.length}×
+                  </span>
+                  <button type="button" className="pa-value" onClick={() => pivot(item.value)}>
+                    {item.value}
+                  </button>
+                  <span className="pa-type">{item.type}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="profile-thin">
+              Nothing reported by more than one source. Every value below rests on a single source.
+            </p>
+          )}
+        </section>
       ) : null}
 
       {insights.length > 0 ? (
