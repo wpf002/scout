@@ -29,7 +29,7 @@ const BATCH = 2_000;
  * "BIRTH_DATE" and "Date of Birth" are the same column in three states.
  */
 const PATTERNS: Record<string, RegExp[]> = {
-  voterId: [/^(state.?)?voter.?(id|no|number)$/i, /^registration.?(id|number)$/i, /^id.?number$/i],
+  voterId: [/^(state.?)?voter.?(id|no|number|reg|reg.?num)$/i, /^registration.?(id|number)?$/i, /^ncid$/i, /^id.?number$/i],
   lastName: [/^(voter.?)?last.?name$/i, /^surname$/i, /^name.?last$/i],
   firstName: [/^(voter.?)?first.?name$/i, /^given.?name$/i, /^name.?first$/i],
   middleName: [/^(voter.?)?middle.?(name|initial)$/i, /^name.?middle$/i],
@@ -41,8 +41,8 @@ const PATTERNS: Record<string, RegExp[]> = {
   zip: [/^(residential|residence|res).?zip.*$/i, /^zip.?(code)?5?$/i, /^postal.?code$/i],
   county: [/^county(.?name|.?code)?$/i],
   party: [/^part(y|isan).?(code|affiliation|name)?$/i, /^political.?party$/i],
-  status: [/^(voter.?)?status(.?code)?$/i, /^registration.?status$/i],
-  phone: [/^(home.?|daytime.?|residence.?)?(tele)?phone.*$/i],
+  status: [/^(voter.?)?status$/i, /^registration.?status$/i],
+  phone: [/^(full.?|home.?|daytime.?|residence.?)?(tele)?phone.*$/i],
 };
 
 /**
@@ -76,10 +76,23 @@ export function sniffDelimiter(line: string): string {
   return counts[0]?.[1] === 0 ? "," : (counts[0]?.[0] ?? ",");
 }
 
+/**
+ * Government files decorate column names with a type suffix — county_desc,
+ * party_cd, name_suffix_lbl, voter_reg_num. They carry no meaning for us and
+ * they are what stopped North Carolina's header from matching at all, so they
+ * come off before the patterns run.
+ */
+export function canonicalHeader(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/_(desc|descr|description|cd|code|lbl|label|num|number|abbrv|abbr|txt|ind)$/i, "");
+}
+
 /** Which of our fields each column holds, or "" for columns we ignore. */
 export function mapHeader(header: string[]): string[] {
   return header.map((raw) => {
-    const name = raw.trim().replace(/^["']|["']$/g, "");
+    const name = canonicalHeader(raw);
     for (const [field, patterns] of Object.entries(PATTERNS)) {
       if (patterns.some((p) => p.test(name))) return field;
     }
@@ -137,10 +150,6 @@ async function main(): Promise<void> {
   }
 
   const source = basename(file);
-  const reader = createInterface({
-    input: createReadStream(file, "utf8"),
-    crlfDelay: Infinity,
-  });
 
   let columns: string[] | null = null;
   let delimiter = ",";
@@ -160,6 +169,19 @@ async function main(): Promise<void> {
     const removed = await prisma.voterRecord.deleteMany({ where: { state } });
     process.stdout.write(`Removed ${removed.count} existing ${state} rows.\n`);
   }
+
+  // Opened only now, and never before an await.
+  //
+  // createInterface starts the stream flowing immediately, so a reader created
+  // above the deleteMany emitted lines while that await was outstanding and
+  // before the for-await consumer attached — they were dropped on the floor.
+  // The count lost varied with how long the delete took, which is why the
+  // header went missing on the 4 GB file and survived on a small sample, and
+  // why each run reported a different row as the header.
+  const reader = createInterface({
+    input: createReadStream(file, "utf8"),
+    crlfDelay: Infinity,
+  });
 
   for await (const line of reader) {
     if (line.trim() === "") continue;
