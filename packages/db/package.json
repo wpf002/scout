@@ -27,7 +27,8 @@
     "lint": "eslint src",
     "seed:v2": "tsx prisma/seed-v2.ts",
     "graph:check": "tsx src/bin/check-graph.ts",
-    "faa:sync": "tsx src/bin/faa-sync.ts"
+    "faa:sync": "tsx src/bin/faa-sync.ts",
+    "voters:import": "tsx src/bin/voters-import.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

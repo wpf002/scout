@@ -10,8 +10,8 @@ import {
 import { TIERS } from "./types.js";
 
 describe("registry shape", () => {
-  it("holds 41 sources across 6 tiers", () => {
-    expect(SOURCES).toHaveLength(41);
+  it("holds 42 sources across 6 tiers", () => {
+    expect(SOURCES).toHaveLength(42);
     expect(new Set(SOURCES.map((s) => s.tier)).size).toBe(TIERS.length);
   });
 
@@ -47,6 +47,7 @@ describe("scoped sources are exactly the person-facing set", () => {
       "hunter-io",
       "maigret",
       "sherlock",
+      "voter-file",
       "whatsmyname",
     ]);
   });
@@ -131,6 +132,7 @@ describe("mode invariants", () => {
       "usaspending",
       "uscg-psix",
       "vessel-id",
+      "voter-file",
       "wayback-machine",
       "wikidata",
     ]);

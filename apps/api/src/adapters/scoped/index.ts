@@ -4,6 +4,7 @@ import { fetchHibp, hibpSource } from "../hibp.js";
 import { fetchHunter, hunterSource } from "./hunter.js";
 import { fetchWhatsMyName, whatsMyNameSource } from "./whatsmyname.js";
 import { fetchGravatar, gravatarSource } from "./gravatar.js";
+import { fetchVoters, voterSource } from "../datasets/voters.js";
 import {
   fetchMaigret,
   fetchSherlock,
@@ -36,6 +37,7 @@ export const SCOPED_ADAPTERS: readonly ScopedAdapter[] = Object.freeze([
   { source: sherlockSource, run: fetchSherlock },
   { source: maigretSource, run: fetchMaigret },
   { source: gravatarSource, run: fetchGravatar },
+  { source: voterSource, run: fetchVoters },
 ]);
 
 const BY_ID = new Map(SCOPED_ADAPTERS.map((a) => [a.source.id, a]));

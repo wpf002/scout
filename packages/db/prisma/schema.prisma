@@ -1092,3 +1092,43 @@ model AircraftRegistration {
   @@index([ownerName])
   @@index([state, city])
 }
+
+/// A voter registration record, from a file the operator obtained themselves.
+///
+/// Not fetched by Scout. State files are requester-gated and most carry
+/// use restrictions — several make commercial use a criminal offence — so the
+/// lawful path is that the operator requests the file under their own name and
+/// permitted purpose, and this holds what they were given.
+///
+/// `sourceFile` and `state` travel with every row because the restrictions are
+/// per-state: knowing a record came from Texas is what tells you §18.067
+/// applies to it.
+model VoterRecord {
+  id           String   @id @default(cuid())
+  /// Two-letter state, uppercase. The restrictions key off this.
+  state        String
+  /// The state's own registration identifier, where the file carries one.
+  voterId      String?
+  lastName     String
+  firstName    String?
+  middleName   String?
+  suffix       String?
+  /// Full date of birth where the state publishes it. Many publish only a year.
+  birthDate    DateTime?
+  birthYear    Int?
+  street       String?
+  city         String?
+  zip          String?
+  county       String?
+  party        String?
+  status       String?
+  phone        String?
+  /// Filename it came from, so a stale import is traceable to its source.
+  sourceFile   String
+  importedAt   DateTime @default(now())
+
+  @@index([lastName, firstName])
+  @@index([state, lastName])
+  @@index([birthDate])
+  @@index([zip])
+}

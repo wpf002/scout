@@ -9,7 +9,7 @@ import { TIERS } from "./types.js";
 const q = encodeURIComponent;
 
 /**
- * The tiered source registry: 41 sources across 6 tiers.
+ * The tiered source registry: 42 sources across 6 tiers.
  *
  * Two fields carry the platform's safety posture:
  *   - `mode`          — deeplink sources never route subject data through Scout.
@@ -556,6 +556,21 @@ export const SOURCES: readonly Source[] = Object.freeze([
     homepage: "https://www.fec.gov",
     keyEnv: "FEC_API_KEY",
     deeplink: (term) => `https://www.fec.gov/data/receipts/individual-contributions/?contributor_name=${q(term)}`,
+  },
+  {
+    id: "voter-file",
+    name: "Voter File",
+    tier: "people",
+    mode: "api",
+    // Person-facing wholesale. A name, a date of birth and a home address is
+    // the most identifying combination Scout holds, and unlike every other
+    // source it reads local records the operator obtained under their own
+    // permitted purpose — which is exactly the case the gate exists for.
+    requiresScope: true,
+    accepts: ["person", "keyword"],
+    description: "Voter registration records you imported — name, date of birth, address.",
+    homepage: "https://www.eac.gov",
+    keyEnv: null,
   },
 ]);
 

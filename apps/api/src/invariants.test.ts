@@ -75,6 +75,7 @@ describe("invariant 1 — the scope gate is absolute", () => {
       "hunter-io",
       "maigret",
       "sherlock",
+      "voter-file",
       "whatsmyname",
     ]);
   });
@@ -274,6 +275,7 @@ describe("invariant 6 — inert without keys, never guessed", () => {
       "usaspending",
       "uscg-psix",
       "vessel-id",
+      "voter-file",
       "wayback-machine",
       "wikidata",
     ]);

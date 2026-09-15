@@ -28,7 +28,8 @@
     "test:services": "for s in resolution recognition; do (cd services/$s && uv run --quiet pytest -q) || exit 1; done",
     "eval:resolution": "cd services/resolution && uv run --quiet python -m eval.evaluate --check",
     "graph:check": "pnpm --filter @scout/db run graph:check",
-    "faa:sync": "pnpm --filter @scout/db run faa:sync"
+    "faa:sync": "pnpm --filter @scout/db run faa:sync",
+    "voters:import": "pnpm --filter @scout/db run voters:import"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
