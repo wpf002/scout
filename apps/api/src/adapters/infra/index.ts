@@ -21,6 +21,7 @@ import {
 import { fetchRdap, rdapSource } from "./rdap.js";
 import { fetchThreatFox, threatFoxSource } from "./threatfox.js";
 import { fetchPlace, placeSource } from "./place.js";
+import { fetchVirusTotal, virusTotalSource } from "./virustotal.js";
 import {
   addressSource,
   fetchAddress,
@@ -67,6 +68,7 @@ export const INFRA_ADAPTERS: readonly InfraAdapter[] = Object.freeze([
   { source: feodoSource, run: fetchFeodo },
   { source: threatFoxSource, run: fetchThreatFox },
   { source: placeSource, run: fetchPlace },
+  { source: virusTotalSource, run: fetchVirusTotal },
   { source: addressSource, run: fetchAddress },
   { source: vesselSource, run: fetchVessel },
   { source: phoneSource, run: fetchPhone },

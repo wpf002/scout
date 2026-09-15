@@ -10,8 +10,8 @@ import {
 import { TIERS } from "./types.js";
 
 describe("registry shape", () => {
-  it("holds 35 sources across 6 tiers", () => {
-    expect(SOURCES).toHaveLength(35);
+  it("holds 36 sources across 6 tiers", () => {
+    expect(SOURCES).toHaveLength(36);
     expect(new Set(SOURCES.map((s) => s.tier)).size).toBe(TIERS.length);
   });
 
@@ -88,6 +88,7 @@ describe("mode invariants", () => {
       "crtsh",
       "sec-edgar-fts",
       "threatfox",
+      "virustotal",
       "wayback-machine",
       "wikidata",
     ]);

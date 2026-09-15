@@ -9,7 +9,7 @@ import { TIERS } from "./types.js";
 const q = encodeURIComponent;
 
 /**
- * The tiered source registry: 35 sources across 6 tiers.
+ * The tiered source registry: 36 sources across 6 tiers.
  *
  * Two fields carry the platform's safety posture:
  *   - `mode`          — deeplink sources never route subject data through Scout.
@@ -481,6 +481,18 @@ export const SOURCES: readonly Source[] = Object.freeze([
     description: "Says why plate-to-owner has no lawful free source.",
     homepage: "https://www.ecfr.gov/current/title-49/subtitle-VI/part-B/chapter-303",
     keyEnv: null,
+  },
+  {
+    id: "virustotal",
+    name: "VirusTotal",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["hash", "domain", "ip"],
+    description: "Seventy-odd engines, plus resolutions and sibling samples.",
+    homepage: "https://www.virustotal.com",
+    keyEnv: "VIRUSTOTAL_API_KEY",
+    deeplink: (term) => `https://www.virustotal.com/gui/search/${q(term)}`,
   },
 ]);
 
