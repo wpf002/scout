@@ -9,7 +9,7 @@ import { TIERS } from "./types.js";
 const q = encodeURIComponent;
 
 /**
- * The tiered source registry: 40 sources across 6 tiers.
+ * The tiered source registry: 41 sources across 6 tiers.
  *
  * Two fields carry the platform's safety posture:
  *   - `mode`          — deeplink sources never route subject data through Scout.
@@ -540,6 +540,22 @@ export const SOURCES: readonly Source[] = Object.freeze([
     description: "US vessel identity, flag and status. Owner is not published.",
     homepage: "https://cgmix.uscg.mil",
     keyEnv: null,
+  },
+  {
+    id: "fec",
+    name: "FEC Contributions",
+    tier: "datasets",
+    mode: "api",
+    requiresScope: false,
+    // Employer, occupation and zip against a named individual is an identity
+    // claim, so a person is gated. A company is not — there the question is
+    // who gives on its behalf, which is a disclosure the law exists to publish.
+    scopedKinds: ["person"],
+    accepts: ["person", "company", "keyword"],
+    description: "Itemised political donations — name, employer, occupation, city.",
+    homepage: "https://www.fec.gov",
+    keyEnv: "FEC_API_KEY",
+    deeplink: (term) => `https://www.fec.gov/data/receipts/individual-contributions/?contributor_name=${q(term)}`,
   },
 ]);
 
