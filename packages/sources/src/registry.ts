@@ -9,7 +9,7 @@ import { TIERS } from "./types.js";
 const q = encodeURIComponent;
 
 /**
- * The tiered source registry: 38 sources across 6 tiers.
+ * The tiered source registry: 40 sources across 6 tiers.
  *
  * Two fields carry the platform's safety posture:
  *   - `mode`          — deeplink sources never route subject data through Scout.
@@ -517,6 +517,28 @@ export const SOURCES: readonly Source[] = Object.freeze([
     accepts: ["company", "person", "keyword"],
     description: "Federal contracts, grants and loans by recipient.",
     homepage: "https://www.usaspending.gov",
+    keyEnv: null,
+  },
+  {
+    id: "fmcsa",
+    name: "FMCSA Carriers",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["plate", "company", "keyword"],
+    description: "US commercial carriers by USDOT number or name — operator, address, fleet.",
+    homepage: "https://safer.fmcsa.dot.gov",
+    keyEnv: null,
+  },
+  {
+    id: "uscg-psix",
+    name: "USCG Vessel Records",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["vessel"],
+    description: "US vessel identity, flag and status. Owner is not published.",
+    homepage: "https://cgmix.uscg.mil",
     keyEnv: null,
   },
 ]);

@@ -23,6 +23,8 @@ import { fetchThreatFox, threatFoxSource } from "./threatfox.js";
 import { fetchPlace, placeSource } from "./place.js";
 import { fetchVirusTotal, virusTotalSource } from "./virustotal.js";
 import { aircraftSource, fetchAircraft } from "./aircraft.js";
+import { carrierSource, fetchCarrier } from "./carrier.js";
+import { fetchUscg, uscgSource } from "./uscg.js";
 import {
   addressSource,
   fetchAddress,
@@ -71,6 +73,8 @@ export const INFRA_ADAPTERS: readonly InfraAdapter[] = Object.freeze([
   { source: placeSource, run: fetchPlace },
   { source: virusTotalSource, run: fetchVirusTotal },
   { source: aircraftSource, run: fetchAircraft },
+  { source: carrierSource, run: fetchCarrier },
+  { source: uscgSource, run: fetchUscg },
   { source: addressSource, run: fetchAddress },
   { source: vesselSource, run: fetchVessel },
   { source: phoneSource, run: fetchPhone },
