@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import type { Source, Subject, UsernameSighting } from "@scout/sources";
 import { outputLines, runCli } from "./run.js";
 
@@ -45,13 +46,22 @@ export const maigretSource: Source = {
 /** These enumerate hundreds of sites; the default timeout is not enough. */
 const TIMEOUT_MS = 300_000;
 
+/**
+ * Sherlock and Maigret both write a results file named after the username into
+ * their working directory, with no flag to turn it off that is stable across
+ * versions. Scout runs them from `apps/api`, so every username search dropped a
+ * `<username>.txt` into the repository. Running them somewhere disposable is
+ * the fix; the answer is read from stdout either way.
+ */
+const SCRATCH = tmpdir();
+
 export async function fetchSherlock(
   subject: Subject,
 ): Promise<UsernameSighting[]> {
   const { stdout } = await runCli(
     sherlockSource.binary as string,
     [subject.value, "--print-found", "--no-color", "--timeout", "10"],
-    { timeoutMs: TIMEOUT_MS },
+    { timeoutMs: TIMEOUT_MS, cwd: SCRATCH },
   );
 
   return parseSightings(stdout, subject.value);
@@ -63,7 +73,7 @@ export async function fetchMaigret(
   const { stdout } = await runCli(
     maigretSource.binary as string,
     [subject.value, "--no-color", "--timeout", "10"],
-    { timeoutMs: TIMEOUT_MS },
+    { timeoutMs: TIMEOUT_MS, cwd: SCRATCH },
   );
 
   return parseSightings(stdout, subject.value);

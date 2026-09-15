@@ -8,6 +8,14 @@ import {
   fetchOpenSanctions,
   openSanctionsSource,
 } from "./opensanctions.js";
+import {
+  courtListenerSource,
+  fetchCourtListener,
+  fetchEdgarFullText,
+  fetchWikidata,
+  secEdgarSource,
+  wikidataSource,
+} from "./records.js";
 
 export interface DatasetAdapter {
   source: Source;
@@ -27,6 +35,9 @@ export interface DatasetAdapter {
 export const DATASET_ADAPTERS: readonly DatasetAdapter[] = Object.freeze([
   { source: intelxSource, run: fetchIntelx },
   { source: openSanctionsSource, run: fetchOpenSanctions },
+  { source: wikidataSource, run: fetchWikidata },
+  { source: courtListenerSource, run: fetchCourtListener },
+  { source: secEdgarSource, run: fetchEdgarFullText },
 ]);
 
 const BY_ID = new Map(DATASET_ADAPTERS.map((a) => [a.source.id, a]));

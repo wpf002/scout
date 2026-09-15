@@ -53,8 +53,19 @@ const PERSON_IDENTIFYING: readonly SubjectKind[] = [
  * separates it from the exposure and people tiers. This one is expected to
  * stay unscoped.
  *
+ * `wikidata` — a public encyclopedia. It was a deeplink until the person-name
+ * tier was widened; reading its search API server-side returns the same public
+ * reference data the browser tab showed, which is a Q-number and the registry
+ * cross-references hanging off it. Like OpenSanctions it publishes rather than
+ * discloses: being searchable by name is the point of the dataset, and nothing
+ * it returns is a private fact about the subject. Court records and corporate
+ * filings are deliberately NOT treated this way — `courtlistener` and
+ * `sec-edgar-fts` are facts about a named person's legal and financial
+ * affairs, so both carry `scopedKinds: ["person"]` and are gated for people
+ * while staying open for companies.
+ *
  */
-const REVIEWED_UNSCOPED_PERSON_SOURCES = ["opensanctions"];
+const REVIEWED_UNSCOPED_PERSON_SOURCES = ["opensanctions", "wikidata"];
 
 describe("invariant 1 — the scope gate is absolute", () => {
   it("pins the set of person-facing sources", () => {
@@ -244,6 +255,7 @@ describe("invariant 6 — inert without keys, never guessed", () => {
     ).map((s) => s.id);
     expect(keyless.sort()).toEqual([
       "certspotter",
+      "courtlistener",
       "crtsh",
       "feodo",
       "gravatar",
@@ -251,7 +263,10 @@ describe("invariant 6 — inert without keys, never guessed", () => {
       "hackertarget",
       "rapiddns",
       "rdap",
+      "sec-edgar-fts",
+      "threatfox",
       "wayback-machine",
+      "wikidata",
     ]);
   });
 

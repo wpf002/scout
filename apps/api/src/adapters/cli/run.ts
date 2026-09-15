@@ -30,6 +30,12 @@ export interface CliRunOptions {
   timeoutMs?: number;
   /** Extra environment for the child. Never inherits secrets it has no use for. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Working directory for the child. Tools that write result files beside
+   * themselves need somewhere disposable — Sherlock drops `<username>.txt`
+   * into its cwd, which without this lands in the repository.
+   */
+  cwd?: string;
 }
 
 export interface CliRunResult {
@@ -144,6 +150,7 @@ export async function runCli(
         maxBuffer: MAX_OUTPUT_BYTES,
         // No shell. See the note at the top of this file.
         shell: false,
+        cwd: options.cwd,
         env: { ...process.env, ...options.env },
         windowsHide: true,
       },

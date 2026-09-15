@@ -10,8 +10,8 @@ import {
 import { TIERS } from "./types.js";
 
 describe("registry shape", () => {
-  it("holds 27 sources across 6 tiers", () => {
-    expect(SOURCES).toHaveLength(27);
+  it("holds 30 sources across 6 tiers", () => {
+    expect(SOURCES).toHaveLength(30);
     expect(new Set(SOURCES.map((s) => s.tier)).size).toBe(TIERS.length);
   });
 
@@ -83,7 +83,14 @@ describe("mode invariants", () => {
     const dual = SOURCES.filter(
       (s) => s.mode === "api" && typeof s.deeplink === "function",
     ).map((s) => s.id);
-    expect(dual.sort()).toEqual(["crtsh", "wayback-machine"]);
+    expect(dual.sort()).toEqual([
+      "courtlistener",
+      "crtsh",
+      "sec-edgar-fts",
+      "threatfox",
+      "wayback-machine",
+      "wikidata",
+    ]);
   });
 
   it("URL-encodes the term so it cannot break out of the deeplink", () => {
@@ -103,6 +110,7 @@ describe("mode invariants", () => {
     // request, so it is treated as keyed.
     expect(keyless.sort()).toEqual([
       "certspotter",
+      "courtlistener",
       "crtsh",
       "feodo",
       "gravatar",
@@ -110,7 +118,10 @@ describe("mode invariants", () => {
       "hackertarget",
       "rapiddns",
       "rdap",
+      "sec-edgar-fts",
+      "threatfox",
       "wayback-machine",
+      "wikidata",
     ]);
 
     for (const source of SOURCES) {

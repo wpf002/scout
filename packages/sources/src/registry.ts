@@ -9,7 +9,7 @@ import { TIERS } from "./types.js";
 const q = encodeURIComponent;
 
 /**
- * The tiered source registry: 19 sources across 6 tiers.
+ * The tiered source registry: 30 sources across 6 tiers.
  *
  * Two fields carry the platform's safety posture:
  *   - `mode`          — deeplink sources never route subject data through Scout.
@@ -51,7 +51,7 @@ export const SOURCES: readonly Source[] = Object.freeze([
     id: "wikidata",
     name: "Wikidata",
     tier: "datasets",
-    mode: "deeplink",
+    mode: "api",
     requiresScope: false,
     accepts: ["person", "company", "keyword"],
     description: "Structured knowledge base — entity identifiers and cross-references.",
@@ -59,6 +59,37 @@ export const SOURCES: readonly Source[] = Object.freeze([
     keyEnv: null,
     deeplink: (term) =>
       `https://www.wikidata.org/w/index.php?search=${q(term)}`,
+  },
+  {
+    id: "courtlistener",
+    name: "CourtListener",
+    tier: "datasets",
+    mode: "api",
+    requiresScope: false,
+    // Open for a company, gated for a named individual. Searching a business in
+    // public filings is ordinary research; searching a person in court records
+    // is person-facing, and that is exactly what the scope gate is for.
+    scopedKinds: ["person"],
+    accepts: ["person", "company", "keyword"],
+    description: "US federal and state court records — dockets, parties, filings.",
+    homepage: "https://www.courtlistener.com",
+    keyEnv: null,
+    deeplink: (term) =>
+      `https://www.courtlistener.com/?q=${q(term)}`,
+  },
+  {
+    id: "sec-edgar-fts",
+    name: "SEC EDGAR Filings",
+    tier: "datasets",
+    mode: "api",
+    requiresScope: false,
+    scopedKinds: ["person"],
+    accepts: ["person", "company", "keyword"],
+    description: "Full-text search of US corporate filings since 2001.",
+    homepage: "https://efts.sec.gov",
+    keyEnv: null,
+    deeplink: (term) =>
+      `https://www.sec.gov/cgi-bin/srqsb?text=${q(term)}`,
   },
   {
     id: "intelligence-x",
@@ -382,6 +413,19 @@ export const SOURCES: readonly Source[] = Object.freeze([
     description: "Page-load forensics — requests, redirects, embedded assets.",
     homepage: "https://urlscan.io",
     keyEnv: "URLSCAN_API_KEY",
+  },
+  {
+    id: "threatfox",
+    name: "ThreatFox",
+    tier: "infra",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["hash", "domain", "ip"],
+    description: "Malware IOCs from abuse.ch — hashes, C2 domains and addresses.",
+    homepage: "https://threatfox.abuse.ch",
+    keyEnv: null,
+    deeplink: (term) =>
+      `https://threatfox.abuse.ch/browse.php?search=ioc%3A${q(term)}`,
   },
 ]);
 

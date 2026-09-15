@@ -19,6 +19,7 @@ import {
   rapidDnsSource,
 } from "./keyless.js";
 import { fetchRdap, rdapSource } from "./rdap.js";
+import { fetchThreatFox, threatFoxSource } from "./threatfox.js";
 import {
   feodoSource,
   fetchFeodo,
@@ -53,6 +54,7 @@ export const INFRA_ADAPTERS: readonly InfraAdapter[] = Object.freeze([
   { source: otxSource, run: fetchOtx },
   { source: greyNoiseSource, run: fetchGreyNoise },
   { source: feodoSource, run: fetchFeodo },
+  { source: threatFoxSource, run: fetchThreatFox },
 ]);
 
 const BY_ID = new Map(INFRA_ADAPTERS.map((a) => [a.source.id, a]));
