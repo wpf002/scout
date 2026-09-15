@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Selection } from "./GlobeMap";
 import { LAYER_BY_ID } from "@/lib/layers";
@@ -179,6 +180,58 @@ function CctvMedia({
   return null;
 }
 
+/** What the FAA registry says about the aircraft under the cursor. */
+interface Registered {
+  found: boolean;
+  tail?: string;
+  owner?: string;
+  ownerType?: string | null;
+  aircraft?: string | null;
+  year?: number | null;
+  street?: string | null;
+  city?: string | null;
+  state?: string | null;
+  registryLoaded?: boolean;
+  message?: string;
+}
+
+/**
+ * The registry lookup for a selected aircraft.
+ *
+ * The live layers carry `icao24` and the FAA registry is keyed by the same
+ * address, so selecting a contact is enough to name its owner — no retyping,
+ * and no separate search. US civil aircraft only: a foreign or military
+ * address is simply absent, which the panel reports as "not in the US
+ * registry" rather than as an owner of none.
+ */
+function useRegistration(icao: string | null): Registered | null {
+  const [row, setRow] = useState<Registered | null>(null);
+
+  useEffect(() => {
+    if (icao === null) {
+      setRow(null);
+      return;
+    }
+    let live = true;
+    setRow(null);
+    fetch(`/api/live/aircraft/${icao}`)
+      .then(async (response) => (await response.json()) as Registered)
+      .then((body) => {
+        if (live) setRow(body);
+      })
+      .catch(() => {
+        if (live) setRow(null);
+      });
+    // Cancels on a fast reselect, so a slow answer cannot land on the wrong
+    // aircraft.
+    return () => {
+      live = false;
+    };
+  }, [icao]);
+
+  return row;
+}
+
 export function Detail({
   selection,
   onClose,
@@ -209,6 +262,12 @@ export function Detail({
           properties,
           Object.keys(properties).filter((k) => !HIDDEN.has(k)),
         ).slice(0, 12);
+
+  const icao =
+    layerId.startsWith("aircraft:") && typeof properties["icao24"] === "string"
+      ? properties["icao24"].trim().toUpperCase()
+      : null;
+  const registration = useRegistration(icao !== null && /^[0-9A-F]{6}$/.test(icao) ? icao : null);
 
   const url = typeof properties["url"] === "string" ? properties["url"] : null;
   const streamUrl =
@@ -250,6 +309,47 @@ export function Detail({
         stillUrl={stillUrl}
         url={url}
       />
+
+      {registration !== null ? (
+        registration.found ? (
+          <div className="detail-owner">
+            <span className="do-head">Registered Owner</span>
+            <span className="do-name">{registration.owner}</span>
+            <span className="do-meta">
+              {[
+                registration.tail,
+                registration.ownerType,
+                registration.aircraft,
+                registration.year === null || registration.year === undefined
+                  ? null
+                  : String(registration.year),
+              ]
+                .filter((x): x is string => x !== null && x !== undefined && x !== "")
+                .join(" · ")}
+            </span>
+            {[registration.street, registration.city, registration.state]
+              .filter((x): x is string => x !== null && x !== undefined && x !== "")
+              .length > 0 ? (
+              <span className="do-meta">
+                {[registration.street, registration.city, registration.state]
+                  .filter((x): x is string => x !== null && x !== undefined && x !== "")
+                  .join(", ")}
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          // An absent row is not an absent owner. Foreign and military
+          // aircraft are simply not in the US civil registry.
+          <div className="detail-owner">
+            <span className="do-head">Registered Owner</span>
+            <span className="do-meta">
+              {registration.registryLoaded === false
+                ? "Registry not loaded — run pnpm faa:sync"
+                : "Not in the US civil registry"}
+            </span>
+          </div>
+        )
+      ) : null}
 
       <dl>
         {shown.map(({ key, value }) => (

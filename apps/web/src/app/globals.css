@@ -4951,3 +4951,35 @@ a:hover {
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* The FAA registry answer for a selected aircraft. The owner is the finding,
+   so it reads at the size of one rather than as another row in the table. */
+.detail-owner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-left: 2px solid var(--accent);
+  background: var(--bg-inset);
+  border-radius: 0 4px 4px 0;
+}
+
+.do-head {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.do-name {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.do-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}

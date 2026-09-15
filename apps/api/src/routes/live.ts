@@ -7,6 +7,7 @@ import { layerHealth } from "../live/warm.js";
 import { markets } from "../live/feeds/markets.js";
 import { news } from "../live/feeds/news.js";
 import { bluetoothSnapshot } from "../live/feeds/bluetooth.js";
+import { prisma } from "@scout/db";
 import { modelClientFromEnv, parseJsonReply } from "@scout/reason";
 
 /**
@@ -318,6 +319,47 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
     return reply.header("cache-control", "no-store").send({
       type: "FeatureCollection",
       features: Array.isArray(body.features) ? body.features : [],
+    });
+  });
+
+  /**
+   * GET /live/aircraft/:hex — who an aircraft on the map is registered to.
+   *
+   * The live layers already carry `icao24`, and the FAA registry is keyed by
+   * the same address, so this is the join that turns a contact on the map into
+   * a named owner. Nothing here is scope-gated: the registry is published in
+   * full, and this reads one row of it.
+   *
+   * 404 rather than an empty object when the registry has not been loaded —
+   * "no such aircraft" and "pnpm faa:sync has never run" are different answers
+   * and the panel says which.
+   */
+  app.get<{ Params: { hex: string } }>("/live/aircraft/:hex", async (request, reply) => {
+    const hex = request.params.hex.trim().toUpperCase();
+    if (!/^[0-9A-F]{6}$/.test(hex)) throw badRequest("Expected a six-digit ICAO hex address.");
+
+    const row = await prisma.aircraftRegistration.findFirst({ where: { modeSHex: hex } });
+    if (row === null) {
+      const loaded = await prisma.aircraftRegistration.count();
+      return reply.header("cache-control", "no-store").status(404).send({
+        found: false,
+        registryLoaded: loaded > 0,
+        message: loaded > 0 ? "Not in the US civil registry." : "Registry not loaded. Run: pnpm faa:sync",
+      });
+    }
+
+    return reply.header("cache-control", "public, max-age=3600").send({
+      found: true,
+      tail: `N${row.nNumber}`,
+      owner: row.ownerName,
+      ownerType: row.ownerType,
+      aircraft: row.aircraft,
+      year: row.yearMfr,
+      street: row.street,
+      city: row.city,
+      state: row.state,
+      country: row.country,
+      syncedAt: row.syncedAt,
     });
   });
 
