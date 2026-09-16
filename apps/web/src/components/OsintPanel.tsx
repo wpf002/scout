@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { titleCase } from "@/lib/label";
 import {
   api,
   ApiError,
@@ -487,20 +486,7 @@ export function OsintPanel({
     <div className="app">
       <header className="bar">
         <span className="mark">SCOUT</span>
-        <label className="field">
-          <span>Investigation</span>
-          <select
-            value={caseId}
-            onChange={(event) => setCaseId(event.target.value)}
-          >
-            {cases.length === 0 ? <option value="">None</option> : null}
-            {cases.map((record) => (
-              <option key={record.id} value={record.id}>
-                {titleCase(record.name)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <span className="field-hint">Search anything — it detects the type and hits every source.</span>
       </header>
 
       <section className="query">

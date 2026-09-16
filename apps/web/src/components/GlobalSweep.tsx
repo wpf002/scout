@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { KIND_LABEL, SUBJECT_KINDS } from "@/lib/types";
 import type {
-  CaseRecord,
   DatasetSweepResult,
   InfraSweepResult,
   Subject,
@@ -27,7 +26,8 @@ import type {
 const KINDS = SUBJECT_KINDS;
 
 export function GlobalSweep() {
-  const [cases, setCases] = useState<CaseRecord[]>([]);
+  // The sweep runs against one implicit case for the audit trail; it is never
+  // chosen here, so only the id is kept.
   const [caseId, setCaseId] = useState("");
   const [value, setValue] = useState("");
   const [kind, setKind] = useState<Subject["kind"]>("domain");
@@ -40,7 +40,6 @@ export function GlobalSweep() {
     api
       .listCases()
       .then((loaded) => {
-        setCases(loaded.cases);
         setCaseId((current) => current || (loaded.cases[0]?.id ?? ""));
       })
       .catch(() => {});
@@ -89,14 +88,6 @@ export function GlobalSweep() {
   return (
     <div className="sweep-panel">
       <div className="sweep-form">
-        <select value={caseId} onChange={(e) => setCaseId(e.target.value)} aria-label="Case">
-          {cases.length === 0 ? <option value="">No cases</option> : null}
-          {cases.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
         <select
           value={kind}
           onChange={(e) => setKind(e.target.value as Subject["kind"])}

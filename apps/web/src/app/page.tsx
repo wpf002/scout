@@ -20,7 +20,6 @@ import { useAlerts, ago, qualify } from "@/lib/alerts";
 import type { Shape } from "@/lib/measure";
 import { Filters } from "@/components/Filters";
 import { Aoi, type Box } from "@/components/Aoi";
-import { CaseFile } from "@/components/CaseFile";
 import { Investigation } from "@/components/Investigation";
 import { SpacePanel } from "@/components/SpacePanel";
 import { MarketsPanel } from "@/components/MarketsPanel";
@@ -45,9 +44,8 @@ const GlobeMap = dynamic(
 // wherever the group changes, so the rail reads as investigate / map / feeds /
 // extras rather than one undifferentiated column.
 const TOOLS = [
-  { id: "osint", glyph: "◎", name: "OSINT Search", group: "investigate" },
+  { id: "osint", glyph: "◎", name: "Investigate", group: "investigate" },
   { id: "sweep", glyph: "⊛", name: "Global Sweep", group: "investigate" },
-  { id: "case", glyph: "⛁", name: "Case File", group: "investigate" },
   { id: "investigation", glyph: "◈", name: "Investigation", group: "investigate" },
   { id: "layers", glyph: "≡", name: "All Layers", group: "map" },
   { id: "filters", glyph: "⚗", name: "Filters", group: "map" },
@@ -92,13 +90,9 @@ export default function Page() {
   const [osintFeatures, setOsintFeatures] = useState<GeoJSON.Feature[]>([]);
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [tool, setTool] = useState<string | null>(null);
-  // A subject sent from a blocked lookup to the case's scope editor.
-  const [pendingScope, setPendingScope] = useState<{
-    kind: "domain" | "identifier";
-    value: string;
-  } | null>(null);
-  // Bumped once scope is granted, which sends the OSINT panel back to work.
-  const [runToken, setRunToken] = useState(0);
+  // Re-run token, kept only so OsintPanel's signature is unchanged. Nothing
+  // bumps it now that authorization is not a separate step.
+  const [runToken] = useState(0);
   const [selfNote, setSelfNote] = useState<string | null>(null);
   const [mapBusy, setMapBusy] = useState(true);
   const [overview, setOverview] = useState<string[] | null>(null);
@@ -1056,25 +1050,6 @@ export default function Page() {
         </section>
       ) : null}
 
-      {tool === "case" ? (
-        <section className="tool-panel widest">
-          <div className="tool-panel-head">
-            <h2>Case File</h2>
-            <button className="link" onClick={() => setTool(null)}>×</button>
-          </div>
-          <div className="tool-panel-body">
-            <CaseFile
-              prefillScope={pendingScope}
-              onScopeAdded={() => {
-                setPendingScope(null);
-                setRunToken((n) => n + 1);
-                setTool("osint");
-              }}
-            />
-          </div>
-        </section>
-      ) : null}
-
       {tool === "investigation" ? (
         <section className="tool-panel widest">
           <div className="tool-panel-head">
@@ -1090,7 +1065,7 @@ export default function Page() {
       {tool === "osint" ? (
         <section className="tool-panel wide">
           <div className="tool-panel-head">
-            <h2>OSINT Search</h2>
+            <h2>Investigate</h2>
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <div className="tool-panel-body">
@@ -1098,13 +1073,6 @@ export default function Page() {
               onLocated={onLocated}
               initialQuery={seeded}
               runToken={runToken}
-              onAuthorize={(subject) => {
-                setPendingScope({
-                  kind: subject.kind === "domain" ? "domain" : "identifier",
-                  value: subject.value,
-                });
-                setTool("case");
-              }}
             />
           </div>
         </section>
