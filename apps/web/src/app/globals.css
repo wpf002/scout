@@ -3663,9 +3663,14 @@ a:hover {
   color: var(--text);
 }
 
-/* MapLibre's own controls sit above the minimap rather than under it. */
+/* MapLibre's zoom/compass. The tool rail owns the right edge top-to-bottom and
+   the minimap owns the bottom-right corner, so these are inset left of the rail
+   and lifted above the minimap — otherwise the rail sat on top and ate their
+   clicks. */
 .maplibregl-ctrl-bottom-right {
+  right: 66px !important;
   bottom: 152px !important;
+  z-index: 9;
 }
 
 /* ── Camera previews ──────────────────────────────────────────────────── */

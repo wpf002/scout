@@ -20,7 +20,6 @@ import { useAlerts, ago, qualify } from "@/lib/alerts";
 import type { Shape } from "@/lib/measure";
 import { Filters } from "@/components/Filters";
 import { Aoi, type Box } from "@/components/Aoi";
-import { Investigation } from "@/components/Investigation";
 import { SpacePanel } from "@/components/SpacePanel";
 import { MarketsPanel } from "@/components/MarketsPanel";
 import { MarauderPanel } from "@/components/MarauderPanel";
@@ -44,7 +43,6 @@ const GlobeMap = dynamic(
 // extras rather than one undifferentiated column.
 const TOOLS = [
   { id: "osint", glyph: "◎", name: "Investigate", group: "investigate" },
-  { id: "investigation", glyph: "◈", name: "Investigation", group: "investigate" },
   { id: "layers", glyph: "≡", name: "All Layers", group: "map" },
   { id: "filters", glyph: "⚗", name: "Filters", group: "map" },
   { id: "aoi", glyph: "▢", name: "Area of Interest", group: "map" },
@@ -122,8 +120,9 @@ export default function Page() {
   const [aoiFeatures, setAoiFeatures] = useState<GeoJSON.Feature[]>([]);
   const [investigation, setInvestigation] = useState<MapLayer>(EMPTY_LAYER);
   const [imagery, setImagery] = useState<ImageryOverlay[]>([]);
-  const [view, setView] = useState<Viewport | null>(null);
-  const [pick, setPick] = useState<{ entityId: string; nonce: number } | null>(null);
+  // Bounds still flow in from the map; nothing reads them now that the console
+  // is gone, so only the setter is kept.
+  const [, setView] = useState<Viewport | null>(null);
   const [track, setTrack] = useState<{
     path: [number, number][];
     altitudes: Array<number | null>;
@@ -226,18 +225,6 @@ export default function Page() {
       setPlace(null);
     }
   }, []);
-
-  // A click on one of the console's points selects that entity in the console.
-  useEffect(() => {
-    if (selection?.layer === "investigation-cluster") {
-      const first = String(selection.properties["entityIds"] ?? "").split(",")[0];
-      if (first) setPick({ entityId: first, nonce: Date.now() });
-      return;
-    }
-    if (selection?.layer !== "investigation") return;
-    const entityId = selection.properties["entityId"];
-    if (typeof entityId === "string") setPick({ entityId, nonce: Date.now() });
-  }, [selection]);
 
   // An indicator typed into the map's search box belongs to the OSINT panel.
   const onIndicator = useCallback((value: string) => {
@@ -1048,17 +1035,6 @@ export default function Page() {
         </section>
       ) : null}
 
-      {tool === "investigation" ? (
-        <section className="tool-panel widest">
-          <div className="tool-panel-head">
-            <h2>Investigation</h2>
-            <button className="link" onClick={() => setTool(null)}>×</button>
-          </div>
-          <div className="tool-panel-body">
-            <Investigation onLayer={setInvestigation} onImagery={setImagery} onFly={setFlyTo} pick={pick} view={view} />
-          </div>
-        </section>
-      ) : null}
 
       {tool === "osint" ? (
         <section className="tool-panel wide">
