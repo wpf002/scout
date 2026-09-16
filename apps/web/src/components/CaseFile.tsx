@@ -27,20 +27,11 @@ import type {
 } from "@/lib/types";
 
 /**
- * The case file.
- *
- * Ten boards that all answer to one case, gathered behind one switch rather
- * than ten. Each of these was finished and reachable from nowhere; adding ten
- * more icons to a rail that already had eight would have made the map harder to
- * use in order to make these easier to find, which is not a trade worth making.
- *
- * They are also not ten unrelated screens. Read top to bottom the tabs are an
- * investigation: what you are allowed to touch, what you plan to run, what you
- * ran, what it connected to, when it happened, what you kept, what you are
- * still watching, what the record says you did, and what leaves the building.
+ * The case file. Every board for one case, behind seven grouped tabs.
  */
 
-type Tab =
+/** A single rendered panel. */
+type Panel =
   | "scope"
   | "plan"
   | "infra"
@@ -49,36 +40,74 @@ type Tab =
   | "review"
   | "recognition"
   | "agent"
+  | "monitors"
   | "timeline"
   | "findings"
-  | "monitors"
   | "audit"
   | "export";
 
-const TABS: Array<{ id: Tab; name: string; hint: string }> = [
-  { id: "scope", name: "Scope", hint: "What this case is authorised to touch" },
-  { id: "plan", name: "Plan", hint: "Choose sources and run them" },
-  { id: "infra", name: "Infrastructure", hint: "Sweep hosts, certificates, DNS" },
-  { id: "datasets", name: "Datasets", hint: "Bulk and person-facing adapters" },
-  { id: "graph", name: "Graph", hint: "How the entities connect" },
-  { id: "review", name: "Review", hint: "Pairs the resolution model could not decide" },
-  { id: "recognition", name: "Recognition", hint: "Enrolled galleries and 1:N comparison; off unless enabled" },
-  { id: "agent", name: "Agent", hint: "What the agent watches and proposes; what you approve" },
-  { id: "timeline", name: "Timeline", hint: "What happened, in order" },
-  { id: "findings", name: "Findings", hint: "What was kept, with provenance" },
-  { id: "monitors", name: "Monitors", hint: "Watches that run on a schedule" },
-  { id: "audit", name: "Audit", hint: "Every query, who ran it and why" },
-  { id: "export", name: "Export", hint: "The case as a report" },
+/**
+ * Thirteen panels, grouped into the seven things an investigation actually is:
+ * what you may touch, collecting, the entities, recognition, what you watch,
+ * the record, and what leaves. A group with one panel is a plain tab; a group
+ * with several shows a sub-row. This is the whole of the "too many tabs" fix —
+ * the panels are unchanged, only how they are reached.
+ */
+interface Group {
+  id: string;
+  name: string;
+  panels: Array<{ id: Panel; name: string }>;
+}
+
+const GROUPS: Group[] = [
+  { id: "scope", name: "Scope", panels: [{ id: "scope", name: "Scope" }] },
+  {
+    id: "collect",
+    name: "Collect",
+    panels: [
+      { id: "plan", name: "Plan" },
+      { id: "infra", name: "Infrastructure" },
+      { id: "datasets", name: "Datasets" },
+    ],
+  },
+  {
+    id: "entities",
+    name: "Entities",
+    panels: [
+      { id: "graph", name: "Graph" },
+      { id: "review", name: "Review" },
+    ],
+  },
+  { id: "recognition", name: "Recognition", panels: [{ id: "recognition", name: "Recognition" }] },
+  {
+    id: "watch",
+    name: "Watch",
+    panels: [
+      { id: "agent", name: "Agent" },
+      { id: "monitors", name: "Monitors" },
+    ],
+  },
+  {
+    id: "record",
+    name: "Record",
+    panels: [
+      { id: "findings", name: "Findings" },
+      { id: "timeline", name: "Timeline" },
+      { id: "audit", name: "Audit" },
+    ],
+  },
+  { id: "export", name: "Export", panels: [{ id: "export", name: "Export" }] },
 ];
 
+const groupOf = (panel: Panel): Group =>
+  GROUPS.find((g) => g.panels.some((p) => p.id === panel)) ?? GROUPS[0]!;
+
 /**
- * Where a pivot from the graph lands.
- *
- * The graph deliberately hands over a subject and nothing else — it never runs
- * the next query itself. Switching to the tab that *can* run it, with the
- * subject already filled, is the whole of the handover.
+ * Where a pivot from the graph lands. The graph hands over a subject and
+ * nothing else; switching to the panel that can run it, subject filled, is the
+ * handover.
  */
-const PIVOT_TAB: Record<PivotTarget, Tab> = {
+const PIVOT_TAB: Record<PivotTarget, Panel> = {
   collect: "plan",
   watch: "monitors",
 };
@@ -98,7 +127,7 @@ export function CaseFile({
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [caseId, setCaseId] = useState("");
   const [record, setRecord] = useState<CaseRecord | null>(null);
-  const [tab, setTab] = useState<Tab>(prefillScope != null ? "scope" : "plan");
+  const [panel, setPanel] = useState<Panel>(prefillScope != null ? "scope" : "plan");
   const [error, setError] = useState<string | null>(null);
 
   const [findings, setFindings] = useState<FindingRecord[]>([]);
@@ -190,20 +219,20 @@ export function CaseFile({
   // The audit view is the largest of these and the least often looked at, so it
   // loads when the tab is opened rather than with the case.
   useEffect(() => {
-    if (tab === "audit") void loadAudit();
-  }, [tab, loadAudit]);
+    if (panel === "audit") void loadAudit();
+  }, [panel, loadAudit]);
 
   const onFindingSaved = useCallback(() => {
     void loadFindings();
     // A saved finding is an audited act; the trail on screen is stale the
     // moment one lands.
-    if (tab === "audit") void loadAudit();
-  }, [loadFindings, loadAudit, tab]);
+    if (panel === "audit") void loadAudit();
+  }, [loadFindings, loadAudit, panel]);
 
   const onPivot = useCallback(
     (subject: { kind: SubjectKind; value: string }, target: PivotTarget) => {
       setPivot({ ...subject, nonce: Date.now() });
-      setTab(PIVOT_TAB[target]);
+      setPanel(PIVOT_TAB[target]);
     },
     [],
   );
@@ -275,30 +304,64 @@ export function CaseFile({
         </form>
       ) : null}
 
-      <nav className="casefile-tabs" aria-label="Case sections">
-        {TABS.map((entry) => {
-          const badge =
-            entry.id === "findings"
-              ? counts.findings
-              : entry.id === "scope"
+      {(() => {
+        const active = groupOf(panel);
+        const groupBadge = (group: Group): number =>
+          group.id === "record"
+            ? counts.findings
+            : group.id === "entities"
+              ? reviewCount
+              : group.id === "scope"
                 ? counts.scope
-                : entry.id === "review"
-                  ? reviewCount
-                  : 0;
-          return (
-            <button
-              key={entry.id}
-              className={tab === entry.id ? "on" : undefined}
-              onClick={() => setTab(entry.id)}
-              title={entry.hint}
-              aria-current={tab === entry.id ? "page" : undefined}
-            >
-              {entry.name}
-              {badge > 0 ? <span className="tab-badge">{badge}</span> : null}
-            </button>
-          );
-        })}
-      </nav>
+                : 0;
+        const panelBadge = (id: Panel): number =>
+          id === "findings"
+            ? counts.findings
+            : id === "review"
+              ? reviewCount
+              : id === "scope"
+                ? counts.scope
+                : 0;
+        return (
+          <>
+            <nav className="casefile-tabs" aria-label="Case sections">
+              {GROUPS.map((group) => {
+                const badge = groupBadge(group);
+                return (
+                  <button
+                    key={group.id}
+                    className={active.id === group.id ? "on" : undefined}
+                    onClick={() => setPanel(group.panels[0]!.id)}
+                    aria-current={active.id === group.id ? "page" : undefined}
+                  >
+                    {group.name}
+                    {badge > 0 ? <span className="tab-badge">{badge}</span> : null}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {active.panels.length > 1 ? (
+              <nav className="casefile-subtabs" aria-label={`${active.name} sections`}>
+                {active.panels.map((sub) => {
+                  const badge = panelBadge(sub.id);
+                  return (
+                    <button
+                      key={sub.id}
+                      className={panel === sub.id ? "on" : undefined}
+                      onClick={() => setPanel(sub.id)}
+                      aria-current={panel === sub.id ? "page" : undefined}
+                    >
+                      {sub.name}
+                      {badge > 0 ? <span className="tab-badge">{badge}</span> : null}
+                    </button>
+                  );
+                })}
+              </nav>
+            ) : null}
+          </>
+        );
+      })()}
 
       {error !== null ? <p className="error">{error}</p> : null}
 
@@ -309,7 +372,7 @@ export function CaseFile({
           <Loading what="the case" />
         ) : (
           <>
-            {tab === "scope" ? (
+            {panel === "scope" ? (
               <ScopePanel
                 record={record}
                 onChange={() => void loadCase()}
@@ -317,42 +380,42 @@ export function CaseFile({
                 prefill={prefillScope}
               />
             ) : null}
-            {tab === "plan" ? (
+            {panel === "plan" ? (
               <Planner
                 record={record}
                 onFindingSaved={onFindingSaved}
                 pivot={pivot}
               />
             ) : null}
-            {tab === "infra" ? (
+            {panel === "infra" ? (
               <InfraBoard
                 record={record}
                 onFindingSaved={onFindingSaved}
                 pivot={pivot}
               />
             ) : null}
-            {tab === "datasets" ? (
+            {panel === "datasets" ? (
               <DatasetBoard
                 record={record}
                 onFindingSaved={onFindingSaved}
                 pivot={pivot}
               />
             ) : null}
-            {tab === "graph" ? (
+            {panel === "graph" ? (
               <GraphBoard record={record} onPivot={onPivot} />
             ) : null}
-            {tab === "review" ? (
+            {panel === "review" ? (
               <ReviewQueue record={record} onCount={setReviewCount} onDecided={onFindingSaved} />
             ) : null}
-            {tab === "recognition" ? <RecognitionPanel record={record} onActed={onFindingSaved} /> : null}
-            {tab === "agent" ? <AgentPanel record={record} onActed={onFindingSaved} /> : null}
-            {tab === "timeline" ? <TimelineBoard record={record} /> : null}
-            {tab === "findings" ? <FindingsBoard findings={findings} /> : null}
-            {tab === "monitors" ? (
+            {panel === "recognition" ? <RecognitionPanel record={record} onActed={onFindingSaved} /> : null}
+            {panel === "agent" ? <AgentPanel record={record} onActed={onFindingSaved} /> : null}
+            {panel === "timeline" ? <TimelineBoard record={record} /> : null}
+            {panel === "findings" ? <FindingsBoard findings={findings} /> : null}
+            {panel === "monitors" ? (
               <MonitorPanel record={record} pivot={pivot} />
             ) : null}
-            {tab === "audit" ? <AuditPanel audit={audit} /> : null}
-            {tab === "export" ? <ExportPanel record={record} /> : null}
+            {panel === "audit" ? <AuditPanel audit={audit} /> : null}
+            {panel === "export" ? <ExportPanel record={record} /> : null}
           </>
         )}
       </div>

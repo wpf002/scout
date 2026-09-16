@@ -1,4 +1,4 @@
-import type { EntityGraph, FindingInput, ResolvedEntity } from "./types.js";
+import type { EntityGraph, FindingInput } from "./types.js";
 
 /**
  * Case summarization.
@@ -41,11 +41,6 @@ export interface CaseSummary {
 const plural = (n: number, one: string, many = `${one}s`): string =>
   `${n} ${n === 1 ? one : many}`;
 
-function describeEntity(entity: ResolvedEntity): string {
-  const name = entity.label ?? entity.value;
-  return `${name} (${entity.kind}, seen by ${entity.sourceIds.sort().join(", ")})`;
-}
-
 /**
  * Builds a summary by counting. Nothing to configure, and nothing that could
  * invent a claim.
@@ -70,42 +65,28 @@ export function summarizeDeterministically(
 
   const paragraphs: string[] = [];
 
-  paragraphs.push(
-    `The case holds ${plural(findings.length, "saved finding")} from ` +
-      `${plural(sources.length, "source")} (${sources.join(", ")}), resolving to ` +
-      `${plural(graph.entities.length, "entity", "entities")} and ` +
-      `${plural(graph.links.length, "relationship")}.`,
-  );
-
+  // Counts, not a roll-call. The full source list ran to thirty names inline
+  // and buried the one number that matters — how much is corroborated.
   const kindBreakdown = [...byKind.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([kind, count]) => `${count} ${kind}`)
     .join(", ");
-  if (kindBreakdown.length > 0) {
-    paragraphs.push(`Entities by kind: ${kindBreakdown}.`);
-  }
+  paragraphs.push(
+    `${plural(findings.length, "finding")} · ${plural(sources.length, "source")} · ` +
+      `${plural(graph.entities.length, "entity", "entities")} · ${plural(graph.links.length, "link")}` +
+      (kindBreakdown.length > 0 ? ` (${kindBreakdown})` : ""),
+  );
 
   if (corroborated.length === 0) {
-    paragraphs.push(
-      "No entity was reported by more than one source, so nothing here is " +
-        "corroborated. Treat every entity as a single-source observation.",
-    );
+    paragraphs.push("Nothing is corroborated — every entity rests on a single source.");
   } else {
-    const top = corroborated.slice(0, 5).map(describeEntity).join("; ");
+    // Name and count, not the source list per entity.
+    const top = corroborated
+      .slice(0, 5)
+      .map((entity) => `${entity.label ?? entity.value} ×${entity.sourceIds.length}`)
+      .join(", ");
     paragraphs.push(
-      `${plural(corroborated.length, "entity", "entities")} ${
-        corroborated.length === 1 ? "was" : "were"
-      } reported by more than one source: ${top}${
-        corroborated.length > 5 ? "; and others" : ""
-      }.`,
-    );
-  }
-
-  const singleSource = graph.entities.length - corroborated.length;
-  if (singleSource > 0 && corroborated.length > 0) {
-    paragraphs.push(
-      `The remaining ${plural(singleSource, "entity", "entities")} ` +
-        `${singleSource === 1 ? "rests" : "rest"} on a single source.`,
+      `${corroborated.length} of ${graph.entities.length} corroborated by 2+ sources. Strongest: ${top}.`,
     );
   }
 

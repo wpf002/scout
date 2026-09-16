@@ -314,10 +314,7 @@ export function GraphBoard({
           </div>
         ))}
         <div className="faint" style={{ marginTop: 7 }}>
-          {/* `producedBy` is a bare word from the API — "deterministic",
-              "model". Read straight into a sentence it lands as a missing
-              noun: "produced by deterministic". */}
-          Draft summary, {graph.summary.producedBy}. Never stored as a finding.
+          Draft, not a finding.
         </div>
       </div>
 

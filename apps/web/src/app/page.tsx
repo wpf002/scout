@@ -41,23 +41,26 @@ const GlobeMap = dynamic(
   { ssr: false },
 );
 
+// Ordered top to bottom, grouped by what the tool is for. A divider is drawn
+// wherever the group changes, so the rail reads as investigate / map / feeds /
+// extras rather than one undifferentiated column.
 const TOOLS = [
-  { id: "osint", glyph: "◎", name: "OSINT Search" },
-  { id: "alerts", glyph: "⚠", name: "Live Alerts" },
-  { id: "measure", glyph: "⊹", name: "Measure" },
-  { id: "filters", glyph: "⚗", name: "Filters" },
-  { id: "aoi", glyph: "▢", name: "Area of Interest" },
-  { id: "directions", glyph: "⇄", name: "Directions" },
-  { id: "intel", glyph: "◫", name: "Intel Feed" },
-  { id: "space", glyph: "◉", name: "Live from Space" },
-  { id: "markets", glyph: "▦", name: "Markets" },
-  { id: "marauder", glyph: "✷", name: "Marauder" },
-  { id: "sweep", glyph: "⊛", name: "Global Sweep" },
-  { id: "arcgis", glyph: "⬡", name: "ArcGIS Layers" },
-  { id: "self", glyph: "⌖", name: "Self Track" },
-  { id: "case", glyph: "⛁", name: "Case File" },
-  { id: "investigation", glyph: "◈", name: "Investigation" },
-  { id: "layers", glyph: "≡", name: "All Layers" },
+  { id: "osint", glyph: "◎", name: "OSINT Search", group: "investigate" },
+  { id: "sweep", glyph: "⊛", name: "Global Sweep", group: "investigate" },
+  { id: "case", glyph: "⛁", name: "Case File", group: "investigate" },
+  { id: "investigation", glyph: "◈", name: "Investigation", group: "investigate" },
+  { id: "layers", glyph: "≡", name: "All Layers", group: "map" },
+  { id: "filters", glyph: "⚗", name: "Filters", group: "map" },
+  { id: "aoi", glyph: "▢", name: "Area of Interest", group: "map" },
+  { id: "measure", glyph: "⊹", name: "Measure", group: "map" },
+  { id: "directions", glyph: "⇄", name: "Directions", group: "map" },
+  { id: "alerts", glyph: "⚠", name: "Live Alerts", group: "feeds" },
+  { id: "intel", glyph: "◫", name: "Intel Feed", group: "feeds" },
+  { id: "markets", glyph: "▦", name: "Markets", group: "feeds" },
+  { id: "space", glyph: "◉", name: "Live from Space", group: "feeds" },
+  { id: "arcgis", glyph: "⬡", name: "ArcGIS Layers", group: "extra" },
+  { id: "marauder", glyph: "✷", name: "Marauder", group: "extra" },
+  { id: "self", glyph: "⌖", name: "Self Track", group: "extra" },
 ];
 
 const SHAPES: Array<{ id: Shape; name: string; hint: string }> = [
@@ -751,14 +754,16 @@ export default function Page() {
         */}
       {/* ── Right tool rail ────────────────────────────────────────────── */}
       <nav className="tool-rail" aria-label="Tools">
-        {TOOLS.map((item) => {
+        {TOOLS.map((item, index) => {
           const high =
             item.id === "alerts"
               ? alerts.filter((alert) => alert.severity === "high").length
               : 0;
+          const startsGroup = index > 0 && TOOLS[index - 1]?.group !== item.group;
           return (
+            <div key={item.id} className="tool-slot">
+              {startsGroup ? <span className="tool-divider" aria-hidden /> : null}
             <button
-              key={item.id}
               className={`tool-icon${tool === item.id ? " on" : ""}`}
               onClick={() => {
                 if (item.id === "self") {
@@ -810,6 +815,7 @@ export default function Page() {
               {item.glyph}
               {high > 0 ? <span className="cat-badge">{high}</span> : null}
             </button>
+            </div>
           );
         })}
       </nav>

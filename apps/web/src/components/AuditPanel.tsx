@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AuditView } from "@/lib/types";
 import { Loading } from "@/components/Loading";
+import { Pager } from "@/components/FindingsBoard";
 import { describeEvent } from "@/lib/events";
+
+const PAGE_SIZE = 25;
 
 const OUTCOME_CLASS: Record<string, string> = {
   ALLOWED: "ok",
@@ -18,7 +21,13 @@ const OUTCOME_CLASS: Record<string, string> = {
  * here, and the database would reject one anyway.
  */
 export function AuditPanel({ audit }: { audit: AuditView | null }) {
-  const [open, setOpen] = useState(false);
+  const [page, setPage] = useState(0);
+  const total = audit?.queryLogs.length ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > pages - 1) setPage(pages - 1);
+  }, [page, pages]);
 
   if (audit === null) {
     return (
@@ -29,7 +38,8 @@ export function AuditPanel({ audit }: { audit: AuditView | null }) {
     );
   }
 
-  const rows = open ? audit.queryLogs : audit.queryLogs.slice(0, 8);
+  const start = page * PAGE_SIZE;
+  const rows = audit.queryLogs.slice(start, start + PAGE_SIZE);
 
   return (
     <div className="card">
@@ -96,15 +106,16 @@ export function AuditPanel({ audit }: { audit: AuditView | null }) {
             </tbody>
           </table>
 
-          {audit.queryLogs.length > 8 && (
-            <button
-              className="tiny"
-              style={{ marginTop: 10 }}
-              onClick={() => setOpen((current) => !current)}
-            >
-              {open ? "Show less" : `Show all ${audit.queryLogs.length}`}
-            </button>
-          )}
+          {pages > 1 ? (
+            <Pager
+              page={page}
+              pages={pages}
+              count={total}
+              start={start}
+              shown={rows.length}
+              onPage={setPage}
+            />
+          ) : null}
         </>
       )}
 

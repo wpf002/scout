@@ -303,7 +303,10 @@ describe("summaries are drafts that cannot invent provenance", () => {
     const summary = summarizeDeterministically(graph, findings);
     expect(summary.draft).toBe(true);
     expect(summary.producedBy).toBe("deterministic");
-    expect(summary.paragraphs.join(" ")).toContain("crtsh");
+    // Counts, not composed prose: the summary states how many findings and
+    // entities exist rather than narrating them.
+    expect(summary.paragraphs.join(" ")).toMatch(/\d+ findings?/);
+    expect(summary.paragraphs.join(" ")).toMatch(/\d+ (entity|entities)/);
   });
 
   it("says plainly when nothing is corroborated", () => {
@@ -312,7 +315,7 @@ describe("summaries are drafts that cannot invent provenance", () => {
       buildGraph(extractAll(single)),
       single,
     );
-    expect(summary.paragraphs.join(" ")).toMatch(/not corroborated|single-source/i);
+    expect(summary.paragraphs.join(" ")).toMatch(/single source|nothing is corroborated/i);
   });
 
   it("rejects a summary citing a finding that does not exist", () => {

@@ -1530,6 +1530,21 @@ a:hover {
   border-radius: 6px;
 }
 
+.tool-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Drawn where the rail changes group: investigate / map / feeds / extras. */
+.tool-divider {
+  width: 20px;
+  height: 1px;
+  background: var(--border);
+  margin: 3px 0 1px;
+}
+
 .tool-icon {
   width: 38px;
   height: 38px;
@@ -1731,6 +1746,37 @@ a:hover {
   color: var(--text);
   background: var(--bg-inset);
   border-color: var(--border-strong);
+}
+
+/* Second row, shown only for a grouped tab. Pill styling so it reads as
+   subordinate to the primary tabs rather than a second bar of equals. */
+.casefile-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 0 2px;
+}
+
+.casefile-subtabs button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 11px;
+  background: none;
+  border: none;
+  border-radius: 12px;
+  font-size: 11px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.casefile-subtabs button:hover {
+  color: var(--text);
+}
+
+.casefile-subtabs button.on {
+  color: var(--text);
+  background: var(--bg-inset);
 }
 
 .tab-badge {
@@ -2141,25 +2187,70 @@ a:hover {
 
 /* ── Timeline ── */
 
+/* A real vertical timeline: one spine down the left, a node per event coloured
+   by kind, the time and body stacked beside it. */
 .casefile-body .timeline {
-  margin: 0;
-  padding: 0;
+  position: relative;
+  margin: 4px 0 0;
+  padding: 0 0 0 22px;
   list-style: none;
 }
 
+.casefile-body .timeline::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--border);
+}
+
 .casefile-body .timeline li {
-  display: flex;
-  gap: 12px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--border);
+  position: relative;
+  display: block;
+  padding: 0 0 15px;
+}
+
+.casefile-body .timeline li:last-child {
+  padding-bottom: 2px;
+}
+
+/* The node. Hollow by default, filled on a refusal so denials read at a glance. */
+.casefile-body .timeline li::before {
+  content: "";
+  position: absolute;
+  left: -21px;
+  top: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--bg-panel, #0d0f14);
+  border: 2px solid var(--text-faint);
+}
+
+.casefile-body .timeline li.finding::before {
+  border-color: var(--ok, #4ade80);
+}
+
+.casefile-body .timeline li.query::before {
+  border-color: var(--accent);
+}
+
+.casefile-body .timeline li.event::before {
+  border-color: var(--text-dim);
+}
+
+.casefile-body .timeline li.denied::before {
+  border-color: var(--deny);
+  background: var(--deny);
 }
 
 .casefile-body .timeline-when {
-  flex: none;
-  width: 140px;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--text-faint);
+  margin-bottom: 2px;
 }
 
 .casefile-body .timeline-body {
@@ -5083,4 +5174,55 @@ a:hover {
   text-transform: uppercase;
   color: var(--text-faint);
   margin-top: 3px;
+}
+
+/* Shared pager for the findings and audit tables. */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.pager-range {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pager-page {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 48px;
+  text-align: center;
+}
+
+.pager-controls button {
+  padding: 4px 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.pager-controls button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.pager-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
