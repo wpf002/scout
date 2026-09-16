@@ -24,7 +24,6 @@ import { Investigation } from "@/components/Investigation";
 import { SpacePanel } from "@/components/SpacePanel";
 import { MarketsPanel } from "@/components/MarketsPanel";
 import { MarauderPanel } from "@/components/MarauderPanel";
-import { GlobalSweep } from "@/components/GlobalSweep";
 import { PanelBoundary } from "@/components/PanelBoundary";
 import { ArcGisPanel } from "@/components/ArcGisPanel";
 import { EMPTY_LAYER, type ImageryOverlay, type MapLayer, type Viewport } from "@/lib/investigation";
@@ -45,7 +44,6 @@ const GlobeMap = dynamic(
 // extras rather than one undifferentiated column.
 const TOOLS = [
   { id: "osint", glyph: "◎", name: "Investigate", group: "investigate" },
-  { id: "sweep", glyph: "⊛", name: "Global Sweep", group: "investigate" },
   { id: "investigation", glyph: "◈", name: "Investigation", group: "investigate" },
   { id: "layers", glyph: "≡", name: "All Layers", group: "map" },
   { id: "filters", glyph: "⚗", name: "Filters", group: "map" },
@@ -1095,16 +1093,6 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <MarketsPanel kp={kp} />
-        </section>
-      ) : null}
-
-      {tool === "sweep" ? (
-        <section className="tool-panel wide">
-          <div className="tool-panel-head">
-            <h2>Global Sweep</h2>
-            <button className="link" onClick={() => setTool(null)}>×</button>
-          </div>
-          <GlobalSweep />
         </section>
       ) : null}
 
