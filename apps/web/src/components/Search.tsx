@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 export interface Place {
   label: string;
@@ -10,45 +10,32 @@ export interface Place {
 }
 
 /**
- * One box, three kinds of input.
+ * The main search bar: investigate anything.
  *
- * A coordinate pair flies there. An indicator — an address, a domain, an email
- * — opens the OSINT panel with it, because that is Scout's own answer and
- * routing it to a geocoder would be absurd. Anything else is a place name.
+ * Whatever is typed — a name, a company, a domain, a hash, an address — is run
+ * across every source and shown in the Investigate panel. The one exception is
+ * a bare coordinate pair, which flies the map there, because that is
+ * unambiguously a place rather than an artifact to look up.
  *
- * The split happens here rather than on the server so a coordinate never
- * leaves the machine to be told it is a coordinate, and so pasting an email
- * address does not hand it to OpenStreetMap on the way to deciding it is not
- * a town.
+ * There is deliberately no geocoder here any more. Routing a person's name to
+ * OpenStreetMap only ever produced "No Results", which is the opposite of what
+ * a search for a person should do.
  */
 
 const COORDINATES = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/;
 
-/**
- * Deliberately narrow. This only has to catch the things that are obviously
- * not places; the detector behind the OSINT panel does the real work, and a
- * place name that reaches it is corrected there rather than run blind.
- */
-const INDICATOR =
-  /^(?:\S+@\S+\.\S+|(?:\d{1,3}\.){3}\d{1,3}|[a-f0-9]{32,128}|(?:[a-z0-9-]+\.)+[a-z]{2,})$/i;
-
 export function Search({
   onFly,
-  onIndicator,
   onInvestigate,
 }: {
   onFly: (place: { lat: number; lon: number; zoom?: number }) => void;
-  onIndicator: (value: string) => void;
-  /** Force the current text into the Investigate panel and run it, whatever it is. */
+  /** Run the term across every source in the Investigate panel. */
   onInvestigate: (value: string) => void;
 }) {
   const [term, setTerm] = useState("");
-  const [results, setResults] = useState<Place[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const request = useRef(0);
 
   const submit = useCallback(
-    async (event?: React.FormEvent) => {
+    (event?: React.FormEvent) => {
       event?.preventDefault();
       const value = term.trim();
       if (value.length === 0) return;
@@ -58,126 +45,31 @@ export function Search({
         const lat = Number(coordinates[1]);
         const lon = Number(coordinates[2]);
         if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
-          setResults(null);
           onFly({ lat, lon, zoom: 9 });
           return;
         }
       }
 
-      if (INDICATOR.test(value)) {
-        setResults(null);
-        onIndicator(value);
-        return;
-      }
-
-      const id = ++request.current;
-      setBusy(true);
-      try {
-        const response = await fetch(
-          `/api/geo/search?q=${encodeURIComponent(value)}`,
-          { cache: "no-store" },
-        );
-        const data = (await response.json()) as { results?: Place[] };
-        // A slower earlier search must not overwrite a faster later one.
-        if (id !== request.current) return;
-
-        const found = data.results ?? [];
-        // One unambiguous answer needs no menu — go there.
-        if (found.length === 1) {
-          const only = found[0];
-          if (only !== undefined) {
-            setResults(null);
-            setTerm(only.label);
-            onFly({ lat: only.lat, lon: only.lon, zoom: 8 });
-            return;
-          }
-        }
-        setResults(found);
-      } catch {
-        if (id === request.current) setResults([]);
-      } finally {
-        if (id === request.current) setBusy(false);
-      }
+      onInvestigate(value);
     },
-    [term, onFly, onIndicator],
+    [term, onFly, onInvestigate],
   );
 
   return (
     <form className="search" onSubmit={submit}>
       <div className="search-box">
-      <input
-        /*
-         * Enter is handled explicitly. Implicit form submission from a single
-         * text input is the kind of behaviour that quietly stops working, and
-         * a search box that ignores Enter reads as broken however good the
-         * button next to it is.
-         */
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            void submit();
-          }
-        }}
-        value={term}
-        onChange={(event) => {
-          setTerm(event.target.value);
-          if (results !== null) setResults(null);
-        }}
-        placeholder="Place, coordinates, or indicator"
-        spellCheck={false}
-        autoComplete="off"
-        aria-label="Search"
-      />
-      {/*
-        * An explicit submit button, not decoration. A form whose only control
-        * is a text input relies on implicit submission, which is easy to lose
-        * to a stray focus change — and there is then nothing to click.
-        */}
-      <button type="submit" aria-label="Search" disabled={busy}>
-        {busy ? <span className="search-busy" aria-hidden /> : "⌕"}
-      </button>
+        <input
+          value={term}
+          onChange={(event) => setTerm(event.target.value)}
+          placeholder="Investigate anything — name, company, domain, place…"
+          spellCheck={false}
+          autoComplete="off"
+          aria-label="Search"
+        />
+        <button type="submit" aria-label="Investigate">
+          ⌕
+        </button>
       </div>
-      {/*
-        * Investigate runs the search across every source and shows results,
-        * whatever was typed — a name, a domain, a place. The ⌕ button still
-        * navigates the map; this one interrogates the term.
-        */}
-      <button
-        type="button"
-        className="search-investigate"
-        onClick={() => {
-          const value = term.trim();
-          if (value.length === 0) return;
-          setResults(null);
-          onInvestigate(value);
-        }}
-        disabled={term.trim().length === 0}
-      >
-        Investigate
-      </button>
-
-      {results !== null ? (
-        <ul className="search-results">
-          {results.length === 0 ? (
-            <li className="search-empty">No Results</li>
-          ) : (
-            results.map((place) => (
-              <li key={`${place.lat},${place.lon}`}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setResults(null);
-                    setTerm(place.label);
-                    onFly({ lat: place.lat, lon: place.lon, zoom: 8 });
-                  }}
-                >
-                  {place.label}
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      ) : null}
     </form>
   );
 }

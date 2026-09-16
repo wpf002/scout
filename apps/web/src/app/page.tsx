@@ -42,7 +42,7 @@ const GlobeMap = dynamic(
 // wherever the group changes, so the rail reads as investigate / map / feeds /
 // extras rather than one undifferentiated column.
 const TOOLS = [
-  { id: "osint", glyph: "◎", name: "Investigate", group: "investigate" },
+  { id: "osint", glyph: "◎", name: "Cyber OSINT", group: "investigate" },
   { id: "layers", glyph: "≡", name: "All Layers", group: "map" },
   { id: "filters", glyph: "⚗", name: "Filters", group: "map" },
   { id: "aoi", glyph: "▢", name: "Area of Interest", group: "map" },
@@ -89,6 +89,9 @@ export default function Page() {
   // Bumped to make the Investigate panel run the seeded term immediately, so
   // the top search bar can investigate without a second click in the panel.
   const [runToken, setRunToken] = useState(0);
+  // The OSINT panel opens in two postures: "all" from the top bar (any
+  // artifact), "cyber" from the rail tool (infrastructure and breach only).
+  const [panelMode, setPanelMode] = useState<"all" | "cyber">("cyber");
   const [selfNote, setSelfNote] = useState<string | null>(null);
   const [mapBusy, setMapBusy] = useState(true);
   const [overview, setOverview] = useState<string[] | null>(null);
@@ -232,6 +235,7 @@ export default function Page() {
   const investigate = useCallback((value: string) => {
     const term = value.trim();
     if (term.length === 0) return;
+    setPanelMode("all");
     setSeeded(term);
     setTool("osint");
     setRunToken((n) => n + 1);
@@ -668,7 +672,7 @@ export default function Page() {
           <span className="brand-sub">Global Intelligence</span>
         </div>
 
-        <Search onFly={setFlyTo} onIndicator={investigate} onInvestigate={investigate} />
+        <Search onFly={setFlyTo} onInvestigate={investigate} />
 
         <div className="hud-readout">
           <LocalClock />
@@ -776,6 +780,9 @@ export default function Page() {
                   );
                   return;
                 }
+                // Opening the rail tool is the cyber posture; the top bar sets
+                // "all" when it investigates.
+                if (item.id === "osint") setPanelMode("cyber");
                 setTool((current) => {
                   const next = current === item.id ? null : item.id;
                   // Leaving the measure panel leaves measure mode. A crosshair
@@ -1044,7 +1051,7 @@ export default function Page() {
       {tool === "osint" ? (
         <section className="tool-panel wide">
           <div className="tool-panel-head">
-            <h2>Investigate</h2>
+            <h2>{panelMode === "cyber" ? "Cyber OSINT" : "Investigate"}</h2>
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <div className="tool-panel-body">
@@ -1052,6 +1059,7 @@ export default function Page() {
               onLocated={onLocated}
               initialQuery={seeded}
               runToken={runToken}
+              mode={panelMode}
             />
           </div>
         </section>

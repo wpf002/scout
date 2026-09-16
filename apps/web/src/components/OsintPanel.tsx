@@ -22,6 +22,13 @@ import { buildIdentities } from "@/lib/identity";
 /** Plain names for the subject kinds. "hash" means nothing to most people. */
 const KINDS = Object.keys(KIND_LABEL) as SubjectKind[];
 
+/**
+ * The cyber posture. The rail tool is a security OSINT panel — infrastructure,
+ * hosts, breaches — so it offers only the kinds that belong to that work and
+ * leaves people, companies and vessels to the universal search in the top bar.
+ */
+const CYBER_KINDS: SubjectKind[] = ["domain", "ip", "hash", "email", "username"];
+
 /** Groups worth showing expanded. The rest open on demand. */
 const OPEN_BY_DEFAULT = new Set(["Hosts", "Emails", "Breaches", "Sanctions"]);
 
@@ -75,10 +82,16 @@ export function OsintPanel({
   initialQuery = "",
   onAuthorize,
   runToken = 0,
+  mode = "all",
 }: {
   onLocated: (features: GeoJSON.Feature[]) => void;
   /** Seeded from the map's search box when it recognises an indicator. */
   initialQuery?: string;
+  /**
+   * "all" is the universal search behind the top bar. "cyber" is the rail
+   * tool: only infrastructure and security subject kinds are offered.
+   */
+  mode?: "all" | "cyber";
   /**
    * Take the operator to the case's scope with this subject filled in.
    * Authorising happens there, where it is the subject of the screen, rather
@@ -497,7 +510,11 @@ export function OsintPanel({
     <div className="app">
       <header className="bar">
         <span className="mark">SCOUT</span>
-        <span className="field-hint">Search anything — it detects the type and hits every source.</span>
+        <span className="field-hint">
+          {mode === "cyber"
+            ? "Infrastructure and breach sources for a domain, IP or hash."
+            : "Search anything — it detects the type and hits every source."}
+        </span>
       </header>
 
       <section className="query">
@@ -508,7 +525,11 @@ export function OsintPanel({
           onKeyDown={(event) => {
             if (event.key === "Enter") void run();
           }}
-          placeholder="Search a domain, address, email, username or hash"
+          placeholder={
+            mode === "cyber"
+              ? "Domain, IP, hash, email or username"
+              : "Search any name, place, domain or identifier"
+          }
           spellCheck={false}
           autoFocus
         />
@@ -522,7 +543,7 @@ export function OsintPanel({
               ? "Detect Automatically"
               : `Detected: ${KIND_LABEL[detection.kind]}`}
           </option>
-          {KINDS.map((k) => (
+          {(mode === "cyber" ? CYBER_KINDS : KINDS).map((k) => (
             <option key={k} value={k}>
               {KIND_LABEL[k]}
             </option>
