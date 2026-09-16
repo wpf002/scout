@@ -2563,8 +2563,41 @@ a:hover {
 
 .search {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: 18px;
-  width: min(30vw, 340px);
+  width: min(42vw, 480px);
+}
+
+/* Holds the input, the ⌕ button and the results dropdown; the Investigate
+   button sits beside it as a flex sibling. */
+.search-box {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-investigate {
+  flex: none;
+  padding: 5px 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.search-investigate:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.search-investigate:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .search input {

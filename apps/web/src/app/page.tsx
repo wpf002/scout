@@ -86,9 +86,9 @@ export default function Page() {
   const [osintFeatures, setOsintFeatures] = useState<GeoJSON.Feature[]>([]);
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [tool, setTool] = useState<string | null>(null);
-  // Re-run token, kept only so OsintPanel's signature is unchanged. Nothing
-  // bumps it now that authorization is not a separate step.
-  const [runToken] = useState(0);
+  // Bumped to make the Investigate panel run the seeded term immediately, so
+  // the top search bar can investigate without a second click in the panel.
+  const [runToken, setRunToken] = useState(0);
   const [selfNote, setSelfNote] = useState<string | null>(null);
   const [mapBusy, setMapBusy] = useState(true);
   const [overview, setOverview] = useState<string[] | null>(null);
@@ -226,10 +226,15 @@ export default function Page() {
     }
   }, []);
 
-  // An indicator typed into the map's search box belongs to the OSINT panel.
-  const onIndicator = useCallback((value: string) => {
-    setSeeded(value);
+  // The top search bar's investigate action: seed the panel, open it, and run.
+  // The same handler serves the explicit Investigate button and an indicator
+  // typed straight into the bar, so both land in one place with results.
+  const investigate = useCallback((value: string) => {
+    const term = value.trim();
+    if (term.length === 0) return;
+    setSeeded(term);
     setTool("osint");
+    setRunToken((n) => n + 1);
   }, []);
 
   /**
@@ -663,7 +668,7 @@ export default function Page() {
           <span className="brand-sub">Global Intelligence</span>
         </div>
 
-        <Search onFly={setFlyTo} onIndicator={onIndicator} />
+        <Search onFly={setFlyTo} onIndicator={investigate} onInvestigate={investigate} />
 
         <div className="hud-readout">
           <LocalClock />
@@ -852,7 +857,7 @@ export default function Page() {
           type="button"
           className="cursor-investigate"
           onClick={() =>
-            onIndicator(`${cursor.lat.toFixed(4)}, ${cursor.lon.toFixed(4)}`)
+            investigate(`${cursor.lat.toFixed(4)}, ${cursor.lon.toFixed(4)}`)
           }
           title="Investigate this place"
         >

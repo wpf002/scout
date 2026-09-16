@@ -35,9 +35,12 @@ const INDICATOR =
 export function Search({
   onFly,
   onIndicator,
+  onInvestigate,
 }: {
   onFly: (place: { lat: number; lon: number; zoom?: number }) => void;
   onIndicator: (value: string) => void;
+  /** Force the current text into the Investigate panel and run it, whatever it is. */
+  onInvestigate: (value: string) => void;
 }) {
   const [term, setTerm] = useState("");
   const [results, setResults] = useState<Place[] | null>(null);
@@ -101,6 +104,7 @@ export function Search({
 
   return (
     <form className="search" onSubmit={submit}>
+      <div className="search-box">
       <input
         /*
          * Enter is handled explicitly. Implicit form submission from a single
@@ -131,6 +135,25 @@ export function Search({
         */}
       <button type="submit" aria-label="Search" disabled={busy}>
         {busy ? <span className="search-busy" aria-hidden /> : "⌕"}
+      </button>
+      </div>
+      {/*
+        * Investigate runs the search across every source and shows results,
+        * whatever was typed — a name, a domain, a place. The ⌕ button still
+        * navigates the map; this one interrogates the term.
+        */}
+      <button
+        type="button"
+        className="search-investigate"
+        onClick={() => {
+          const value = term.trim();
+          if (value.length === 0) return;
+          setResults(null);
+          onInvestigate(value);
+        }}
+        disabled={term.trim().length === 0}
+      >
+        Investigate
       </button>
 
       {results !== null ? (

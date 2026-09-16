@@ -155,8 +155,11 @@ export function OsintPanel({
     return () => clearTimeout(timer);
   }, [indicator]);
 
-  const run = useCallback(async () => {
-    const term = indicator.trim();
+  const run = useCallback(async (override?: string) => {
+    // An override lets the top search bar run a term the instant it seeds it,
+    // without waiting for the `indicator` state set to land first.
+    const term = (override ?? indicator).trim();
+    if (override !== undefined) setIndicator(override);
     if (term.length === 0 || caseId === "" || running) return;
 
     setRunning(true);
@@ -232,17 +235,25 @@ export function OsintPanel({
   }, [indicator, caseId, kind, running]);
 
   /*
-   * Re-run once the caller says scope was granted.
+   * Auto-run a term seeded from the top search bar.
    *
-   * Guarded on a non-zero token so the panel does not fire a run the moment it
-   * mounts — the default means "nothing has been authorised yet".
+   * The panel mounts only when it opens, which is *after* the search bar has
+   * seeded and bumped the token — so a plain token-change check never sees the
+   * change. And the case list loads asynchronously, so the first attempt often
+   * finds no case yet. This waits for a case, then runs when the seed or the
+   * token changes, keyed so the same seed does not re-run on every render but a
+   * re-click (new token) does.
    */
-  const lastToken = useRef(runToken);
+  const lastRun = useRef<string | null>(null);
   useEffect(() => {
-    if (runToken === lastToken.current) return;
-    lastToken.current = runToken;
-    if (runToken > 0) void run();
-  }, [runToken, run]);
+    if (caseId === "") return;
+    const seed = initialQuery.trim();
+    if (seed === "") return;
+    const key = `${runToken}:${seed}`;
+    if (lastRun.current === key) return;
+    lastRun.current = key;
+    void run(seed);
+  }, [runToken, caseId, initialQuery, run]);
 
   /**
    * Whether the typed subject already sits in the open case's scope.
