@@ -184,6 +184,7 @@ export function OsintPanel({
     setOpen({});
     setSelected(null);
     setDiff(null);
+    setDismissed(new Set());
 
     // Rows are collected here as well as in state: React batches updates, and
     // the final summary has to be assembled from every row, not from whatever
@@ -294,16 +295,24 @@ export function OsintPanel({
     [resultRows],
   );
 
+  // Results the operator has dismissed. A run clears the set; a dismissal drops
+  // the row from the table, the map and the profile at once, because all three
+  // read visibleRows.
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const rowKey = (row: ResultRow): string => `${row.type}:${row.value}`;
+
   const visibleRows = useMemo(() => {
     const needle = filter.trim().toLowerCase();
-    if (needle.length === 0) return rows;
-    return rows.filter(
-      (row) =>
+    return rows.filter((row) => {
+      if (dismissed.has(rowKey(row))) return false;
+      if (needle.length === 0) return true;
+      return (
         row.value.toLowerCase().includes(needle) ||
         row.detail.toLowerCase().includes(needle) ||
-        row.sources.some((s) => s.toLowerCase().includes(needle)),
-    );
-  }, [rows, filter]);
+        row.sources.some((s) => s.toLowerCase().includes(needle))
+      );
+    });
+  }, [rows, filter, dismissed]);
 
   const grouped = useMemo(() => {
     const groups = new Map<string, ResultRow[]>();
@@ -340,22 +349,30 @@ export function OsintPanel({
    */
   useEffect(() => {
     const features: GeoJSON.Feature[] = [];
-    for (const row of rows) {
-      if (row.type !== "Hosts") continue;
+    for (const row of visibleRows) {
+      // Any observation that carries a position, not just IP geolocation:
+      // a host from ip-api, a place or address from OSM, anything with a
+      // latitude and longitude. A result the map can honestly place goes on it.
       for (const item of row.evidence) {
-        const observation = item.observation as {
-          coordinates?: { latitude?: number; longitude?: number };
-        } | null;
-        const lat = observation?.coordinates?.latitude;
-        const lon = observation?.coordinates?.longitude;
-        if (typeof lat !== "number" || typeof lon !== "number") continue;
+        const o = item.observation as Record<string, unknown> | null;
+        if (o === null || typeof o !== "object") continue;
+        const coords = (o["coordinates"] ?? {}) as Record<string, unknown>;
+        const lat =
+          typeof o["lat"] === "number" ? o["lat"]
+          : typeof coords["latitude"] === "number" ? coords["latitude"]
+          : null;
+        const lon =
+          typeof o["lon"] === "number" ? o["lon"]
+          : typeof coords["longitude"] === "number" ? coords["longitude"]
+          : null;
+        if (lat === null || lon === null) continue;
         features.push({
           type: "Feature",
           geometry: { type: "Point", coordinates: [lon, lat] },
           properties: {
             layer: "osint",
             label: row.value,
-            detail: row.detail,
+            detail: `${row.type} · ${row.detail}`,
             sources: row.sources.join(", "),
           },
         });
@@ -363,7 +380,7 @@ export function OsintPanel({
       }
     }
     onLocated(features);
-  }, [rows, onLocated]);
+  }, [visibleRows, onLocated]);
 
   const graph = useMemo(
     () => buildGraph(visibleRows, result?.subject.value ?? ""),
@@ -372,7 +389,10 @@ export function OsintPanel({
 
   // Correlation across sources. Built from the same rows the table shows, so
   // nothing here can claim a fact that is not also visible below it.
-  const profile = useMemo(() => (rows.length === 0 ? null : buildProfile(rows)), [rows]);
+  const profile = useMemo(
+    () => (visibleRows.length === 0 ? null : buildProfile(visibleRows)),
+    [visibleRows],
+  );
 
   // Candidate people, assembled across sources. Only for a person subject —
   // grouping hostnames by "name and locality" would be nonsense.
@@ -1008,6 +1028,7 @@ export function OsintPanel({
                               <th>Value</th>
                               <th>Detail</th>
                               <th>Sources</th>
+                              <th aria-label="Dismiss" />
                             </tr>
                           </thead>
                           <tbody>
@@ -1044,6 +1065,26 @@ export function OsintPanel({
                                       ×{row.occurrences}
                                     </span>
                                   ) : null}
+                                </td>
+                                <td className="dismiss">
+                                  <button
+                                    type="button"
+                                    aria-label={`Dismiss ${row.value}`}
+                                    title="Remove this result"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setDismissed((current) => {
+                                        const next = new Set(current);
+                                        next.add(rowKey(row));
+                                        return next;
+                                      });
+                                      if (selected?.type === row.type && selected?.value === row.value) {
+                                        setSelected(null);
+                                      }
+                                    }}
+                                  >
+                                    ×
+                                  </button>
                                 </td>
                               </tr>
                             ))}

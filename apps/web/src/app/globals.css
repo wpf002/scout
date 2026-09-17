@@ -5243,3 +5243,28 @@ a:hover {
   color: var(--text-faint);
   text-align: right;
 }
+
+/* Dismiss a result row: drops it from the table, the map and the profile. */
+td.dismiss {
+  width: 24px;
+  text-align: right;
+}
+
+td.dismiss button {
+  padding: 0 4px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+tr:hover td.dismiss button {
+  opacity: 1;
+}
+
+td.dismiss button:hover {
+  color: var(--deny, #ff3b52);
+}
