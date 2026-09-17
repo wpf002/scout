@@ -18,6 +18,7 @@ import {
 } from "./records.js";
 import { fetchUsaSpending, usaSpendingSource } from "./usaspending.js";
 import { fecSource, fetchFec } from "./fec.js";
+import { fetchGleif, fetchProPublica, gleifSource, proPublicaSource } from "./orgs.js";
 
 export interface DatasetAdapter {
   source: Source;
@@ -42,6 +43,8 @@ export const DATASET_ADAPTERS: readonly DatasetAdapter[] = Object.freeze([
   { source: secEdgarSource, run: fetchEdgarFullText },
   { source: usaSpendingSource, run: fetchUsaSpending },
   { source: fecSource, run: fetchFec },
+  { source: gleifSource, run: fetchGleif },
+  { source: proPublicaSource, run: fetchProPublica },
 ]);
 
 const BY_ID = new Map(DATASET_ADAPTERS.map((a) => [a.source.id, a]));

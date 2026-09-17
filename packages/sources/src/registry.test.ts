@@ -10,8 +10,8 @@ import {
 import { TIERS } from "./types.js";
 
 describe("registry shape", () => {
-  it("holds 42 sources across 6 tiers", () => {
-    expect(SOURCES).toHaveLength(42);
+  it("holds 44 sources across 6 tiers", () => {
+    expect(SOURCES).toHaveLength(44);
     expect(new Set(SOURCES.map((s) => s.tier)).size).toBe(TIERS.length);
   });
 
@@ -88,6 +88,8 @@ describe("mode invariants", () => {
       "courtlistener",
       "crtsh",
       "fec",
+      "gleif",
+      "propublica-990",
       "sec-edgar-fts",
       "threatfox",
       "virustotal",
@@ -118,6 +120,7 @@ describe("mode invariants", () => {
       "faa-registry",
       "feodo",
       "fmcsa",
+      "gleif",
       "gravatar",
       "greynoise",
       "hackertarget",
@@ -125,6 +128,7 @@ describe("mode invariants", () => {
       "osm-place",
       "phone-id",
       "plate-id",
+      "propublica-990",
       "rapiddns",
       "rdap",
       "sec-edgar-fts",

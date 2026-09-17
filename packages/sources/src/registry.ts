@@ -9,7 +9,7 @@ import { TIERS } from "./types.js";
 const q = encodeURIComponent;
 
 /**
- * The tiered source registry: 42 sources across 6 tiers.
+ * The tiered source registry: 44 sources across 6 tiers.
  *
  * Two fields carry the platform's safety posture:
  *   - `mode`          — deeplink sources never route subject data through Scout.
@@ -571,6 +571,31 @@ export const SOURCES: readonly Source[] = Object.freeze([
     description: "Voter registration records you imported — name, date of birth, address.",
     homepage: "https://www.eac.gov",
     keyEnv: null,
+  },
+  {
+    id: "gleif",
+    name: "GLEIF",
+    tier: "datasets",
+    mode: "api",
+    requiresScope: false,
+    accepts: ["company", "keyword"],
+    description: "Global Legal Entity Identifier — one company key across jurisdictions.",
+    homepage: "https://www.gleif.org",
+    keyEnv: null,
+    deeplink: (term) => `https://search.gleif.org/#/search/simpleField=${q(term)}`,
+  },
+  {
+    id: "propublica-990",
+    name: "Nonprofit 990s",
+    tier: "datasets",
+    mode: "api",
+    requiresScope: false,
+    scopedKinds: ["person"],
+    accepts: ["company", "person", "keyword"],
+    description: "US nonprofits by Form 990 — officers and their pay on the linked record.",
+    homepage: "https://projects.propublica.org/nonprofits",
+    keyEnv: null,
+    deeplink: (term) => `https://projects.propublica.org/nonprofits/search?q=${q(term)}`,
   },
 ]);
 
