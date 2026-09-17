@@ -23,6 +23,7 @@ import { Aoi, type Box } from "@/components/Aoi";
 import { SpacePanel } from "@/components/SpacePanel";
 import { MarketsPanel } from "@/components/MarketsPanel";
 import { MarauderPanel } from "@/components/MarauderPanel";
+import { WatchPanel } from "@/components/WatchPanel";
 import { PanelBoundary } from "@/components/PanelBoundary";
 import { ArcGisPanel } from "@/components/ArcGisPanel";
 import { EMPTY_LAYER, type ImageryOverlay, type MapLayer, type Viewport } from "@/lib/investigation";
@@ -43,6 +44,7 @@ const GlobeMap = dynamic(
 // extras rather than one undifferentiated column.
 const TOOLS = [
   { id: "osint", glyph: "◎", name: "Cyber OSINT", group: "investigate" },
+  { id: "watch", glyph: "◔", name: "Watch", group: "investigate" },
   { id: "layers", glyph: "≡", name: "All Layers", group: "map" },
   { id: "filters", glyph: "⚗", name: "Filters", group: "map" },
   { id: "aoi", glyph: "▢", name: "Area of Interest", group: "map" },
@@ -1082,6 +1084,18 @@ export default function Page() {
             <button className="link" onClick={() => setTool(null)}>×</button>
           </div>
           <MarketsPanel kp={kp} />
+        </section>
+      ) : null}
+
+      {tool === "watch" ? (
+        <section className="tool-panel">
+          <div className="tool-panel-head">
+            <h2>Watch</h2>
+            <button className="link" onClick={() => setTool(null)}>×</button>
+          </div>
+          <div className="tool-panel-body">
+            <WatchPanel />
+          </div>
         </section>
       ) : null}
 

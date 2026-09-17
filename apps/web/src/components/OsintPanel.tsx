@@ -18,6 +18,7 @@ import { buildGraph, TYPE_COLOR } from "@/lib/graph";
 import { analyze } from "@/lib/rules";
 import { buildProfile } from "@/lib/profile";
 import { buildIdentities } from "@/lib/identity";
+import { buildHistory } from "@/lib/history";
 
 /** Plain names for the subject kinds. "hash" means nothing to most people. */
 const KINDS = Object.keys(KIND_LABEL) as SubjectKind[];
@@ -119,7 +120,7 @@ export function OsintPanel({
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [pages, setPages] = useState<Record<string, number>>({});
   const [selected, setSelected] = useState<ResultRow | null>(null);
-  const [view, setView] = useState<"table" | "graph">("table");
+  const [view, setView] = useState<"table" | "graph" | "history">("table");
   const [diff, setDiff] = useState<RunDiff | null>(null);
   const [monitors, setMonitors] = useState<MonitorRecord[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -393,6 +394,9 @@ export function OsintPanel({
     () => (visibleRows.length === 0 ? null : buildProfile(visibleRows)),
     [visibleRows],
   );
+
+  // The subject's dated records, oldest first. Empty when nothing carries a date.
+  const history = useMemo(() => buildHistory(visibleRows), [visibleRows]);
 
   // Candidate people, assembled across sources. Only for a person subject —
   // grouping hostnames by "name and locality" would be nonsense.
@@ -886,6 +890,12 @@ export function OsintPanel({
                 >
                   Graph
                 </button>
+                <button
+                  className={view === "history" ? "on" : undefined}
+                  onClick={() => setView("history")}
+                >
+                  History
+                </button>
               </div>
               <button
                 className="export"
@@ -912,6 +922,25 @@ export function OsintPanel({
 
             {rows.length === 0 ? (
               <p className="empty">No results for {result.subject.value}.</p>
+            ) : view === "history" ? (
+              history.length === 0 ? (
+                <p className="empty">Nothing here carries a date to place on a timeline.</p>
+              ) : (
+                <ol className="osint-history">
+                  {history.map((entry, index) => (
+                    <li key={`${entry.type}-${entry.value}-${index}`}>
+                      <span className="oh-date">{entry.date.slice(0, 10)}</span>
+                      <span className="oh-body">
+                        <span className="oh-value">{entry.value}</span>
+                        <span className="oh-meta">
+                          {entry.type}
+                          {entry.detail === "" ? "" : ` · ${entry.detail}`} · {entry.sources.join(", ")}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )
             ) : view === "graph" ? (
               <div className="graph">
                 <svg
